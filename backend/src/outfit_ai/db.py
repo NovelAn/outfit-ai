@@ -1,0 +1,50 @@
+"""SQLAlchemy 同步引擎 + SQLite。单用户零运维。"""
+
+from collections.abc import Generator
+from pathlib import Path
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+from .config import settings
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+def _engine_url() -> str:
+    """SQLite 路径相对 cwd；确保父目录存在。"""
+    url = settings.database_url
+    if url.startswith("sqlite:///"):
+        db_path = Path(url.replace("sqlite:///", "", 1))
+        # 处理相对/绝对路径
+        if not db_path.is_absolute():
+            db_path = Path.cwd() / db_path
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    return url
+
+
+engine = create_engine(
+    _engine_url(),
+    connect_args={"check_same_thread": False},  # FastAPI 同步处理器跑在线程池
+    echo=False,
+)
+
+SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def get_db() -> Generator[Session, None, None]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def init_db() -> None:
+    """启动时建表 + 确保上传目录存在。"""
+    Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+    from . import models  # noqa: F401  确保模型已注册
+
+    Base.metadata.create_all(bind=engine)
