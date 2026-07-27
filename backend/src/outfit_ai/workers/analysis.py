@@ -1,18 +1,33 @@
 import json
 
+from sqlalchemy import update
+
 from ..db import SessionLocal
 from ..models import WardrobeItem
+from ..services.categories import canonical_category
 from ..services.vision import extract
 
 
 def analyze_item(item_id: str) -> None:
     with SessionLocal() as db:
+        claimed = db.scalar(
+            update(WardrobeItem)
+            .where(
+                WardrobeItem.id == item_id,
+                WardrobeItem.status == "pending",
+            )
+            .values(
+                status="analyzing",
+                attempt_count=WardrobeItem.attempt_count + 1,
+            )
+            .returning(WardrobeItem.id)
+        )
+        db.commit()
+        if not claimed:
+            return
         item = db.get(WardrobeItem, item_id)
         if not item:
             return
-        item.status = "analyzing"
-        item.attempt_count += 1
-        db.commit()
         try:
             attributes, raw = extract(item.image_path)
             for field in (
@@ -26,6 +41,7 @@ def analyze_item(item_id: str) -> None:
                 "versatility",
             ):
                 setattr(item, field, getattr(attributes, field))
+            item.category = canonical_category(attributes.category)
             for source, target in (
                 ("styles", "style_json"),
                 ("tags", "tags_json"),

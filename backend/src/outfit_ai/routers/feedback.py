@@ -1,24 +1,28 @@
 import json
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import update
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
 from ..models import Feedback, OutfitHistory, Profile
 from ..schemas import FeedbackIn
-from ..services.taste_memo import refresh
+from ..services.history import get_recent_outfits
+from ..services.taste_memo import FEEDBACK_BATCH_SIZE, refresh
 
 router = APIRouter(tags=["feedback"])
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 @router.post("/feedback")
 def feedback(
     payload: FeedbackIn,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ):
     if payload.history_id:
         history = db.get(OutfitHistory, payload.history_id)
@@ -38,24 +42,26 @@ def feedback(
         learnings=payload.learnings,
     )
     db.add(row)
-    profile = db.get(Profile, settings.user_id) or Profile(user_id=settings.user_id)
-    profile.feedback_since_refresh += 1
-    db.add(profile)
-    should_refresh = profile.feedback_since_refresh >= 8
+    db.execute(
+        insert(Profile)
+        .values(user_id=settings.user_id)
+        .on_conflict_do_nothing(index_elements=[Profile.user_id])
+    )
+    count = db.scalar(
+        update(Profile)
+        .where(Profile.user_id == settings.user_id)
+        .values(feedback_since_refresh=Profile.feedback_since_refresh + 1)
+        .returning(Profile.feedback_since_refresh)
+    )
     db.commit()
-    if should_refresh:
+    if count is not None and count >= FEEDBACK_BATCH_SIZE:
         background_tasks.add_task(refresh, settings.user_id)
     return {"ok": True}
 
 
 @router.get("/history")
-def history(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
-    rows = db.scalars(
-        select(OutfitHistory)
-        .where(OutfitHistory.user_id == settings.user_id)
-        .order_by(OutfitHistory.date.desc())
-        .limit(limit)
-    )
+def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
+    rows = get_recent_outfits(db, settings.user_id, limit)
     return [
         {
             "id": row.id,

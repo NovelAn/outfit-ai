@@ -1,7 +1,7 @@
 import json
-from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
@@ -12,17 +12,19 @@ from ..config import settings
 from ..db import get_db
 from ..models import WardrobeItem
 from ..schemas import WardrobePatch
-from ..services.collage import render
-from ..services.storage import LocalStorage
+from ..services.categories import canonical_category, confirmed_category
+from ..services.collage import UnsafeImageError, render
+from ..services.storage import ImageTooLargeError, LocalStorage
 from ..workers.analysis import analyze_item
 
 router = APIRouter(prefix="/wardrobe", tags=["wardrobe"])
 storage = LocalStorage()
+DbSession = Annotated[Session, Depends(get_db)]
+ImageUpload = Annotated[UploadFile, File()]
 
 
 def _item(item: WardrobeItem) -> dict:
-    return {
-        "id": item.id,
+    attributes = {
         "name": item.name,
         "category": item.category,
         "primary_color": item.primary_color,
@@ -37,10 +39,15 @@ def _item(item: WardrobeItem) -> dict:
         "versatility": item.versatility,
         "brand": item.brand,
         "size": item.size,
+    }
+    return {
+        "id": item.id,
+        **attributes,
         "image_url": f"/media/{Path(item.image_path).name}",
         "status": item.status,
         "attempt_count": item.attempt_count,
         "confirmed_by_user": item.confirmed_by_user,
+        "attributes": attributes if item.status == "ready" else None,
     }
 
 
@@ -54,15 +61,17 @@ def _get(db: Session, item_id: str) -> WardrobeItem:
 @router.post("/upload", status_code=201)
 def upload(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    file: ImageUpload,
+    db: DbSession,
 ):
     if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(415, "仅支持 JPEG、PNG、WebP")
     try:
         path = storage.save(file)
-    except ValueError as exc:
+    except ImageTooLargeError as exc:
         raise HTTPException(413, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     item = WardrobeItem(
         id=uuid4().hex,
         user_id=settings.user_id,
@@ -70,25 +79,34 @@ def upload(
         status="pending",
     )
     db.add(item)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        storage.delete(str(path))
+        raise
     background_tasks.add_task(analyze_item, item.id)
     return {"id": item.id, "status": item.status}
 
 
 @router.get("/items")
-def items(category: str | None = None, db: Session = Depends(get_db)):
+def items(db: DbSession, category: str | None = None):
     query = select(WardrobeItem).where(
         WardrobeItem.user_id == settings.user_id,
         WardrobeItem.confirmed_by_user.is_(True),
     )
+    found = list(db.scalars(query.order_by(WardrobeItem.added_at.desc())))
     if category:
-        query = query.where(WardrobeItem.category == category)
-    return [_item(item) for item in db.scalars(query.order_by(WardrobeItem.added_at.desc()))]
+        wanted = canonical_category(category)
+        found = [item for item in found if canonical_category(item.category) == wanted]
+    return [_item(item) for item in found]
 
 
 @router.get("/collage")
-def collage(item_ids: str, db: Session = Depends(get_db)):
-    ids = [value for value in item_ids.split(",") if value]
+def collage(item_ids: str, db: DbSession):
+    ids = [value.strip() for value in item_ids.split(",") if value.strip()]
+    if not 1 <= len(ids) <= 15 or len(ids) != len(set(ids)):
+        raise HTTPException(422, "item_ids 需要 1–15 个唯一值")
     found = list(
         db.scalars(
             select(WardrobeItem).where(
@@ -100,22 +118,37 @@ def collage(item_ids: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "部分单品不存在")
     by_id = {item.id: item for item in found}
     output = BytesIO()
-    render([by_id[item_id].image_path for item_id in ids], output)
+    try:
+        render([by_id[item_id].image_path for item_id in ids], output)
+    except UnsafeImageError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     return Response(output.getvalue(), media_type="image/png")
 
 
 @router.get("/{item_id}/status")
-def status(item_id: str, db: Session = Depends(get_db)):
+def status(item_id: str, db: DbSession):
     return _item(_get(db, item_id))
 
 
 @router.get("/{item_id}")
-def detail(item_id: str, db: Session = Depends(get_db)):
+def detail(item_id: str, db: DbSession):
     return _item(_get(db, item_id))
 
 
 @router.patch("/{item_id}")
-def patch(item_id: str, payload: WardrobePatch, db: Session = Depends(get_db)):
+def patch(item_id: str, payload: WardrobePatch, db: DbSession):
+    return _update(item_id, payload, db)
+
+
+def _update(
+    item_id: str,
+    payload: WardrobePatch,
+    db: Session,
+    *,
+    confirm: bool = False,
+):
     item = _get(db, item_id)
     data = payload.model_dump(exclude_unset=True)
     for source, target in (
@@ -126,20 +159,32 @@ def patch(item_id: str, payload: WardrobePatch, db: Session = Depends(get_db)):
     ):
         if source in data:
             data[target] = json.dumps(data.pop(source), ensure_ascii=False)
+    if data.get("category") is not None:
+        data["category"] = canonical_category(data["category"])
+    if confirm or data.get("confirmed_by_user") is True:
+        try:
+            data["category"] = confirmed_category(data.get("category", item.category))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        data["confirmed_by_user"] = True
     for field, value in data.items():
         setattr(item, field, value)
     db.commit()
     return _item(item)
 
 
+@router.post("/{item_id}/confirm")
+def confirm(item_id: str, payload: WardrobePatch, db: DbSession):
+    return _update(item_id, payload, db, confirm=True)
+
+
 @router.post("/{item_id}/retry", status_code=202)
 def retry(
-    item_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+    item_id: str, background_tasks: BackgroundTasks, db: DbSession
 ):
     item = _get(db, item_id)
-    stuck = item.status == "analyzing" and item.added_at < datetime.now() - timedelta(minutes=10)
-    if item.status != "failed" and not stuck:
-        raise HTTPException(409, "仅失败或卡住的任务可重试")
+    if item.status != "failed":
+        raise HTTPException(409, "仅失败任务可重试")
     item.status = "pending"
     db.commit()
     background_tasks.add_task(analyze_item, item.id)
@@ -147,8 +192,13 @@ def retry(
 
 
 @router.delete("/{item_id}", status_code=204)
-def delete(item_id: str, db: Session = Depends(get_db)):
+def delete(item_id: str, db: DbSession):
     item = _get(db, item_id)
-    storage.delete(item.image_path)
+    image_path = item.image_path
     db.delete(item)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    storage.delete(image_path)

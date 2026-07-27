@@ -31,3 +31,52 @@ def test_filters_wrong_season_and_recent_items_but_keeps_locked() -> None:
     )
 
     assert {item.id for item in result} == {"summer-top", "winter-top", "recent-shoes"}
+
+
+def test_locked_items_are_not_dropped_by_candidate_limit() -> None:
+    items = [_item(f"top-{index}", "top", '["summer"]') for index in range(3)]
+
+    result = filter_candidates(
+        items,
+        season="summer",
+        locked_ids={item.id for item in items},
+        recent_item_ids=set(),
+        limit=2,
+    )
+
+    assert {item.id for item in result} == {"top-0", "top-1", "top-2"}
+
+
+def test_transition_season_accepts_spring_and_autumn_items() -> None:
+    items = [
+        _item("spring-top", "top", '["spring"]'),
+        _item("autumn-bottom", "bottom", '["autumn"]'),
+        _item("winter-shoes", "shoes", '["winter"]'),
+    ]
+
+    result = filter_candidates(
+        items,
+        season="spring_autumn",
+        locked_ids=set(),
+        recent_item_ids=set(),
+    )
+
+    assert {item.id for item in result} == {"spring-top", "autumn-bottom"}
+
+
+def test_candidate_cap_keeps_required_categories_when_available() -> None:
+    items = [
+        *[_item(f"top-{index}", "top", '["summer"]') for index in range(4)],
+        _item("bottom-1", "skirt", '["summer"]'),
+        _item("shoes-1", "boots", '["summer"]'),
+    ]
+
+    result = filter_candidates(
+        items,
+        season="summer",
+        locked_ids=set(),
+        recent_item_ids=set(),
+        limit=3,
+    )
+
+    assert {item.category for item in result} == {"top", "skirt", "boots"}

@@ -1,12 +1,16 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..schemas import RecommendRequest
+from ..services.llm import LLMResponseError, LLMUnavailableError, require_api_key
 from ..services.recommend import recommend
-from ..services.weather import get_weather
+from ..services.weather import WeatherInputError, WeatherServiceError, get_weather
 
 router = APIRouter(tags=["recommend"])
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 @router.get("/weather")
@@ -17,13 +21,22 @@ def weather(
 ):
     try:
         return get_weather(city, latitude=latitude, longitude=longitude).model_dump()
-    except ValueError as exc:
+    except WeatherInputError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except WeatherServiceError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @router.post("/recommend")
-def recommendation(payload: RecommendRequest, db: Session = Depends(get_db)):
+def recommendation(payload: RecommendRequest, db: DbSession):
     try:
+        require_api_key()
         return recommend(db, payload)
+    except LLMUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except LLMResponseError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except WeatherServiceError as exc:
+        raise HTTPException(502, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc

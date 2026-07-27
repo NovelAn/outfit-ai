@@ -1,19 +1,24 @@
 import json
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import literal_column, select
 from sqlalchemy.orm import Session
 
 from ..models import OutfitHistory, WardrobeItem
 from ..schemas import ProposedLook
+from .categories import canonical_category
 
 
 def get_recent_outfits(db: Session, user_id: str, limit: int = 7) -> list[OutfitHistory]:
+    # ponytail: SQLite rowid orders same-day rows; replace with created_at when approved.
     return list(
         db.scalars(
             select(OutfitHistory)
             .where(OutfitHistory.user_id == user_id)
-            .order_by(OutfitHistory.date.desc())
+            .order_by(
+                OutfitHistory.date.desc(),
+                literal_column("outfit_history.rowid").desc(),
+            )
             .limit(limit)
         )
     )
@@ -26,13 +31,11 @@ def get_recent_item_ids(
     ids = {item_id for outfit in outfits for item_id in json.loads(outfit.item_ids_json)}
     if not skip_shoes or not ids:
         return ids
-    shoes = set(
-        db.scalars(
-            select(WardrobeItem.id).where(
-                WardrobeItem.id.in_(ids), WardrobeItem.category.in_(["shoe", "shoes"])
-            )
-        )
-    )
+    shoes = {
+        item.id
+        for item in db.scalars(select(WardrobeItem).where(WardrobeItem.id.in_(ids)))
+        if canonical_category(item.category) == "shoes"
+    }
     return ids - shoes
 
 

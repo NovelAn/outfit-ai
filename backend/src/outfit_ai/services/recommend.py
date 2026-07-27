@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..models import Profile, WardrobeItem
 from ..schemas import RecommendRequest
+from .categories import canonical_category
 from .guardrail import filter_candidates
 from .history import get_recent_item_ids, get_recent_outfits, record_outfit
 from .stylist import propose
@@ -36,11 +38,14 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
         locked_ids=set(request.locked_item_ids),
         recent_item_ids=get_recent_item_ids(db, settings.user_id),
     )
+    unavailable_locked = set(request.locked_item_ids) - {item.id for item in candidates}
+    if unavailable_locked:
+        raise ValueError(
+            f"锁定单品不可用: {', '.join(sorted(unavailable_locked))}"
+        )
     categories = {item.id: item.category or "" for item in candidates}
     if not {"top", "bottom", "shoes"} <= {
-        {"shirt": "top", "t-shirt": "top", "pants": "bottom", "jeans": "bottom",
-         "shoe": "shoes", "sneakers": "shoes"}.get(value, value)
-        for value in categories.values()
+        canonical_category(value) for value in categories.values()
     }:
         raise ValueError("已确认衣橱不足：至少需要上装、下装和鞋履")
     recent = get_recent_outfits(db, settings.user_id)
@@ -57,7 +62,9 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
             set(request.locked_item_ids),
             error,
         )
-        ok, error = validate_looks(looks, categories)
+        ok, error = validate_looks(
+            looks, categories, locked_ids=set(request.locked_item_ids)
+        )
         if ok:
             break
     else:
@@ -81,7 +88,7 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
                     "id": item_id,
                     "name": by_id[item_id].name,
                     "category": by_id[item_id].category,
-                    "image_url": f"/media/{by_id[item_id].image_path.split('/')[-1]}",
+                    "image_url": f"/media/{Path(by_id[item_id].image_path).name}",
                     "primary_color": by_id[item_id].primary_color,
                 }
                 for item_id in look.item_ids

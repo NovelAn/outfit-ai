@@ -1,16 +1,18 @@
 import json
-from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
 from ..models import Profile
-from ..schemas import ProfileIn
+from ..schemas import ProfileIn, ProfileOut, StyleDnaDraftRequest
+from ..services.llm import LLMResponseError, LLMUnavailableError, require_api_key
 from ..services.taste_memo import refresh, seed
 
 router = APIRouter(prefix="/profile", tags=["profile"])
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 def _out(profile: Profile) -> dict:
@@ -28,6 +30,11 @@ def _out(profile: Profile) -> dict:
         "city": profile.city,
         "climate": profile.climate,
         "occasions": json.loads(profile.occasions_json or "[]"),
+        "budget_top_cents": profile.budget_top_cents,
+        "budget_bottom_cents": profile.budget_bottom_cents,
+        "budget_outerwear_cents": profile.budget_outerwear_cents,
+        "learned_from_feedback": json.loads(profile.learned_from_feedback_json or "[]"),
+        "formulas": json.loads(profile.formulas_json or "[]"),
         "taste_memo": profile.taste_memo,
         "taste_memo_updated_at": profile.taste_memo_updated_at,
         "feedback_since_refresh": profile.feedback_since_refresh,
@@ -46,6 +53,8 @@ def _save(db: Session, payload: ProfileIn) -> Profile:
         ("preferred_styles", "preferred_styles_json"),
         ("brand_sizes", "brand_sizes_json"),
         ("occasions", "occasions_json"),
+        ("learned_from_feedback", "learned_from_feedback_json"),
+        ("formulas", "formulas_json"),
     ):
         setattr(profile, target, json.dumps(data.pop(source), ensure_ascii=False))
     for field, value in data.items():
@@ -56,27 +65,39 @@ def _save(db: Session, payload: ProfileIn) -> Profile:
 
 
 @router.get("")
-def get_profile(db: Session = Depends(get_db)):
+def get_profile(db: DbSession):
     profile = db.get(Profile, settings.user_id)
-    return _out(profile) if profile else _out(_save(db, ProfileIn()))
+    if profile:
+        return _out(profile)
+    return ProfileOut(user_id=settings.user_id).model_dump()
 
 
 @router.put("")
-def put_profile(payload: ProfileIn, db: Session = Depends(get_db)):
+def put_profile(payload: ProfileIn, db: DbSession):
     return _out(_save(db, payload))
 
 
 @router.post("/style-dna/draft")
-def draft(payload: ProfileIn, db: Session = Depends(get_db)):
-    data = payload.model_dump()
-    data["taste_memo"] = seed(data)
-    profile = _save(db, ProfileIn.model_validate(data))
-    profile.taste_memo_updated_at = datetime.now()
-    db.commit()
-    return {"draft": _out(profile)}
+def draft(payload: StyleDnaDraftRequest):
+    try:
+        generated = seed(payload.samples, payload.text)
+    except LLMUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except LLMResponseError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {
+        "draft": ProfileOut(
+            user_id=settings.user_id,
+            **generated.model_dump(),
+        ).model_dump()
+    }
 
 
 @router.post("/taste-memo/refresh", status_code=202)
 def refresh_memo(background_tasks: BackgroundTasks):
-    background_tasks.add_task(refresh, settings.user_id)
+    try:
+        require_api_key()
+    except LLMUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    background_tasks.add_task(refresh, settings.user_id, True)
     return {"ok": True}
