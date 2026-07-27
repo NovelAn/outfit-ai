@@ -25,6 +25,13 @@ npm run dev:h5                                 # http://localhost:5173
 
 详见 [`docs/design.md`](docs/design.md) 与 [`CLAUDE.md`](CLAUDE.md)。
 
+## 部署前准备
+
+- 后端使用 HTTPS 域名；中国大陆部署提前完成 ICP 备案。
+- 在微信公众平台配置 `request`、`uploadFile`、`downloadFile` 合法域名。
+- 生产图片改存阿里云 OSS/CDN；不要把用户图片打进小程序主包。
+- 微信小程序主包保持在 2MB 以内。
+
 ## 借鉴与署名
 
 本项目站在三个开源项目肩膀上（源码级调研后选择性 port / 抽象）：
