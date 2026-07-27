@@ -3,11 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from outfit_ai.config import settings
-from outfit_ai.db import Base
+from outfit_ai.db import Base, get_db
+from outfit_ai.main import app
 from outfit_ai.models import OutfitHistory, WardrobeItem
 from outfit_ai.routers.recommend import recommendation
 from outfit_ai.schemas import ProposedLook, RecommendRequest
@@ -124,3 +126,72 @@ def test_recommend_api_reports_missing_minimax_key_before_network(monkeypatch) -
 
     assert error.value.status_code == 503
     assert error.value.detail == "未配置 MINIMAX_API_KEY"
+
+
+def test_recommend_feedback_history_http_loop(monkeypatch, tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'loop.db'}")
+    Base.metadata.create_all(engine)
+    items = [
+        _item("top-1", "top"),
+        _item("top-2", "top"),
+        _item("top-3", "top"),
+        _item("bottom-1", "bottom"),
+        _item("bottom-2", "bottom"),
+        _item("bottom-3", "bottom"),
+        _item("shoes-1", "shoes"),
+        _item("shoes-2", "shoes"),
+        _item("shoes-3", "shoes"),
+    ]
+    looks = [
+        ProposedLook(
+            tier=tier,
+            item_ids=[f"top-{index}", f"bottom-{index}", f"shoes-{index}"],
+            reason=f"{tier} reason",
+            weather_fit="适合",
+            occasion_fit="合适",
+        )
+        for index, tier in enumerate(("safe", "fresh", "stretch"), 1)
+    ]
+    with Session(engine) as db:
+        db.add_all(items)
+        db.commit()
+
+    def override_db():
+        with Session(engine) as db:
+            yield db
+
+    monkeypatch.setattr(settings, "minimax_api_key", "test-key")
+    monkeypatch.setattr(
+        recommend_service,
+        "get_weather",
+        lambda *args, **kwargs: SimpleNamespace(
+            temp=20,
+            condition="晴",
+            model_dump=lambda: {"temp": 20, "condition": "晴"},
+        ),
+    )
+    monkeypatch.setattr(recommend_service, "propose", lambda *args, **kwargs: looks)
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            recommended = client.post("/api/recommend", json={"city": "上海"})
+            safe = recommended.json()["safe"]
+            feedback = client.post(
+                "/api/feedback",
+                json={
+                    "history_id": safe["history_id"],
+                    "items_worn": [item["id"] for item in safe["items"]],
+                    "action": "worn",
+                },
+            )
+            history = client.get("/api/history")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert recommended.status_code == 200
+    assert feedback.json() == {"ok": True}
+    safe_history = next(
+        row for row in history.json() if row["id"] == safe["history_id"]
+    )
+    assert safe_history["action"] == "worn"
+    assert safe_history["wore_it"] is True

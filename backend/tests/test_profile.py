@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from outfit_ai.config import settings
-from outfit_ai.db import Base
+from outfit_ai.db import Base, get_db
 from outfit_ai.main import app
 from outfit_ai.models import Profile
 from outfit_ai.routers import profile as profile_router
@@ -105,4 +105,25 @@ def test_style_dna_draft_does_not_save_before_user_confirms(monkeypatch) -> None
         )
 
         assert result["draft"]["style_keywords"] == ["极简"]
+        assert db.get(Profile, "local") is None
+
+
+def test_get_profile_has_no_database_write_side_effect(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'profile.db'}")
+    Base.metadata.create_all(engine)
+
+    def override_db():
+        with Session(engine) as db:
+            yield db
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/profile")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == "local"
+    with Session(engine) as db:
         assert db.get(Profile, "local") is None

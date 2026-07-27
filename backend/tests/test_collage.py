@@ -1,7 +1,11 @@
 from io import BytesIO
 
+import pytest
+from fastapi import HTTPException
 from PIL import Image
 
+from outfit_ai.routers import wardrobe
+from outfit_ai.services import collage
 from outfit_ai.services.collage import render
 
 
@@ -18,3 +22,23 @@ def test_collage_renders_png(tmp_path) -> None:
     assert output.getvalue().startswith(b"\x89PNG\r\n\x1a\n")
     with Image.open(output) as collage:
         assert collage.size == (50, 205)
+
+
+def test_collage_rejects_oversized_canvas(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "tall.png"
+    Image.new("RGB", (10, 100), "black").save(path)
+    monkeypatch.setattr(collage, "MAX_CANVAS_PIXELS", 1_000)
+
+    with pytest.raises(ValueError, match="画布"):
+        render([path], BytesIO(), item_width=100)
+
+
+@pytest.mark.parametrize(
+    "item_ids",
+    ["", "a,a", ",".join(f"item-{index}" for index in range(16))],
+)
+def test_collage_endpoint_requires_one_to_fifteen_unique_ids(item_ids) -> None:
+    with pytest.raises(HTTPException) as error:
+        wardrobe.collage(item_ids, None)
+
+    assert error.value.status_code == 422

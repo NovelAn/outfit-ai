@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class ClothingAttributes(BaseModel):
@@ -43,20 +43,6 @@ class WardrobePatch(BaseModel):
     brand: str | None = None
     size: str | None = None
     confirmed_by_user: bool | None = None
-
-
-class WardrobeItemOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    name: str | None
-    category: str | None
-    primary_color: str | None
-    image_url: str
-    status: str
-    attempt_count: int
-    confirmed_by_user: bool
-    attributes: dict | None = None
 
 
 class ProfileIn(BaseModel):
@@ -116,17 +102,3 @@ class FeedbackIn(BaseModel):
     compliments: list[str] = Field(default_factory=list)
     didnt_work: str | None = None
     learnings: str | None = None
-
-
-class HistoryOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    date: date
-    item_ids: list[str]
-    pick_mode: str
-    occasion: str | None
-    mood: str | None
-    reason: str | None
-    action: str
-    wore_it: bool

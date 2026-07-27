@@ -1,9 +1,11 @@
-import json
 from typing import Any
 
 from openai import OpenAI, OpenAIError
+from pydantic import TypeAdapter, ValidationError
 
 from ..config import settings
+
+_JSON_OBJECT = TypeAdapter(dict[str, Any])
 
 
 class LLMUnavailableError(RuntimeError):
@@ -57,10 +59,13 @@ def generate_json(system: str, user: str, schema_hint: str, max_attempts: int = 
         response = _create_completion(
             model=settings.minimax_model, messages=messages
         )
-        content = response.choices[0].message.content or ""
+        content = ""
         try:
-            return json.loads(content.removeprefix("```json").removesuffix("```").strip())
-        except json.JSONDecodeError as exc:
+            content = response.choices[0].message.content or ""
+            return _JSON_OBJECT.validate_json(
+                content.removeprefix("```json").removesuffix("```").strip()
+            )
+        except (AttributeError, IndexError, ValidationError) as exc:
             last_error = str(exc)
             messages.append({"role": "assistant", "content": content})
             messages.append({"role": "user", "content": f"JSON 解析失败：{exc}。请修正。"})

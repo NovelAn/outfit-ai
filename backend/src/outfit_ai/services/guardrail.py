@@ -2,7 +2,7 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-from .validator import normalize_category
+from .categories import canonical_category
 
 
 def filter_candidates(
@@ -32,14 +32,14 @@ def filter_candidates(
     candidates.sort(key=lambda item: (item.id not in locked_ids, item.added_at is None))
     selected = [item for item in candidates if item.id in locked_ids]
     selected_ids = {item.id for item in selected}
-    selected_categories = {normalize_category(item.category or "") for item in selected}
+    selected_categories = {canonical_category(item.category) for item in selected}
     for category in {"top", "bottom", "shoes"} - selected_categories:
         item = next(
             (
                 item
                 for item in candidates
                 if item.id not in selected_ids
-                and normalize_category(item.category or "") == category
+                and canonical_category(item.category) == category
             ),
             None,
         )

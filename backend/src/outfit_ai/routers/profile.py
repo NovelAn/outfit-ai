@@ -67,7 +67,9 @@ def _save(db: Session, payload: ProfileIn) -> Profile:
 @router.get("")
 def get_profile(db: DbSession):
     profile = db.get(Profile, settings.user_id)
-    return _out(profile) if profile else _out(_save(db, ProfileIn()))
+    if profile:
+        return _out(profile)
+    return ProfileOut(user_id=settings.user_id).model_dump()
 
 
 @router.put("")

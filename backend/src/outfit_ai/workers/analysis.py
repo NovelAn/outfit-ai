@@ -2,6 +2,7 @@ import json
 
 from ..db import SessionLocal
 from ..models import WardrobeItem
+from ..services.categories import canonical_category
 from ..services.vision import extract
 
 
@@ -26,6 +27,7 @@ def analyze_item(item_id: str) -> None:
                 "versatility",
             ):
                 setattr(item, field, getattr(attributes, field))
+            item.category = canonical_category(attributes.category)
             for source, target in (
                 ("styles", "style_json"),
                 ("tags", "tags_json"),

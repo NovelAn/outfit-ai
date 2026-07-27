@@ -1,25 +1,7 @@
 from collections import Counter
 
 from ..schemas import ProposedLook
-
-_CATEGORY_GROUP = {
-    "shirt": "top",
-    "t-shirt": "top",
-    "sweater": "top",
-    "top": "top",
-    "pants": "bottom",
-    "jeans": "bottom",
-    "skirt": "bottom",
-    "bottom": "bottom",
-    "shoe": "shoes",
-    "shoes": "shoes",
-    "sneakers": "shoes",
-    "boots": "shoes",
-}
-
-
-def normalize_category(category: str) -> str:
-    return _CATEGORY_GROUP.get(category.lower(), category.lower())
+from .categories import canonical_category
 
 
 def validate_looks(
@@ -43,7 +25,7 @@ def validate_looks(
         if missing_locked:
             return False, f"{look.tier} 缺少锁定单品: {', '.join(sorted(missing_locked))}"
         categories = {
-            normalize_category(candidate_categories[item_id])
+            canonical_category(candidate_categories[item_id])
             for item_id in look.item_ids
         }
         missing = {"top", "bottom", "shoes"} - categories

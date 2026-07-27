@@ -32,3 +32,13 @@ def test_stylist_rejects_response_without_required_tool_call(monkeypatch) -> Non
 
     with pytest.raises(llm.LLMResponseError, match="造型师"):
         stylist.propose([], None, {}, "日常", None, [], set())
+
+
+def test_generate_json_rejects_non_object_json(monkeypatch) -> None:
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="[]"))]
+    )
+    monkeypatch.setattr(llm, "_create_completion", lambda **kwargs: response)
+
+    with pytest.raises(llm.LLMResponseError, match="有效 JSON"):
+        llm.generate_json("system", "user", "{}", max_attempts=1)
