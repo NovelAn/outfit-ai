@@ -27,14 +27,13 @@ npm run dev:h5                                 # http://localhost:5173
 
 ## 借鉴与署名
 
-本项目站在四个开源项目肩膀上（源码级调研后选择性 port / 抽象）：
+本项目站在三个开源项目肩膀上（源码级调研后选择性 port / 抽象）：
 
 | 来源 | 许可证 | 借鉴 |
 |---|---|---|
 | [`jonnykate/ai-closet`](https://github.com/jonnykate/ai-closet) | MIT | LLM 调用 / item_id 校验 / 失败重试 / 拼图 / 历史重复规避 |
 | [`Gurshaan-Deol/Hangar`](https://github.com/Gurshaan-Deol/Hangar) | MIT | 上传状态机 / Open-Meteo 天气 / AI 属性 schema |
 | [`googlarz/fashion-skill`](https://github.com/googlarz/fashion-skill) | CC BY 4.0 | Style DNA 与 4 实体数据模型（仅抽象字段，未复制 prompt） |
-| [`daveonthegit/OutfAI`](https://github.com/daveonthegit/OutfAI) | MIT | 规则评分 + epsilon-greedy 探荐算法 |
 
 ## License
 
