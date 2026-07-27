@@ -56,7 +56,7 @@ class LocalStorage:
                 image.save(output, image_format, optimize=True)
                 if output.tell() > settings.max_image_bytes:
                     raise ImageTooLargeError("重编码后的图片不能超过 10MB")
-        except (OSError, UnidentifiedImageError) as exc:
+        except (OSError, UnidentifiedImageError, Image.DecompressionBombError) as exc:
             raise ValueError("无效图片文件") from exc
         path = self.root / f"{uuid4().hex}{suffix}"
         path.write_bytes(output.getvalue())

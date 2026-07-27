@@ -82,6 +82,18 @@ def test_storage_rejects_invalid_image_and_removes_partial_file(tmp_path) -> Non
     assert list(tmp_path.iterdir()) == []
 
 
+def test_storage_maps_decompression_bomb_to_invalid_image(monkeypatch, tmp_path) -> None:
+    from outfit_ai.services import storage as storage_service
+
+    def reject(_):
+        raise Image.DecompressionBombError("too many pixels")
+
+    monkeypatch.setattr(storage_service.Image, "open", reject)
+
+    with pytest.raises(ValueError, match="无效图片"):
+        LocalStorage(tmp_path).save(UploadFile(BytesIO(b"image"), filename="large.jpg"))
+
+
 def test_storage_uses_detected_format_and_safe_extension(tmp_path) -> None:
     image = BytesIO()
     Image.new("RGBA", (10, 10), (0, 0, 0, 0)).save(image, "PNG")
