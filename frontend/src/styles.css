@@ -131,7 +131,7 @@ page {
 .chip {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 16px;
   color: #6e665c;
   background: #f1ece3;

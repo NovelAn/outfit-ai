@@ -24,9 +24,10 @@ async function waitForPage() {
 }
 
 try {
-  const [html, pagesSource] = await Promise.all([
+  const [html, pagesSource, clientSource] = await Promise.all([
     waitForPage(),
     readFile(new URL("../src/pages.json", import.meta.url), "utf8"),
+    readFile(new URL("../src/api/client.ts", import.meta.url), "utf8"),
   ]);
   const pages = JSON.parse(pagesSource);
   assert.match(html, /id="app"/);
@@ -35,7 +36,20 @@ try {
     pages.tabBar.list.map((item) => item.text),
     ["衣橱", "推荐", "风格", "历史"],
   );
-  console.log("H5 smoke passed: server ready and four-tab shell configured");
+  for (const path of [
+    "/api/wardrobe/upload",
+    "/api/profile/style-dna/draft",
+    "/api/recommend",
+    "/api/feedback",
+    "/api/history",
+  ]) {
+    assert.ok(clientSource.includes(path), `missing API call: ${path}`);
+  }
+  assert.ok(
+    clientSource.includes('`/api/wardrobe/${id}/confirm`, "POST"'),
+    "confirm route must exist and use POST",
+  );
+  console.log("H5 smoke passed: shell and critical API calls configured");
 } finally {
   if (server.pid) {
     if (process.platform === "win32") server.kill();

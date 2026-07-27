@@ -1,6 +1,9 @@
 {
   "name": "uni-preset-vue",
   "version": "0.0.0",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev:custom": "uni -p",
     "dev:h5": "uni",

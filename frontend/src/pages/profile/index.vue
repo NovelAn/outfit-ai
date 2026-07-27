@@ -147,9 +147,9 @@ onShow(loadProfile);
 
     <template v-else-if="profile">
       <view class="onboarding-card card">
-        <view class="onboarding-title">让造型师先认识你</view>
+        <view class="onboarding-title">先写一版文字品味草稿</view>
         <view class="onboarding-copy">
-          写下喜欢的穿法，生成一版可编辑 Style DNA。当前接口尚不接收样例图；图片只在本机预览，不会假装已参与生成。
+          当前只会把你的文字和已填写的结构化偏好交给 AI，生成品味备忘录草稿。样例图仅在本机预览，不会发送给 AI。
         </view>
         <view v-if="sampleImages.length" class="sample-grid">
           <image
@@ -173,13 +173,15 @@ onShow(loadProfile);
           />
         </label>
         <button class="button draft-button" :disabled="drafting" @tap="generateDraft">
-          {{ drafting ? "正在生成草稿…" : "生成 Style DNA 草稿" }}
+          {{ drafting ? "正在生成草稿…" : "生成文字品味草稿" }}
         </button>
-        <view class="draft-caveat">当前服务会先暂存生成结果；请继续编辑，并点击页面底部“保存风格档案”完成确认。</view>
+        <view class="draft-caveat">
+          当前服务会先暂存文字草稿；结构化偏好仍由你编辑，点击页面底部“保存风格档案”完成确认。
+        </view>
       </view>
 
       <view v-if="draftReady" class="draft-ready" role="status">
-        草稿已填入下面的档案。逐项检查后再保存确认。
+        文字品味草稿已写入“品味备忘录”。下面的结构化偏好不会由样例图自动生成，请逐项编辑后保存。
       </view>
 
       <view class="archive-heading">

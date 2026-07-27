@@ -109,10 +109,10 @@ async function resolveLocation() {
   }
 }
 
-async function generate(lockOverride?: string[]) {
+async function generate(lockOverride?: string[]): Promise<boolean> {
   if (latitude.value === undefined && !city.value.trim()) {
     error.value = "无法读取位置，请先填写城市";
-    return;
+    return false;
   }
   loading.value = true;
   error.value = "";
@@ -125,8 +125,10 @@ async function generate(lockOverride?: string[]) {
       longitude: longitude.value,
       locked_item_ids: lockOverride || lockedIds.value,
     });
+    return true;
   } catch (cause) {
     error.value = messageOf(cause);
+    return false;
   } finally {
     loading.value = false;
   }
@@ -141,8 +143,9 @@ async function replaceOne(look: Look) {
     if (!replaceId) return;
     const keepIds = look.items.filter((item) => item.id !== replaceId).map((item) => item.id);
     lockedIds.value = keepIds;
-    await generate(keepIds);
-    uni.showToast({ title: "已保留其余单品重新搭配", icon: "none" });
+    if (await generate(keepIds)) {
+      uni.showToast({ title: "已保留其余单品重新搭配", icon: "none" });
+    }
   } catch (cause) {
     const message = messageOf(cause);
     if (!message.includes("cancel")) uni.showToast({ title: message, icon: "none" });
