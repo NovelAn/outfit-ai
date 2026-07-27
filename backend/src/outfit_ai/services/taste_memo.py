@@ -6,16 +6,31 @@ from sqlalchemy import select
 from ..config import settings
 from ..db import SessionLocal
 from ..models import Feedback, Profile
-from .llm import generate_json
+from ..schemas import ProfileIn
+from .llm import LLMResponseError, chat_multimodal, generate_json
+from .prompt_builder import style_dna_messages
+
+_STYLE_DNA_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "save_style_dna",
+        "description": "保存可编辑 Style DNA 与初版品味备忘录",
+        "parameters": ProfileIn.model_json_schema(),
+    },
+}
 
 
-def seed(profile_data: dict) -> str:
-    result = generate_json(
-        "你是个人风格档案编辑，只总结用户明确表达的偏好，不自行杜撰。",
-        json.dumps(profile_data, ensure_ascii=False),
-        '{"taste_memo":"自然语言品味备忘录"}',
+def seed(samples: list[str], text: str) -> ProfileIn:
+    response = chat_multimodal(
+        style_dna_messages(samples, text),
+        tools=[_STYLE_DNA_TOOL],
+        tool_choice={"type": "function", "function": {"name": "save_style_dna"}},
     )
-    return str(result["taste_memo"])
+    try:
+        arguments = response.choices[0].message.tool_calls[0].function.arguments
+        return ProfileIn.model_validate_json(arguments)
+    except (AttributeError, IndexError, TypeError, ValueError) as exc:
+        raise LLMResponseError("MiniMax 未返回有效的 Style DNA 工具调用") from exc
 
 
 def refresh(user_id: str = settings.user_id) -> None:

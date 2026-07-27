@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
@@ -13,11 +14,13 @@ from ..db import get_db
 from ..models import WardrobeItem
 from ..schemas import WardrobePatch
 from ..services.collage import render
-from ..services.storage import LocalStorage
+from ..services.storage import ImageTooLargeError, LocalStorage
 from ..workers.analysis import analyze_item
 
 router = APIRouter(prefix="/wardrobe", tags=["wardrobe"])
 storage = LocalStorage()
+DbSession = Annotated[Session, Depends(get_db)]
+ImageUpload = Annotated[UploadFile, File()]
 
 
 def _item(item: WardrobeItem) -> dict:
@@ -54,15 +57,17 @@ def _get(db: Session, item_id: str) -> WardrobeItem:
 @router.post("/upload", status_code=201)
 def upload(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    file: ImageUpload,
+    db: DbSession,
 ):
     if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(415, "仅支持 JPEG、PNG、WebP")
     try:
         path = storage.save(file)
-    except ValueError as exc:
+    except ImageTooLargeError as exc:
         raise HTTPException(413, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     item = WardrobeItem(
         id=uuid4().hex,
         user_id=settings.user_id,
@@ -76,7 +81,7 @@ def upload(
 
 
 @router.get("/items")
-def items(category: str | None = None, db: Session = Depends(get_db)):
+def items(db: DbSession, category: str | None = None):
     query = select(WardrobeItem).where(
         WardrobeItem.user_id == settings.user_id,
         WardrobeItem.confirmed_by_user.is_(True),
@@ -87,7 +92,7 @@ def items(category: str | None = None, db: Session = Depends(get_db)):
 
 
 @router.get("/collage")
-def collage(item_ids: str, db: Session = Depends(get_db)):
+def collage(item_ids: str, db: DbSession):
     ids = [value for value in item_ids.split(",") if value]
     found = list(
         db.scalars(
@@ -105,17 +110,17 @@ def collage(item_ids: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{item_id}/status")
-def status(item_id: str, db: Session = Depends(get_db)):
+def status(item_id: str, db: DbSession):
     return _item(_get(db, item_id))
 
 
 @router.get("/{item_id}")
-def detail(item_id: str, db: Session = Depends(get_db)):
+def detail(item_id: str, db: DbSession):
     return _item(_get(db, item_id))
 
 
 @router.patch("/{item_id}")
-def patch(item_id: str, payload: WardrobePatch, db: Session = Depends(get_db)):
+def patch(item_id: str, payload: WardrobePatch, db: DbSession):
     item = _get(db, item_id)
     data = payload.model_dump(exclude_unset=True)
     for source, target in (
@@ -134,7 +139,7 @@ def patch(item_id: str, payload: WardrobePatch, db: Session = Depends(get_db)):
 
 @router.post("/{item_id}/retry", status_code=202)
 def retry(
-    item_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+    item_id: str, background_tasks: BackgroundTasks, db: DbSession
 ):
     item = _get(db, item_id)
     stuck = item.status == "analyzing" and item.added_at < datetime.now() - timedelta(minutes=10)
@@ -147,7 +152,7 @@ def retry(
 
 
 @router.delete("/{item_id}", status_code=204)
-def delete(item_id: str, db: Session = Depends(get_db)):
+def delete(item_id: str, db: DbSession):
     item = _get(db, item_id)
     storage.delete(item.image_path)
     db.delete(item)

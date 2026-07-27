@@ -1,4 +1,5 @@
 import json
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -12,13 +13,14 @@ from ..schemas import FeedbackIn
 from ..services.taste_memo import refresh
 
 router = APIRouter(tags=["feedback"])
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 @router.post("/feedback")
 def feedback(
     payload: FeedbackIn,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: DbSession,
 ):
     if payload.history_id:
         history = db.get(OutfitHistory, payload.history_id)
@@ -39,7 +41,7 @@ def feedback(
     )
     db.add(row)
     profile = db.get(Profile, settings.user_id) or Profile(user_id=settings.user_id)
-    profile.feedback_since_refresh += 1
+    profile.feedback_since_refresh = (profile.feedback_since_refresh or 0) + 1
     db.add(profile)
     should_refresh = profile.feedback_since_refresh >= 8
     db.commit()
@@ -49,7 +51,7 @@ def feedback(
 
 
 @router.get("/history")
-def history(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
+def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
     rows = db.scalars(
         select(OutfitHistory)
         .where(OutfitHistory.user_id == settings.user_id)

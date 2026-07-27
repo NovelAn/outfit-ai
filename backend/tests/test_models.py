@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, inspect
 
-from outfit_ai.db import Base
 from outfit_ai import models  # noqa: F401
+from outfit_ai.db import Base
 
 
 def test_schema_has_four_tables_and_no_weight_table() -> None:

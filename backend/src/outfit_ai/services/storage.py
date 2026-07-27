@@ -3,8 +3,13 @@ from typing import Protocol
 from uuid import uuid4
 
 from fastapi import UploadFile
+from PIL import Image, UnidentifiedImageError
 
 from ..config import settings
+
+
+class ImageTooLargeError(ValueError):
+    pass
 
 
 class Storage(Protocol):
@@ -28,8 +33,14 @@ class LocalStorage:
                 if size > settings.max_image_bytes:
                     target.close()
                     path.unlink(missing_ok=True)
-                    raise ValueError("图片不能超过 10MB")
+                    raise ImageTooLargeError("图片不能超过 10MB")
                 target.write(chunk)
+        try:
+            with Image.open(path) as image:
+                image.verify()
+        except (OSError, UnidentifiedImageError) as exc:
+            path.unlink(missing_ok=True)
+            raise ValueError("无效图片文件") from exc
         return path
 
     def delete(self, path: str) -> None:

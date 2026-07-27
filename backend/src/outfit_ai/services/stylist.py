@@ -1,7 +1,7 @@
 import json
 
 from ..schemas import ProposedLook
-from .llm import chat_multimodal
+from .llm import LLMResponseError, chat_multimodal
 from .prompt_builder import stylist_context, stylist_system
 from .vision import image_data_url
 
@@ -47,7 +47,10 @@ def propose(
         content.extend(
             [
                 {"type": "text", "text": f"item_id={item.id}"},
-                {"type": "image_url", "image_url": {"url": image_data_url(item.image_path)}},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_data_url(item.image_path, max_bytes=500_000)},
+                },
             ]
         )
     response = chat_multimodal(
@@ -58,5 +61,11 @@ def propose(
         tools=[_LOOKS_SCHEMA],
         tool_choice={"type": "function", "function": {"name": "propose_looks"}},
     )
-    arguments = response.choices[0].message.tool_calls[0].function.arguments
-    return [ProposedLook.model_validate(look) for look in json.loads(arguments)["looks"]]
+    try:
+        arguments = response.choices[0].message.tool_calls[0].function.arguments
+        return [
+            ProposedLook.model_validate(look)
+            for look in json.loads(arguments)["looks"]
+        ]
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError) as exc:
+        raise LLMResponseError("造型师未返回有效的 propose_looks 工具调用") from exc

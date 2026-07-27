@@ -45,3 +45,23 @@ def test_accepts_three_distinct_complete_tiers() -> None:
     ]
 
     assert validate_looks(looks, categories) == (True, "")
+
+
+def test_rejects_look_that_omits_locked_item() -> None:
+    categories = {
+        "top-1": "sweater",
+        "bottom-1": "skirt",
+        "shoes-1": "boots",
+        "locked-jacket": "outerwear",
+    }
+    looks = [
+        _look("safe", ["top-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["top-1", "bottom-1", "shoes-1", "locked-jacket"]),
+        _look("stretch", ["top-1", "bottom-1", "shoes-1", "locked-jacket"]),
+    ]
+
+    ok, error = validate_looks(looks, categories, locked_ids={"locked-jacket"})
+
+    assert not ok
+    assert "safe" in error
+    assert "locked-jacket" in error
