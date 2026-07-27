@@ -3,8 +3,9 @@ import threading
 import time
 from datetime import date, datetime
 
+import pytest
 from fastapi import BackgroundTasks
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from outfit_ai.db import Base
@@ -29,20 +30,20 @@ def test_first_feedback_initializes_profile_counter() -> None:
         assert db.get(Profile, "local").feedback_since_refresh == 1
 
 
-def test_feedback_batch_is_claimed_once_and_keeps_remainder() -> None:
+def test_feedback_is_not_deducted_before_background_task_starts() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     background_tasks = BackgroundTasks()
 
     with Session(engine) as db:
-        for _ in range(9):
+        for _ in range(8):
             feedback(FeedbackIn(action="shown"), background_tasks, db)
 
-        assert db.get(Profile, "local").feedback_since_refresh == 1
+        assert db.get(Profile, "local").feedback_since_refresh == 8
         assert len(background_tasks.tasks) == 1
 
 
-def test_successful_memo_refresh_preserves_feedback_after_claim(monkeypatch) -> None:
+def test_manual_memo_refresh_deducts_only_after_success(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
 
@@ -58,18 +59,22 @@ def test_successful_memo_refresh_preserves_feedback_after_claim(monkeypatch) -> 
 
     with session_factory() as db:
         db.add(Profile(user_id="local", taste_memo="旧 memo", feedback_since_refresh=3))
+        db.add_all(
+            Feedback(id=f"feedback-{index}", user_id="local")
+            for index in range(3)
+        )
         db.commit()
 
-    taste_memo.refresh("local")
+    taste_memo.refresh("local", force=True)
 
     with session_factory() as db:
         profile = db.get(Profile, "local")
         assert profile.taste_memo == "偏爱低饱和与利落剪裁。"
-        assert profile.feedback_since_refresh == 3
+        assert profile.feedback_since_refresh == 0
         assert profile.taste_memo_updated_at is not None
 
 
-def test_failed_memo_refresh_restores_claimed_batch(monkeypatch) -> None:
+def test_failed_memo_refresh_leaves_counter_unchanged(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
 
@@ -83,13 +88,15 @@ def test_failed_memo_refresh_restores_claimed_batch(monkeypatch) -> None:
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("provider failed")),
     )
     with session_factory() as db:
-        db.add(Profile(user_id="local", feedback_since_refresh=0))
+        db.add(Profile(user_id="local", feedback_since_refresh=8))
+        db.add_all(
+            Feedback(id=f"feedback-{index}", user_id="local")
+            for index in range(8)
+        )
         db.commit()
 
-    try:
-        taste_memo.refresh("local", claimed_batch=8)
-    except RuntimeError:
-        pass
+    with pytest.raises(RuntimeError, match="provider failed"):
+        taste_memo.refresh("local")
 
     with session_factory() as db:
         assert db.get(Profile, "local").feedback_since_refresh == 8
@@ -112,7 +119,7 @@ def test_memo_refresh_uses_complete_feedback_and_worn_item_attributes(
     monkeypatch.setattr(taste_memo, "SessionLocal", session_factory)
     monkeypatch.setattr(taste_memo, "generate_json", generate_json)
     with session_factory() as db:
-        db.add(Profile(user_id="local", taste_memo="旧 memo", feedback_since_refresh=0))
+        db.add(Profile(user_id="local", taste_memo="旧 memo", feedback_since_refresh=1))
         db.add(
             WardrobeItem(
                 id="boot-1",
@@ -149,7 +156,7 @@ def test_memo_refresh_uses_complete_feedback_and_worn_item_attributes(
         )
         db.commit()
 
-    taste_memo.refresh("local")
+    taste_memo.refresh("local", force=True)
 
     assert captured["feedback"][0]["items_worn"] == ["boot-1"]
     assert captured["feedback"][0]["compliments"] == ["配色好"]
@@ -180,7 +187,11 @@ def test_memo_refresh_calls_are_serialized_within_process(monkeypatch, tmp_path)
     monkeypatch.setattr(taste_memo, "SessionLocal", session_factory)
     monkeypatch.setattr(taste_memo, "generate_json", generate_json)
     with session_factory() as db:
-        db.add(Profile(user_id="local", taste_memo="旧 memo", feedback_since_refresh=0))
+        db.add(Profile(user_id="local", taste_memo="旧 memo", feedback_since_refresh=8))
+        db.add_all(
+            Feedback(id=f"feedback-{index}", user_id="local")
+            for index in range(8)
+        )
         db.commit()
 
     threads = [threading.Thread(target=taste_memo.refresh, args=("local",)) for _ in range(2)]
@@ -190,3 +201,57 @@ def test_memo_refresh_calls_are_serialized_within_process(monkeypatch, tmp_path)
         thread.join()
 
     assert max_active == 1
+
+
+def test_new_feedback_during_refresh_is_learned_in_second_distinct_batch(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'batches.db'}")
+    Base.metadata.create_all(engine)
+    batches = []
+
+    def session_factory():
+        return Session(engine)
+
+    def add_feedback(start: int, stop: int) -> None:
+        with session_factory() as db:
+            db.add_all(
+                Feedback(id=f"feedback-{index}", user_id="local")
+                for index in range(start, stop)
+            )
+            db.execute(
+                update(Profile)
+                .where(Profile.user_id == "local")
+                .values(
+                    feedback_since_refresh=(
+                        Profile.feedback_since_refresh + stop - start
+                    )
+                )
+            )
+            db.commit()
+
+    def generate_json(system, user, schema_hint):
+        batches.append([row["id"] for row in json.loads(user)["feedback"]])
+        if len(batches) == 1:
+            add_feedback(8, 16)
+        return {"taste_memo": f"memo-{len(batches)}"}
+
+    monkeypatch.setattr(taste_memo, "SessionLocal", session_factory)
+    monkeypatch.setattr(taste_memo, "generate_json", generate_json)
+    with session_factory() as db:
+        db.add(Profile(user_id="local", taste_memo="旧 memo", feedback_since_refresh=0))
+        db.commit()
+    add_feedback(0, 8)
+
+    taste_memo.refresh("local")
+
+    assert len(batches) == 2
+    assert set(batches[0]).isdisjoint(batches[1])
+    assert set(batches[0] + batches[1]) == {
+        f"feedback-{index}" for index in range(16)
+    }
+    with session_factory() as db:
+        profile = db.get(Profile, "local")
+        assert profile.feedback_since_refresh == 0
+        assert profile.taste_memo == "memo-2"

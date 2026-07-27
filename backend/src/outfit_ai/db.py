@@ -3,7 +3,7 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -48,3 +48,20 @@ def init_db() -> None:
     from . import models  # noqa: F401  确保模型已注册
 
     Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        recover_interrupted_analyses(db)
+        db.commit()
+
+
+def recover_interrupted_analyses(db: Session) -> int:
+    from .models import WardrobeItem
+
+    # ponytail: single-process restart recovery; multiple workers need a DB lease/fence.
+    return db.execute(
+        update(WardrobeItem)
+        .where(WardrobeItem.status == "analyzing")
+        .values(
+            status="failed",
+            ai_raw_response="任务因服务重启中断，请重试",
+        )
+    ).rowcount

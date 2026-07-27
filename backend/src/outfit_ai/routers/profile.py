@@ -78,7 +78,7 @@ def put_profile(payload: ProfileIn, db: DbSession):
 
 
 @router.post("/style-dna/draft")
-def draft(payload: StyleDnaDraftRequest, db: DbSession):
+def draft(payload: StyleDnaDraftRequest):
     try:
         generated = seed(payload.samples, payload.text)
     except LLMUnavailableError as exc:
@@ -99,5 +99,5 @@ def refresh_memo(background_tasks: BackgroundTasks):
         require_api_key()
     except LLMUnavailableError as exc:
         raise HTTPException(503, str(exc)) from exc
-    background_tasks.add_task(refresh, settings.user_id)
+    background_tasks.add_task(refresh, settings.user_id, True)
     return {"ok": True}

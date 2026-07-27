@@ -1,7 +1,7 @@
 import json
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import literal_column, select
 from sqlalchemy.orm import Session
 
 from ..models import OutfitHistory, WardrobeItem
@@ -10,11 +10,15 @@ from .categories import canonical_category
 
 
 def get_recent_outfits(db: Session, user_id: str, limit: int = 7) -> list[OutfitHistory]:
+    # ponytail: SQLite rowid orders same-day rows; replace with created_at when approved.
     return list(
         db.scalars(
             select(OutfitHistory)
             .where(OutfitHistory.user_id == user_id)
-            .order_by(OutfitHistory.date.desc())
+            .order_by(
+                OutfitHistory.date.desc(),
+                literal_column("outfit_history.rowid").desc(),
+            )
             .limit(limit)
         )
     )

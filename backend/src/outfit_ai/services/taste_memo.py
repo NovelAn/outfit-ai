@@ -3,7 +3,7 @@ import threading
 from datetime import datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
+from sqlalchemy import literal_column, select, update
 
 from ..config import settings
 from ..db import SessionLocal
@@ -13,7 +13,8 @@ from .llm import LLMResponseError, chat_multimodal, generate_json
 from .prompt_builder import style_dna_messages
 
 FEEDBACK_BATCH_SIZE = 8
-# ponytail: process-local lock; use a durable queue/DB lease when multiple workers are needed.
+# ponytail: process-local lock + SQLite rowid watermark fallback; multiple workers need
+# a durable claim/watermark and feedback.created_at.
 _REFRESH_LOCK = threading.Lock()
 
 _STYLE_DNA_TOOL = {
@@ -47,40 +48,32 @@ def seed(samples: list[str], text: str) -> ProfileIn:
         raise LLMResponseError("MiniMax 未返回有效的 Style DNA 工具调用") from exc
 
 
-def _restore_claim(user_id: str, claimed_batch: int) -> None:
-    if not claimed_batch:
-        return
-    with SessionLocal() as db:
-        db.execute(
-            update(Profile)
-            .where(Profile.user_id == user_id)
-            .values(
-                feedback_since_refresh=(
-                    Profile.feedback_since_refresh + claimed_batch
-                )
-            )
-        )
-        db.commit()
-
-
 def refresh(
     user_id: str = settings.user_id,
-    claimed_batch: int = 0,
+    force: bool = False,
 ) -> None:
     with _REFRESH_LOCK:
-        try:
+        while True:
             with SessionLocal() as db:
                 profile = db.get(Profile, user_id)
                 if not profile:
+                    return
+                batch_size = profile.feedback_since_refresh
+                if batch_size == 0 or (batch_size < FEEDBACK_BATCH_SIZE and not force):
                     return
                 feedback = list(
                     db.scalars(
                         select(Feedback)
                         .where(Feedback.user_id == user_id)
-                        .order_by(Feedback.date.desc(), Feedback.id.desc())
-                        .limit(FEEDBACK_BATCH_SIZE)
+                        .order_by(
+                            Feedback.date.desc(),
+                            literal_column("feedback.rowid").desc(),
+                        )
+                        .limit(batch_size)
                     )
                 )
+                if len(feedback) != batch_size:
+                    raise RuntimeError("反馈计数与记录不一致")
                 item_ids = {
                     item_id
                     for row in feedback
@@ -94,55 +87,67 @@ def refresh(
                         )
                     )
                 )
-                result = TasteMemoResult.model_validate(
-                    generate_json(
-                        "根据真实反馈更新品味备忘录。保留仍有效信息，不因单次反馈过度推断。",
-                        json.dumps(
-                            {
-                                "old_memo": profile.taste_memo,
-                                "feedback": [
-                                    {
-                                        "id": row.id,
-                                        "date": row.date.isoformat(),
-                                        "items_worn": _json_list(row.items_worn_json),
-                                        "occasion": row.occasion,
-                                        "occasion_type": row.occasion_type,
-                                        "sentiment": row.sentiment,
-                                        "compliments": _json_list(row.compliments_json),
-                                        "didnt_work": row.didnt_work,
-                                        "learnings": row.learnings,
-                                    }
-                                    for row in feedback
-                                ],
-                                "wardrobe_items": [
-                                    {
-                                        "id": item.id,
-                                        "name": item.name,
-                                        "category": item.category,
-                                        "primary_color": item.primary_color,
-                                        "secondary_color": item.secondary_color,
-                                        "material": item.material,
-                                        "fit": item.fit,
-                                        "formality": item.formality,
-                                        "styles": _json_list(item.style_json),
-                                        "tags": _json_list(item.tags_json),
-                                        "seasons": _json_list(item.seasons_json),
-                                        "occasions": _json_list(item.occasions_json),
-                                        "versatility": item.versatility,
-                                        "brand": item.brand,
-                                        "size": item.size,
-                                    }
-                                    for item in wardrobe_items
-                                ],
-                            },
-                            ensure_ascii=False,
-                        ),
-                        '{"taste_memo":"更新后的自然语言档案"}',
-                    )
+                context = {
+                    "old_memo": profile.taste_memo,
+                    "feedback": [
+                        {
+                            "id": row.id,
+                            "date": row.date.isoformat(),
+                            "items_worn": _json_list(row.items_worn_json),
+                            "occasion": row.occasion,
+                            "occasion_type": row.occasion_type,
+                            "sentiment": row.sentiment,
+                            "compliments": _json_list(row.compliments_json),
+                            "didnt_work": row.didnt_work,
+                            "learnings": row.learnings,
+                        }
+                        for row in feedback
+                    ],
+                    "wardrobe_items": [
+                        {
+                            "id": item.id,
+                            "name": item.name,
+                            "category": item.category,
+                            "primary_color": item.primary_color,
+                            "secondary_color": item.secondary_color,
+                            "material": item.material,
+                            "fit": item.fit,
+                            "formality": item.formality,
+                            "styles": _json_list(item.style_json),
+                            "tags": _json_list(item.tags_json),
+                            "seasons": _json_list(item.seasons_json),
+                            "occasions": _json_list(item.occasions_json),
+                            "versatility": item.versatility,
+                            "brand": item.brand,
+                            "size": item.size,
+                        }
+                        for item in wardrobe_items
+                    ],
+                }
+            result = TasteMemoResult.model_validate(
+                generate_json(
+                    "根据真实反馈更新品味备忘录。保留仍有效信息，不因单次反馈过度推断。",
+                    json.dumps(context, ensure_ascii=False),
+                    '{"taste_memo":"更新后的自然语言档案"}',
                 )
-                profile.taste_memo = result.taste_memo
-                profile.taste_memo_updated_at = datetime.now()
+            )
+            with SessionLocal() as db:
+                updated = db.execute(
+                    update(Profile)
+                    .where(
+                        Profile.user_id == user_id,
+                        Profile.feedback_since_refresh >= batch_size,
+                    )
+                    .values(
+                        taste_memo=result.taste_memo,
+                        taste_memo_updated_at=datetime.now(),
+                        feedback_since_refresh=(
+                            Profile.feedback_since_refresh - batch_size
+                        ),
+                    )
+                ).rowcount
+                if updated != 1:
+                    db.rollback()
+                    return
                 db.commit()
-        except Exception:
-            _restore_claim(user_id, claimed_batch)
-            raise
+            force = False

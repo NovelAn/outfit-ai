@@ -101,7 +101,6 @@ def test_style_dna_draft_does_not_save_before_user_confirms(monkeypatch) -> None
     with Session(engine) as db:
         result = profile_router.draft(
             StyleDnaDraftRequest(samples=[], text="极简"),
-            db,
         )
 
         assert result["draft"]["style_keywords"] == ["极简"]

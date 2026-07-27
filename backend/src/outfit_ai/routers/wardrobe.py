@@ -1,5 +1,4 @@
 import json
-from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated
@@ -14,7 +13,7 @@ from ..db import get_db
 from ..models import WardrobeItem
 from ..schemas import WardrobePatch
 from ..services.categories import canonical_category, confirmed_category
-from ..services.collage import render
+from ..services.collage import UnsafeImageError, render
 from ..services.storage import ImageTooLargeError, LocalStorage
 from ..workers.analysis import analyze_item
 
@@ -121,6 +120,8 @@ def collage(item_ids: str, db: DbSession):
     output = BytesIO()
     try:
         render([by_id[item_id].image_path for item_id in ids], output)
+    except UnsafeImageError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     return Response(output.getvalue(), media_type="image/png")
@@ -182,9 +183,8 @@ def retry(
     item_id: str, background_tasks: BackgroundTasks, db: DbSession
 ):
     item = _get(db, item_id)
-    stuck = item.status == "analyzing" and item.added_at < datetime.now() - timedelta(minutes=10)
-    if item.status != "failed" and not stuck:
-        raise HTTPException(409, "仅失败或卡住的任务可重试")
+    if item.status != "failed":
+        raise HTTPException(409, "仅失败任务可重试")
     item.status = "pending"
     db.commit()
     background_tasks.add_task(analyze_item, item.id)

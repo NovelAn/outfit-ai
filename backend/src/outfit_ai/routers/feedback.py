@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..models import Feedback, OutfitHistory, Profile
 from ..schemas import FeedbackIn
+from ..services.history import get_recent_outfits
 from ..services.taste_memo import FEEDBACK_BATCH_SIZE, refresh
 
 router = APIRouter(tags=["feedback"])
@@ -46,44 +47,21 @@ def feedback(
         .values(user_id=settings.user_id)
         .on_conflict_do_nothing(index_elements=[Profile.user_id])
     )
-    db.execute(
+    count = db.scalar(
         update(Profile)
         .where(Profile.user_id == settings.user_id)
         .values(feedback_since_refresh=Profile.feedback_since_refresh + 1)
-    )
-    claimed = (
-        db.execute(
-            update(Profile)
-            .where(
-                Profile.user_id == settings.user_id,
-                Profile.feedback_since_refresh >= FEEDBACK_BATCH_SIZE,
-            )
-            .values(
-                feedback_since_refresh=(
-                    Profile.feedback_since_refresh - FEEDBACK_BATCH_SIZE
-                )
-            )
-        ).rowcount
-        == 1
+        .returning(Profile.feedback_since_refresh)
     )
     db.commit()
-    if claimed:
-        background_tasks.add_task(
-            refresh,
-            settings.user_id,
-            FEEDBACK_BATCH_SIZE,
-        )
+    if count is not None and count >= FEEDBACK_BATCH_SIZE:
+        background_tasks.add_task(refresh, settings.user_id)
     return {"ok": True}
 
 
 @router.get("/history")
 def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
-    rows = db.scalars(
-        select(OutfitHistory)
-        .where(OutfitHistory.user_id == settings.user_id)
-        .order_by(OutfitHistory.date.desc())
-        .limit(limit)
-    )
+    rows = get_recent_outfits(db, settings.user_id, limit)
     return [
         {
             "id": row.id,

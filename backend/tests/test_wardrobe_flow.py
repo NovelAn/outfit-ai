@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from starlette.datastructures import Headers
 
-from outfit_ai.db import Base, get_db
+from outfit_ai.db import Base, get_db, recover_interrupted_analyses
 from outfit_ai.main import app
 from outfit_ai.models import WardrobeItem
 from outfit_ai.routers import wardrobe
@@ -238,3 +238,77 @@ def test_confirm_rejects_unknown_category() -> None:
             wardrobe.confirm("item-1", WardrobePatch(), db)
 
     assert error.value.status_code == 422
+
+
+def test_retry_rejects_analyzing_item_even_when_old() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(
+            WardrobeItem(
+                id="item-1",
+                user_id="local",
+                image_path="/tmp/item.jpg",
+                status="analyzing",
+            )
+        )
+        db.commit()
+
+        with pytest.raises(HTTPException) as error:
+            wardrobe.retry("item-1", BackgroundTasks(), db)
+
+    assert error.value.status_code == 409
+
+
+def test_worker_claims_only_pending_item(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    def session_factory():
+        return Session(engine)
+
+    monkeypatch.setattr(analysis, "SessionLocal", session_factory)
+    monkeypatch.setattr(
+        analysis,
+        "extract",
+        lambda path: pytest.fail("already claimed item must not be analyzed"),
+    )
+    with session_factory() as db:
+        db.add(
+            WardrobeItem(
+                id="item-1",
+                user_id="local",
+                image_path="/tmp/item.jpg",
+                status="analyzing",
+                attempt_count=1,
+            )
+        )
+        db.commit()
+
+    analysis.analyze_item("item-1")
+
+    with session_factory() as db:
+        item = db.get(WardrobeItem, "item-1")
+        assert item.status == "analyzing"
+        assert item.attempt_count == 1
+
+
+def test_startup_recovery_marks_interrupted_analysis_failed() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(
+            WardrobeItem(
+                id="item-1",
+                user_id="local",
+                image_path="/tmp/item.jpg",
+                status="analyzing",
+            )
+        )
+        db.commit()
+
+        assert recover_interrupted_analyses(db) == 1
+        db.commit()
+        item = db.get(WardrobeItem, "item-1")
+        assert item.status == "failed"
+        assert "服务重启" in item.ai_raw_response
