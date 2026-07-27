@@ -3,6 +3,7 @@ import { onShow } from "@dcloudio/uni-app";
 import { ref } from "vue";
 import { api, mediaUrl, messageOf, uploadItem } from "@/api/client";
 import type { AnalysisStatus, WardrobeItem } from "@/api/types";
+import { chooseImages } from "@/utils/media";
 
 interface PendingItem {
   id: string;
@@ -24,14 +25,18 @@ const editColor = ref("");
 const editMaterial = ref("");
 const editFit = ref("");
 const editStyles = ref("");
+const categoryIndex = ref(0);
+const pollingIds = new Set<string>();
+const PENDING_KEY = "outfit-ai.pending-uploads";
 
-const categoryName: Record<string, string> = {
-  top: "上装",
-  bottom: "下装",
-  shoes: "鞋履",
-  outerwear: "外套",
-  accessory: "配饰",
-};
+const categories = [
+  { value: "top", label: "上装" },
+  { value: "bottom", label: "下装" },
+  { value: "shoes", label: "鞋履" },
+  { value: "outerwear", label: "外套" },
+  { value: "accessory", label: "配饰" },
+];
+const categoryName = Object.fromEntries(categories.map((entry) => [entry.value, entry.label]));
 
 const statusName: Record<AnalysisStatus, string> = {
   pending: "等待识别",
@@ -55,11 +60,28 @@ async function loadItems() {
 function openEditor(item: WardrobeItem) {
   editorId.value = item.id;
   editName.value = item.name || "";
-  editCategory.value = item.category || "";
+  const index = categories.findIndex((entry) => entry.value === item.category);
+  categoryIndex.value = index < 0 ? 0 : index;
+  editCategory.value = index < 0 ? "" : categories[index].value;
   editColor.value = item.primary_color || "";
   editMaterial.value = item.material || "";
   editFit.value = item.fit || "";
   editStyles.value = (item.styles || []).join("、");
+}
+
+function selectCategory(event: { detail: { value: string | number } }) {
+  categoryIndex.value = Number(event.detail.value);
+  editCategory.value = categories[categoryIndex.value].value;
+}
+
+function savePending() {
+  uni.setStorageSync(PENDING_KEY, pending.value);
+}
+
+function restorePending() {
+  if (pending.value.length) return;
+  const stored = uni.getStorageSync(PENDING_KEY);
+  if (Array.isArray(stored)) pending.value = stored as PendingItem[];
 }
 
 function closeEditor() {
@@ -76,46 +98,54 @@ async function openPending(item: PendingItem) {
 }
 
 async function pollItem(id: string) {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    try {
-      const item = await api.itemStatus(id);
-      const local = pending.value.find((entry) => entry.id === id);
-      if (local) {
-        local.status = item.status;
-        local.attempt_count = item.attempt_count;
+  if (pollingIds.has(id)) return;
+  pollingIds.add(id);
+  let networkFailures = 0;
+  try {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      try {
+        const item = await api.itemStatus(id);
+        networkFailures = 0;
+        const local = pending.value.find((entry) => entry.id === id);
+        if (local) {
+          local.status = item.status;
+          local.attempt_count = item.attempt_count;
+          local.message = item.status === "ready" ? "轻触确认识别结果" : "";
+          savePending();
+        }
+        if (item.status === "ready") return;
+        if (item.status === "failed") {
+          if (local) {
+            local.message = "识别没有完成，可重新尝试";
+            savePending();
+          }
+          return;
+        }
+      } catch (cause) {
+        networkFailures += 1;
+        const local = pending.value.find((entry) => entry.id === id);
+        if (networkFailures >= 3) {
+          if (local) {
+            local.message = `${messageOf(cause)}；稍后进入衣橱会继续`;
+            savePending();
+          }
+          return;
+        }
+        if (local) local.message = `连接波动，正在重试（${networkFailures}/3）`;
       }
-      if (item.status === "ready") {
-        openEditor(item);
-        return;
-      }
-      if (item.status === "failed") {
-        if (local) local.message = "识别没有完成，可重新尝试";
-        return;
-      }
-    } catch (cause) {
-      const local = pending.value.find((entry) => entry.id === id);
-      if (local) local.message = messageOf(cause);
-      return;
     }
+    const local = pending.value.find((entry) => entry.id === id);
+    if (local) local.message = "识别仍在进行，稍后再回来看看";
+  } finally {
+    pollingIds.delete(id);
   }
-  const local = pending.value.find((entry) => entry.id === id);
-  if (local) local.message = "识别仍在进行，稍后再回来看看";
 }
 
 async function chooseAndUpload() {
   error.value = "";
   try {
-    const paths = await new Promise<string[]>((resolve, reject) => {
-      uni.chooseMedia({
-        count: 6,
-        mediaType: ["image"],
-        sourceType: ["album", "camera"],
-        sizeType: ["compressed"],
-        success: (result) => resolve(result.tempFiles.map((file) => file.tempFilePath)),
-        fail: reject,
-      });
-    });
+    const paths = await chooseImages(6);
     uploading.value = true;
     for (const filePath of paths) {
       try {
@@ -126,6 +156,7 @@ async function chooseAndUpload() {
           status: uploaded.status as AnalysisStatus,
           attempt_count: 0,
         });
+        savePending();
         void pollItem(uploaded.id);
       } catch (cause) {
         error.value = messageOf(cause);
@@ -144,6 +175,7 @@ async function retry(item: PendingItem) {
   try {
     const result = await api.retryItem(item.id);
     item.status = result.status as AnalysisStatus;
+    savePending();
     void pollItem(item.id);
   } catch (cause) {
     item.message = messageOf(cause);
@@ -156,7 +188,7 @@ async function confirmItem() {
     return;
   }
   try {
-    await api.updateItem(editorId.value, {
+    await api.confirmItem(editorId.value, {
       name: editName.value.trim(),
       category: editCategory.value.trim(),
       primary_color: editColor.value.trim(),
@@ -169,6 +201,7 @@ async function confirmItem() {
       confirmed_by_user: true,
     });
     pending.value = pending.value.filter((entry) => entry.id !== editorId.value);
+    savePending();
     closeEditor();
     await loadItems();
     uni.showToast({ title: "已加入衣橱", icon: "success" });
@@ -177,7 +210,13 @@ async function confirmItem() {
   }
 }
 
-onShow(loadItems);
+onShow(async () => {
+  restorePending();
+  await loadItems();
+  for (const item of pending.value) {
+    if (item.status === "pending" || item.status === "analyzing") void pollItem(item.id);
+  }
+});
 </script>
 
 <template>
@@ -195,7 +234,11 @@ onShow(loadItems);
           v-for="item in pending"
           :key="item.id"
           class="pending-card card"
+          :role="item.status === 'ready' ? 'button' : undefined"
+          :tabindex="item.status === 'ready' ? 0 : -1"
           @tap="openPending(item)"
+          @keyup.enter="openPending(item)"
+          @keyup.space="openPending(item)"
         >
           <image class="pending-image" :src="item.localPath" mode="aspectFill" />
           <view class="pending-copy">
@@ -224,8 +267,12 @@ onShow(loadItems);
         v-for="item in items"
         :key="item.id"
         class="item-card card"
+        role="button"
+        tabindex="0"
         hover-class="card-pressed"
         @tap="openEditor(item)"
+        @keyup.enter="openEditor(item)"
+        @keyup.space="openEditor(item)"
       >
         <image class="item-image" :src="mediaUrl(item.image_url)" mode="aspectFill" />
         <view class="item-meta">
@@ -255,10 +302,19 @@ onShow(loadItems);
             <text class="field-label">名称 *</text>
             <input v-model="editName" class="input" placeholder="例如：米白牛津纺衬衫" />
           </label>
-          <label class="field">
+          <view class="field">
             <text class="field-label">类别 *（top / bottom / shoes）</text>
-            <input v-model="editCategory" class="input" placeholder="top" />
-          </label>
+            <picker
+              :range="categories"
+              range-key="label"
+              :value="categoryIndex"
+              @change="selectCategory"
+            >
+              <view class="input picker-input">
+                {{ editCategory ? categoryName[editCategory] : "请选择类别" }}
+              </view>
+            </picker>
+          </view>
           <label class="field">
             <text class="field-label">主色 *</text>
             <input v-model="editColor" class="input" placeholder="米白" />
@@ -397,7 +453,7 @@ onShow(loadItems);
   margin: 0;
   padding: 0 20px;
   color: #fff;
-  background: #c76a43;
+  background: #a64b2a;
   border-radius: 999px;
   box-shadow: 0 8px 24px rgba(116, 61, 39, 0.22);
   font-size: 15px;

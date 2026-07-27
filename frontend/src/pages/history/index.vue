@@ -47,7 +47,7 @@ onShow(loadHistory);
   <view class="page history-page">
     <view class="eyebrow">The look archive</view>
     <text class="display-title">穿过的日子，<br />会慢慢变成品味。</text>
-    <view class="lede">每次选择都留下一点线索。喜欢、不适合和真正穿出门的，权重都不一样。</view>
+    <view class="lede">每次选择都留下一点线索。喜欢、不适合和真正穿出门的，都会帮造型师更懂你。</view>
 
     <view v-if="error" class="error-banner">{{ error }}</view>
 
@@ -130,7 +130,7 @@ onShow(loadHistory);
   width: 11px;
   height: 11px;
   background: #faf8f4;
-  border: 3px solid #c76a43;
+  border: 3px solid #a64b2a;
   border-radius: 50%;
 }
 

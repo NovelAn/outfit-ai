@@ -27,13 +27,13 @@ export function messageOf(cause: unknown, fallback = "操作失败，请稍后�
 
 function request<T>(
   path: string,
-  method: NonNullable<UniApp.RequestOptions["method"]> | "PATCH" = "GET",
+  method: UniApp.RequestOptions["method"] = "GET",
   data?: UniApp.RequestOptions["data"],
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     uni.request({
       url: `${API_BASE}${path}`,
-      method: method as UniApp.RequestOptions["method"],
+      method,
       data,
       success: (response) => {
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -56,16 +56,18 @@ export function mediaUrl(path: string | null | undefined): string {
 export const api = {
   items: () => request<WardrobeItem[]>("/api/wardrobe/items"),
   itemStatus: (id: string) => request<WardrobeItem>(`/api/wardrobe/${id}/status`),
-  updateItem: (id: string, data: Partial<WardrobeItem>) =>
-    request<WardrobeItem>(`/api/wardrobe/${id}`, "PATCH", data),
+  confirmItem: (id: string, data: Partial<WardrobeItem>) =>
+    request<WardrobeItem>(`/api/wardrobe/${id}/confirm`, "POST", data),
   retryItem: (id: string) =>
     request<{ id: string; status: string }>(`/api/wardrobe/${id}/retry`, "POST"),
   profile: () => request<Profile>("/api/profile"),
   saveProfile: (profile: Profile) => request<Profile>("/api/profile", "PUT", profile),
+  draftStyleDna: (profile: Profile) =>
+    request<{ draft: Profile }>("/api/profile/style-dna/draft", "POST", profile),
   refreshTasteMemo: () => request<{ ok: boolean }>("/api/profile/taste-memo/refresh", "POST"),
   recommend: (data: {
     occasion: string;
-    mood: string;
+    mood?: string;
     city?: string;
     latitude?: number;
     longitude?: number;

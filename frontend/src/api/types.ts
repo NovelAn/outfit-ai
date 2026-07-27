@@ -54,9 +54,17 @@ export interface Weather {
   temp_min: number;
 }
 
+export interface RecommendationItem {
+  id: string;
+  name: string | null;
+  category: string | null;
+  image_url: string;
+  primary_color: string | null;
+}
+
 export interface Look {
   history_id: string;
-  items: WardrobeItem[];
+  items: RecommendationItem[];
   reason: string;
   weather_fit: string;
   occasion_fit: string;

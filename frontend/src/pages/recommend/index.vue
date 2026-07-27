@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { onLoad } from "@dcloudio/uni-app";
+import { onShow } from "@dcloudio/uni-app";
 import { computed, ref } from "vue";
 import { api, mediaUrl, messageOf } from "@/api/client";
 import type { Look, PickMode, Recommendation } from "@/api/types";
 
 const occasions = ["日常", "通勤", "约会", "聚会", "旅行"];
 const moods = ["利落", "松弛", "低调", "想尝试一点新意"];
+const OCCASION_KEY = "outfit-ai.last-occasion";
 const modeCopy: Record<PickMode, { name: string; english: string; note: string }> = {
   safe: { name: "稳妥", english: "Safe", note: "熟悉、舒服，今天不用多想" },
   fresh: { name: "新鲜", english: "Fresh", note: "仍然像你，但组合有一点变化" },
   stretch: { name: "突破", english: "Stretch", note: "向边界多走半步" },
 };
 
-const occasion = ref("日常");
-const mood = ref("利落");
+const weekday = new Date().getDay();
+const occasion = ref(uni.getStorageSync(OCCASION_KEY) || (weekday > 0 && weekday < 6 ? "通勤" : "日常"));
+const mood = ref("");
 const city = ref("");
 const latitude = ref<number>();
 const longitude = ref<number>();
@@ -50,6 +52,15 @@ function toggleItem(id: string) {
   lockedIds.value = isLocked(id)
     ? lockedIds.value.filter((itemId) => itemId !== id)
     : [...lockedIds.value, id];
+}
+
+function setOccasion(value: string) {
+  occasion.value = value;
+  uni.setStorageSync(OCCASION_KEY, value);
+}
+
+function setMood(value: string) {
+  mood.value = mood.value === value ? "" : value;
 }
 
 function toggleLook(look: Look) {
@@ -98,7 +109,7 @@ async function resolveLocation() {
   }
 }
 
-async function generate() {
+async function generate(lockOverride?: string[]) {
   if (latitude.value === undefined && !city.value.trim()) {
     error.value = "无法读取位置，请先填写城市";
     return;
@@ -108,16 +119,33 @@ async function generate() {
   try {
     recommendation.value = await api.recommend({
       occasion: occasion.value,
-      mood: mood.value,
+      mood: mood.value || undefined,
       city: city.value.trim() || undefined,
       latitude: latitude.value,
       longitude: longitude.value,
-      locked_item_ids: lockedIds.value,
+      locked_item_ids: lockOverride || lockedIds.value,
     });
   } catch (cause) {
     error.value = messageOf(cause);
   } finally {
     loading.value = false;
+  }
+}
+
+async function replaceOne(look: Look) {
+  try {
+    const selection = await uni.showActionSheet({
+      itemList: look.items.map((item) => item.name || "未命名单品"),
+    });
+    const replaceId = look.items[selection.tapIndex]?.id;
+    if (!replaceId) return;
+    const keepIds = look.items.filter((item) => item.id !== replaceId).map((item) => item.id);
+    lockedIds.value = keepIds;
+    await generate(keepIds);
+    uni.showToast({ title: "已保留其余单品重新搭配", icon: "none" });
+  } catch (cause) {
+    const message = messageOf(cause);
+    if (!message.includes("cancel")) uni.showToast({ title: message, icon: "none" });
   }
 }
 
@@ -156,9 +184,7 @@ async function wearToday(look: Look) {
   }
 }
 
-onLoad(async () => {
-  await resolveLocation();
-});
+onShow(resolveLocation);
 </script>
 
 <template>
@@ -183,7 +209,12 @@ onLoad(async () => {
             :key="value"
             class="chip"
             :class="{ active: occasion === value }"
-            @tap="occasion = value"
+            role="button"
+            tabindex="0"
+            :aria-pressed="occasion === value"
+            @tap="setOccasion(value)"
+            @keyup.enter="setOccasion(value)"
+            @keyup.space="setOccasion(value)"
           >
             {{ value }}
           </view>
@@ -197,7 +228,12 @@ onLoad(async () => {
             :key="value"
             class="chip"
             :class="{ active: mood === value }"
-            @tap="mood = value"
+            role="button"
+            tabindex="0"
+            :aria-pressed="mood === value"
+            @tap="setMood(value)"
+            @keyup.enter="setMood(value)"
+            @keyup.space="setMood(value)"
           >
             {{ value }}
           </view>
@@ -212,7 +248,7 @@ onLoad(async () => {
         <text class="weather-temp">{{ Math.round(recommendation.weather.temp) }}°</text>
         <text class="weather-condition">{{ recommendation.weather.condition }}</text>
       </view>
-      <text class="weather-context">{{ occasion }} · {{ mood }}</text>
+      <text class="weather-context">{{ occasion }} · {{ mood || "不限定心情" }}</text>
     </view>
 
     <view v-if="loading" class="looks-list" aria-label="造型师正在搭配">
@@ -244,7 +280,12 @@ onLoad(async () => {
             :key="item.id"
             class="look-item"
             :class="{ selected: isLocked(item.id) }"
+            role="button"
+            tabindex="0"
+            :aria-pressed="isLocked(item.id)"
             @tap="toggleItem(item.id)"
+            @keyup.enter="toggleItem(item.id)"
+            @keyup.space="toggleItem(item.id)"
           >
             <image class="look-image" :src="mediaUrl(item.image_url)" mode="aspectFill" />
             <view v-if="isLocked(item.id)" class="lock-mark">已锁定</view>
@@ -273,6 +314,7 @@ onLoad(async () => {
             {{ isLookLocked(look) ? "取消锁定" : "锁定这套" }}
           </button>
           <button class="button-quiet" @tap="sendFeedback(look)">反馈</button>
+          <button class="button-quiet" @tap="replaceOne(look)">换一件</button>
           <button class="button-secondary" @tap="wearToday(look)">今天穿了</button>
         </view>
       </view>
@@ -286,7 +328,7 @@ onLoad(async () => {
     </view>
 
     <view class="sticky-action">
-      <button class="button generate-button" :disabled="loading || locating" @tap="generate">
+      <button class="button generate-button" :disabled="loading || locating" @tap="generate()">
         {{ loading ? "造型师正在搭配…" : recommendation ? "按现在的选择换一批" : "看看今天怎么穿" }}
       </button>
       <view v-if="lockedIds.length" class="locked-summary">已锁定 {{ lockedIds.length }} 件，换一批时会保留</view>
@@ -376,7 +418,7 @@ onLoad(async () => {
 }
 
 .look-card.locked {
-  border-color: #c76a43;
+  border-color: #a64b2a;
   box-shadow: 0 7px 24px rgba(116, 61, 39, 0.1);
 }
 
@@ -395,7 +437,7 @@ onLoad(async () => {
 }
 
 .mode-english {
-  color: #c76a43;
+  color: #a64b2a;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -435,7 +477,7 @@ onLoad(async () => {
 .look-item.selected::after {
   position: absolute;
   inset: 0;
-  border: 3px solid #c76a43;
+  border: 3px solid #a64b2a;
   border-radius: 2px;
   content: "";
   pointer-events: none;
@@ -483,7 +525,7 @@ onLoad(async () => {
 }
 
 .note-rule {
-  background: #c76a43;
+  background: #a64b2a;
   border-radius: 999px;
 }
 
@@ -493,7 +535,7 @@ onLoad(async () => {
 }
 
 .note-label {
-  color: #c76a43;
+  color: #a64b2a;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -534,7 +576,7 @@ onLoad(async () => {
 
 .look-actions {
   display: grid;
-  grid-template-columns: 1fr 0.75fr 1.15fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 18px;
 }

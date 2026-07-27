@@ -13,7 +13,7 @@ page {
 
 .eyebrow {
   margin-bottom: 8px;
-  color: #c76a43;
+  color: #a64b2a;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -71,7 +71,7 @@ page {
 
 .button {
   color: #fff;
-  background: #c76a43;
+  background: #a64b2a;
 }
 
 .button-secondary {
@@ -144,6 +144,14 @@ page {
   color: #71351f;
   background: #e8d5c8;
   border-color: #d9aa94;
+}
+
+.chip:focus,
+.item-card:focus,
+.pending-card:focus,
+.look-item:focus {
+  outline: 3px solid rgba(166, 75, 42, 0.32);
+  outline-offset: 2px;
 }
 
 .empty-state {
