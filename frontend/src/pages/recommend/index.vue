@@ -123,6 +123,7 @@ async function generate(lockOverride?: string[]): Promise<boolean> {
       city: city.value.trim() || undefined,
       latitude: latitude.value,
       longitude: longitude.value,
+      reference_ids: [],
       locked_item_ids: lockOverride || lockedIds.value,
     });
     return true;

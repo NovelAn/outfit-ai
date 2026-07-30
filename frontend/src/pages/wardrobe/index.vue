@@ -220,10 +220,15 @@ onShow(async () => {
 </script>
 
 <template>
-  <view class="page wardrobe-page">
-    <view class="eyebrow">Personal wardrobe</view>
-    <text class="display-title">穿真实的衣服，<br />养成自己的风格。</text>
-    <view class="lede">照片会先由造型师识别，再由你确认。AI 不会把没确认的单品拿去搭配。</view>
+  <view class="wardrobe-shell">
+    <view class="wardrobe-header">
+      <text class="wardrobe-brand">Outfit-AI</text>
+      <text class="wardrobe-meta">{{ items.length }} PIECES</text>
+    </view>
+    <view class="page wardrobe-page">
+    <view class="eyebrow">PERSONAL COLLECTION</view>
+    <text class="display-title">我的衣橱</text>
+    <view class="lede">真实衣物先去背景并识别，再由你确认。只有确认后的单品会进入每日搭配。</view>
 
     <view v-if="error" class="error-banner">{{ error }}</view>
 
@@ -274,7 +279,7 @@ onShow(async () => {
         @keyup.enter="openEditor(item)"
         @keyup.space="openEditor(item)"
       >
-        <image class="item-image" :src="mediaUrl(item.image_url)" mode="aspectFill" />
+        <image class="item-image" :src="mediaUrl(item.image_url)" mode="aspectFit" />
         <view class="item-meta">
           <text class="item-name">{{ item.name || "未命名单品" }}</text>
           <text class="item-detail">
@@ -338,10 +343,47 @@ onShow(async () => {
         </view>
       </view>
     </view>
+    </view>
   </view>
 </template>
 
 <style scoped>
+.wardrobe-shell {
+  min-height: 100vh;
+  background: #fbf9f4;
+}
+
+.wardrobe-header {
+  position: sticky;
+  z-index: 8;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: env(safe-area-inset-top) 20px 0;
+  background: rgba(251, 249, 244, 0.96);
+  border-bottom: 1px solid #e4e2dd;
+}
+
+.wardrobe-brand {
+  color: #162839;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.wardrobe-meta {
+  color: #74777d;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.wardrobe-page {
+  padding-top: 24px;
+}
+
 .pending-section {
   margin-top: 28px;
 }
@@ -404,17 +446,20 @@ onShow(async () => {
 .item-card {
   min-width: 0;
   overflow: hidden;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .item-image {
   display: block;
   width: 100%;
   height: 210px;
-  background: #e8e0d5;
+  background: #f5f3ee;
 }
 
 .item-meta {
-  padding: 12px;
+  padding: 10px 2px 0;
 }
 
 .item-name,
@@ -426,9 +471,10 @@ onShow(async () => {
 }
 
 .item-name {
-  font-family: "Songti SC", "STSong", serif;
-  font-size: 16px;
-  font-weight: 600;
+  color: #162839;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .item-detail {
@@ -453,8 +499,8 @@ onShow(async () => {
   margin: 0;
   padding: 0 20px;
   color: #fff;
-  background: #a64b2a;
-  border-radius: 999px;
+  background: #162839;
+  border-radius: 2px;
   box-shadow: 0 8px 24px rgba(116, 61, 39, 0.22);
   font-size: 15px;
   font-weight: 600;

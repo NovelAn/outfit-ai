@@ -50,6 +50,7 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         recover_interrupted_analyses(db)
+        recover_interrupted_references(db)
         db.commit()
 
 
@@ -60,6 +61,19 @@ def recover_interrupted_analyses(db: Session) -> int:
     return db.execute(
         update(WardrobeItem)
         .where(WardrobeItem.status == "analyzing")
+        .values(
+            status="failed",
+            ai_raw_response="任务因服务重启中断，请重试",
+        )
+    ).rowcount
+
+
+def recover_interrupted_references(db: Session) -> int:
+    from .models import StyleReference
+
+    return db.execute(
+        update(StyleReference)
+        .where(StyleReference.status == "analyzing")
         .values(
             status="failed",
             ai_raw_response="任务因服务重启中断，请重试",

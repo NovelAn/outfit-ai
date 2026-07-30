@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from outfit_ai.config import settings
 from outfit_ai.db import Base, get_db
 from outfit_ai.main import app
 from outfit_ai.models import Profile
@@ -16,7 +15,16 @@ from outfit_ai.services import taste_memo
 
 
 def test_style_dna_draft_reports_missing_minimax_key(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "minimax_api_key", "")
+    from outfit_ai.services import llm
+    from outfit_ai.services.minimax_images import MiniMaxUnavailableError
+
+    monkeypatch.setattr(
+        llm,
+        "resolve_minimax_access",
+        lambda: (_ for _ in ()).throw(
+            MiniMaxUnavailableError("未配置 MiniMax API Key")
+        ),
+    )
 
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.post(
@@ -25,7 +33,7 @@ def test_style_dna_draft_reports_missing_minimax_key(monkeypatch) -> None:
         )
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "未配置 MINIMAX_API_KEY"
+    assert response.json()["detail"] == "未配置 MiniMax API Key"
 
 
 def test_style_dna_draft_requires_text_or_sample() -> None:

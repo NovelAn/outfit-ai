@@ -31,15 +31,17 @@ try {
   ]);
   const pages = JSON.parse(pagesSource);
   assert.match(html, /id="app"/);
-  assert.equal(pages.pages.length, 4);
+  assert.equal(pages.pages.length, 5);
   assert.deepEqual(
     pages.tabBar.list.map((item) => item.text),
-    ["衣橱", "推荐", "风格", "历史"],
+    ["今日", "衣橱", "灵感", "我的"],
   );
   for (const path of [
     "/api/wardrobe/upload",
-    "/api/profile/style-dna/draft",
+    "/api/style-references/upload",
+    "/api/style-references",
     "/api/recommend",
+    "/api/inspiration/generate",
     "/api/feedback",
     "/api/history",
   ]) {
@@ -49,6 +51,12 @@ try {
     clientSource.includes('`/api/wardrobe/${id}/confirm`, "POST"'),
     "confirm route must exist and use POST",
   );
+  const inspirationSource = await readFile(
+    new URL("../src/pages/inspiration/index.vue", import.meta.url),
+    "utf8",
+  );
+  assert.match(inspirationSource, /AI 灵感图 · 不代表衣橱已有单品/);
+  assert.doesNotMatch(clientSource, /request:fail/);
   console.log("H5 smoke passed: shell and critical API calls configured");
 } finally {
   if (server.pid) {

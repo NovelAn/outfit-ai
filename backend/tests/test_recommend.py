@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from outfit_ai.config import settings
 from outfit_ai.db import Base, get_db
 from outfit_ai.main import app
-from outfit_ai.models import OutfitHistory, WardrobeItem
+from outfit_ai.models import OutfitHistory, StyleReference, WardrobeItem
 from outfit_ai.routers.recommend import recommendation
 from outfit_ai.schemas import ProposedLook, RecommendRequest
 from outfit_ai.services import recommend as recommend_service
@@ -63,17 +63,45 @@ def test_recommend_accepts_category_aliases_and_records_three_looks(monkeypatch)
             model_dump=lambda: {"temp": 20, "condition": "晴"},
         ),
     )
-    monkeypatch.setattr(recommend_service, "propose", lambda *args, **kwargs: looks)
+    captured = {}
+
+    def fake_propose(*args, **kwargs):
+        captured.update(kwargs)
+        return looks
+
+    monkeypatch.setattr(recommend_service, "propose", fake_propose)
 
     with Session(engine) as db:
         db.add_all(items)
+        db.add(
+            StyleReference(
+                id="ref-1",
+                user_id="local",
+                image_path="/tmp/look.jpg",
+                status="ready",
+                analysis_json='{"style_keywords":["极简"]}',
+            )
+        )
         db.commit()
 
-        result = recommend_service.recommend(db, RecommendRequest(city="上海"))
+        result = recommend_service.recommend(
+            db,
+            RecommendRequest(
+                city="上海",
+                scene="通勤",
+                season="autumn",
+                style_note="今天想轻松一点",
+                reference_ids=["ref-1"],
+            ),
+        )
 
         assert set(result) == {"weather", "safe", "fresh", "stretch"}
         assert "base_score" not in result["safe"]
         assert len(list(db.scalars(select(OutfitHistory)))) == 3
+        assert captured["references"] == [{"style_keywords": ["极简"]}]
+        assert captured["scene"] == "通勤"
+        assert captured["season"] == "autumn"
+        assert captured["style_note"] == "今天想轻松一点"
 
 
 def test_recommend_rejects_unavailable_locked_item_before_calling_stylist(
@@ -114,7 +142,16 @@ def test_recommend_rejects_unavailable_locked_item_before_calling_stylist(
 
 
 def test_recommend_api_reports_missing_minimax_key_before_network(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "minimax_api_key", "")
+    from outfit_ai.services import llm
+    from outfit_ai.services.minimax_images import MiniMaxUnavailableError
+
+    monkeypatch.setattr(
+        llm,
+        "resolve_minimax_access",
+        lambda: (_ for _ in ()).throw(
+            MiniMaxUnavailableError("未配置 MiniMax API Key")
+        ),
+    )
     monkeypatch.setattr(
         recommend_service,
         "get_weather",
@@ -125,7 +162,7 @@ def test_recommend_api_reports_missing_minimax_key_before_network(monkeypatch) -
         recommendation(RecommendRequest(city="上海"), None)
 
     assert error.value.status_code == 503
-    assert error.value.detail == "未配置 MINIMAX_API_KEY"
+    assert error.value.detail == "未配置 MiniMax API Key"
 
 
 def test_recommend_feedback_history_http_loop(monkeypatch, tmp_path) -> None:

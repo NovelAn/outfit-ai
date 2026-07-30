@@ -19,6 +19,26 @@ class ClothingAttributes(BaseModel):
     versatility: float | None = Field(None, ge=0, le=1)
 
 
+class StyleReferenceAnalysis(BaseModel):
+    style_keywords: list[str] = Field(default_factory=list)
+    palette: list[str] = Field(default_factory=list)
+    silhouettes: list[str] = Field(default_factory=list)
+    layering: list[str] = Field(default_factory=list)
+    materials: list[str] = Field(default_factory=list)
+    seasons: list[str] = Field(default_factory=list)
+    scenes: list[str] = Field(default_factory=list)
+    notable_elements: list[str] = Field(default_factory=list)
+
+
+class StyleDnaMerge(BaseModel):
+    style_keywords: list[str] = Field(default_factory=list)
+    palette: list[str] = Field(default_factory=list)
+    preferred_colors: list[str] = Field(default_factory=list)
+    preferred_styles: list[str] = Field(default_factory=list)
+    avoids: list[str] = Field(default_factory=list)
+    taste_memo: str = ""
+
+
 class ProposedLook(BaseModel):
     tier: Literal["safe", "fresh", "stretch"]
     item_ids: list[str] = Field(min_length=1)
@@ -74,11 +94,22 @@ class ProfileOut(ProfileIn):
 
 class RecommendRequest(BaseModel):
     occasion: str = "日常"
+    scene: str | None = Field(None, max_length=40)
     mood: str | None = None
+    season: Literal["spring", "summer", "autumn", "winter", "spring_autumn"] | None = None
+    style_note: str | None = Field(None, max_length=500)
+    reference_ids: list[str] = Field(default_factory=list, max_length=6)
     city: str | None = None
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
     locked_item_ids: list[str] = Field(default_factory=list)
+
+
+class InspirationRequest(BaseModel):
+    reference_ids: list[str] = Field(default_factory=list, max_length=6)
+    style_note: str | None = Field(None, max_length=500)
+    season: Literal["spring", "summer", "autumn", "winter", "spring_autumn"] | None = None
+    scene: str = Field(default="日常", min_length=1, max_length=40)
 
 
 class StyleDnaDraftRequest(BaseModel):

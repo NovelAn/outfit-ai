@@ -5,9 +5,9 @@
 ## 技术栈
 
 - **后端**：Python 3.11 + FastAPI（同步）+ SQLAlchemy 2.0 sync + SQLite。单用户零运维；后台任务用 FastAPI `BackgroundTasks`，不上 Redis/arq。
-- **LLM**：MiniMax-M3，CN 端点 `https://api.minimaxi.com/v1`，OpenAI SDK 兼容，复用 mmx CLI 的同一把 key（后端从 env 读，绝不进代码）。识图走 **tool use**；文本走 **prompt 强约束 + json.loads + 失败重试**（M3 不支持 `response_format:json_object`）。
+- **模型分工**：MiniMax-M3 只负责文本造型与 Style DNA 合并；MiniMax VLM 负责衣物/参考 Look 识图；`image-01` 负责独立灵感生图。Key 优先读环境变量，再只读复用 `~/.mmx/config.json`，绝不进前端或代码。
 - **天气**：Open-Meteo（免 key）。
-- **图像**：Pillow 拼图；rembg 可选。
+- **图像**：真实衣物上传后先用本地 `rembg` 去背景，再调用 MiniMax VLM；Pillow 负责拼图。
 - **前端**：uni-app + Vue3 + Vite + TS，一套代码出 H5 / 微信小程序 / App。
 - **图片存储**：本地目录起步，`storage.py` 抽象接口，生产换阿里云 OSS。
 
@@ -16,7 +16,7 @@
 时尚是主观品味，规则公式再精巧也产不出"懂你"的推荐。规则退居硬护栏，品味判断全交 LLM：
 
 1. **Stage 1 硬护栏（规则）**：confirmed 单品 → 天气/季节过滤 → locked 强制保留 → 近期重复规避（跳鞋子）→ 封顶 ~12–15 件。规则只过滤、**不评分**。
-2. **Stage 2 多模态造型师（LLM 品味）**：MiniMax-M3 看候选单品**照片**+属性 + Style DNA + 品味备忘录 + 天气/场合/心情 + 近期 Look → 凭品味组装 Safe/Fresh/Stretch 三档。
+2. **Stage 2 文本造型师（LLM 品味）**：MiniMax-M3 读取经 VLM 提取的候选属性、参考 Look 分析、Style DNA、品味备忘录、天气/场景和近期 Look → 凭品味组装 Safe/Fresh/Stretch 三档。
 3. **Stage 3 校验（规则兜底）**：item_id 真实、单套无重复、含 top+bottom+shoes；失败回灌重试一次。
 4. **学习 = 品味备忘录**：反馈周期性由 LLM 消化进 `profile.taste_memo`（自然语言档案），下次推荐作上下文。**无数值权重表**。
 
@@ -30,7 +30,7 @@ backend/src/outfit_ai/   # 后端包（src layout）
   services/  # 业务逻辑/外部依赖（llm/vision/recommender/weather/history/collage/storage）
   workers/   # BackgroundTasks（analysis 状态机）
 frontend/src/             # uni-app 前端
-  pages/     # 每页一个 .vue（wardrobe/profile/recommend/history）
+  pages/     # 今日 / 衣橱 / 灵感 / 我的，历史作为次级页
   api/       # uni.request / uni.uploadFile 封装
   stores/    # pinia
 docs/                     # design.md（架构与署名）

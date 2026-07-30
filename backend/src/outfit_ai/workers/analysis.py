@@ -4,6 +4,7 @@ from sqlalchemy import update
 
 from ..db import SessionLocal
 from ..models import WardrobeItem
+from ..services.background import ensure_background_removed
 from ..services.categories import canonical_category
 from ..services.vision import extract
 
@@ -29,6 +30,7 @@ def analyze_item(item_id: str) -> None:
         if not item:
             return
         try:
+            ensure_background_removed(item.image_path)
             attributes, raw = extract(item.image_path)
             for field in (
                 "name",

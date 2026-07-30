@@ -72,6 +72,23 @@ class WardrobeItem(Base):
     added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class StyleReference(Base):
+    __tablename__ = "style_references"
+    __table_args__ = (
+        Index("ix_style_reference_user_status", "user_id", "status"),
+        Index("ix_style_reference_user_added", "user_id", "added_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String)
+    image_path: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    analysis_json: Mapped[str] = mapped_column(Text, default="")
+    ai_raw_response: Mapped[str | None] = mapped_column(Text)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class OutfitHistory(Base):
     __tablename__ = "outfit_history"
     __table_args__ = (

@@ -4,6 +4,11 @@ from openai import OpenAI, OpenAIError
 from pydantic import TypeAdapter, ValidationError
 
 from ..config import settings
+from .minimax_images import (
+    MiniMaxAccess,
+    MiniMaxUnavailableError,
+    resolve_minimax_access,
+)
 
 _JSON_OBJECT = TypeAdapter(dict[str, Any])
 
@@ -16,14 +21,16 @@ class LLMResponseError(ValueError):
     pass
 
 
-def require_api_key() -> None:
-    if not settings.minimax_api_key:
-        raise LLMUnavailableError("未配置 MINIMAX_API_KEY")
+def require_api_key() -> MiniMaxAccess:
+    try:
+        return resolve_minimax_access()
+    except MiniMaxUnavailableError as exc:
+        raise LLMUnavailableError(str(exc)) from exc
 
 
 def get_client() -> OpenAI:
-    require_api_key()
-    return OpenAI(api_key=settings.minimax_api_key, base_url=settings.minimax_base_url)
+    access = require_api_key()
+    return OpenAI(api_key=access.api_key, base_url=f"{access.base_url}/v1")
 
 
 def _create_completion(**kwargs):

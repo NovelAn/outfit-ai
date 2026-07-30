@@ -2,7 +2,8 @@ import base64
 
 from PIL import Image
 
-from outfit_ai.services.vision import image_data_url
+from outfit_ai.services import minimax_images
+from outfit_ai.services.vision import analyze_reference, extract, image_data_url
 
 
 def test_image_data_url_can_bound_stylist_payload(tmp_path) -> None:
@@ -14,3 +15,43 @@ def test_image_data_url_can_bound_stylist_payload(tmp_path) -> None:
 
     assert header == "data:image/jpeg;base64"
     assert len(base64.b64decode(encoded)) <= 100_000
+
+
+def test_extract_accepts_markdown_wrapped_vlm_json(monkeypatch, tmp_path) -> None:
+    image_path = tmp_path / "item.png"
+    Image.new("RGB", (2, 2), "white").save(image_path)
+    monkeypatch.setattr(
+        minimax_images,
+        "describe_image",
+        lambda *_: (
+            "```json\n"
+            '{"name":"白衬衫","category":"top","primary_color":"白色",'
+            '"styles":[],"tags":[],"seasons":[],"occasions":[]}'
+            "\n```"
+        ),
+    )
+
+    attributes, raw = extract(image_path)
+
+    assert attributes.category == "top"
+    assert attributes.name == "白衬衫"
+    assert raw.startswith("```json")
+
+
+def test_reference_analysis_is_structured(monkeypatch, tmp_path) -> None:
+    image_path = tmp_path / "look.png"
+    Image.new("RGB", (2, 2), "white").save(image_path)
+    monkeypatch.setattr(
+        minimax_images,
+        "describe_image",
+        lambda *_: (
+            '{"style_keywords":["克制"],"palette":["海军蓝"],'
+            '"silhouettes":["直线"],"layering":[],"materials":["羊毛"],'
+            '"seasons":["autumn"],"scenes":["通勤"],"notable_elements":[]}'
+        ),
+    )
+
+    analysis, _ = analyze_reference(image_path)
+
+    assert analysis.style_keywords == ["克制"]
+    assert analysis.scenes == ["通勤"]

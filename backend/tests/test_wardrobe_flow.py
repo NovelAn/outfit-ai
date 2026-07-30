@@ -25,6 +25,7 @@ def test_upload_analyze_confirm_and_list_flow(monkeypatch, tmp_path) -> None:
         return Session(engine)
 
     monkeypatch.setattr(analysis, "SessionLocal", session_factory)
+    monkeypatch.setattr(analysis, "ensure_background_removed", lambda path: path)
     monkeypatch.setattr(wardrobe, "storage", LocalStorage(tmp_path / "uploads"))
     monkeypatch.setattr(
         analysis,
@@ -190,6 +191,7 @@ def test_wardrobe_http_upload_status_confirm_and_list(monkeypatch, tmp_path) -> 
             yield db
 
     monkeypatch.setattr(analysis, "SessionLocal", session_factory)
+    monkeypatch.setattr(analysis, "ensure_background_removed", lambda path: path)
     monkeypatch.setattr(wardrobe, "storage", LocalStorage(tmp_path / "uploads"))
     monkeypatch.setattr(
         analysis,

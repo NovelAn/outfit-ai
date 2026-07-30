@@ -78,6 +78,31 @@ export interface Recommendation {
   stretch?: Look;
 }
 
+export interface StyleReferenceAnalysis {
+  style_keywords: string[];
+  palette: string[];
+  silhouettes: string[];
+  layering: string[];
+  materials: string[];
+  seasons: string[];
+  scenes: string[];
+  notable_elements: string[];
+}
+
+export interface StyleReference {
+  id: string;
+  image_url: string;
+  status: AnalysisStatus;
+  attempt_count: number;
+  analysis: StyleReferenceAnalysis | null;
+  added_at: string;
+}
+
+export interface InspirationResult {
+  image_url: string;
+  disclaimer: string;
+}
+
 export interface HistoryItem {
   id: string;
   date: string;

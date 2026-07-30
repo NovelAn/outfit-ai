@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,9 +6,11 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..models import Profile, WardrobeItem
 from ..schemas import RecommendRequest
+from .background import display_image_path
 from .categories import canonical_category
 from .guardrail import filter_candidates
 from .history import get_recent_item_ids, get_recent_outfits, record_outfit
+from .style_references import get_reference_analyses
 from .stylist import propose
 from .validator import validate_looks
 from .weather import get_weather
@@ -34,7 +35,7 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
     )
     candidates = filter_candidates(
         items,
-        season=_season(weather.temp),
+        season=request.season or _season(weather.temp),
         locked_ids=set(request.locked_item_ids),
         recent_item_ids=get_recent_item_ids(db, settings.user_id),
     )
@@ -50,6 +51,8 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
         raise ValueError("已确认衣橱不足：至少需要上装、下装和鞋履")
     recent = get_recent_outfits(db, settings.user_id)
     recent_looks = [json.loads(outfit.item_ids_json) for outfit in recent]
+    references = get_reference_analyses(db, request.reference_ids)
+    scene = request.scene or request.occasion
     error = ""
     for _ in range(2):
         looks = propose(
@@ -61,6 +64,10 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
             recent_looks,
             set(request.locked_item_ids),
             error,
+            references=references,
+            style_note=request.style_note,
+            season=request.season or _season(weather.temp),
+            scene=scene,
         )
         ok, error = validate_looks(
             looks, categories, locked_ids=set(request.locked_item_ids)
@@ -76,7 +83,7 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
             db,
             settings.user_id,
             look,
-            occasion=request.occasion,
+            occasion=scene,
             mood=request.mood,
             weather_summary=weather.condition,
             temp=weather.temp,
@@ -88,7 +95,7 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
                     "id": item_id,
                     "name": by_id[item_id].name,
                     "category": by_id[item_id].category,
-                    "image_url": f"/media/{Path(by_id[item_id].image_path).name}",
+                    "image_url": f"/media/{display_image_path(by_id[item_id]).name}",
                     "primary_color": by_id[item_id].primary_color,
                 }
                 for item_id in look.item_ids

@@ -1,4 +1,5 @@
 import json
+import random
 from collections.abc import Iterable
 from typing import Any
 
@@ -47,9 +48,9 @@ def filter_candidates(
             selected.append(item)
             selected_ids.add(item.id)
     target = max(limit, len(selected))
+    remaining = [item for item in candidates if item.id not in selected_ids]
+    slots = target - len(selected)
     selected.extend(
-        item
-        for item in candidates
-        if item.id not in selected_ids
+        random.sample(remaining, slots) if len(remaining) > slots else remaining
     )
-    return selected[:target]
+    return selected

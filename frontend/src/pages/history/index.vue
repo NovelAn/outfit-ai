@@ -84,7 +84,7 @@ onShow(loadHistory);
       </view>
     </view>
     <view v-else class="empty-state">
-      第一套穿搭还在前面。<br />去「推荐」看看今天怎么穿。
+      第一套穿搭还在前面。<br />去「今日」看看今天怎么穿。
     </view>
   </view>
 </template>

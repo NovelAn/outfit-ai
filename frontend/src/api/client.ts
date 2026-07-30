@@ -1,8 +1,10 @@
 import type {
   FeedbackAction,
   HistoryItem,
+  InspirationResult,
   Profile,
   Recommendation,
+  StyleReference,
   WardrobeItem,
 } from "./types";
 
@@ -20,7 +22,8 @@ export function messageOf(cause: unknown, fallback = "操作失败，请稍后�
   if (cause instanceof Error) return cause.message;
   if (cause && typeof cause === "object" && "errMsg" in cause) {
     const errMsg = (cause as { errMsg?: unknown }).errMsg;
-    if (typeof errMsg === "string") return errMsg;
+    if (typeof errMsg === "string" && errMsg.includes("cancel")) return "cancel";
+    if (typeof errMsg === "string" && !errMsg.startsWith("request:")) return errMsg;
   }
   return fallback;
 }
@@ -42,14 +45,14 @@ function request<T>(
           reject(new Error(errorMessage(response.data, response.statusCode)));
         }
       },
-      fail: (error) => reject(new Error(error.errMsg || "无法连接服务")),
+      fail: () => reject(new Error("无法连接造型服务，请检查网络后重试")),
     });
   });
 }
 
 export function mediaUrl(path: string | null | undefined): string {
   if (!path) return "";
-  if (/^(https?:|data:|blob:)/.test(path)) return path;
+  if (/^(https?:|data:|blob:|file:|wxfile:)/.test(path) || path.startsWith("/tmp/")) return path;
   return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
@@ -67,12 +70,27 @@ export const api = {
   refreshTasteMemo: () => request<{ ok: boolean }>("/api/profile/taste-memo/refresh", "POST"),
   recommend: (data: {
     occasion: string;
+    scene?: string;
     mood?: string;
+    season?: "spring" | "summer" | "autumn" | "winter" | "spring_autumn";
+    style_note?: string;
+    reference_ids: string[];
     city?: string;
     latitude?: number;
     longitude?: number;
     locked_item_ids: string[];
   }) => request<Recommendation>("/api/recommend", "POST", data),
+  styleReferences: () => request<StyleReference[]>("/api/style-references"),
+  styleReferenceStatus: (id: string) =>
+    request<StyleReference>(`/api/style-references/${id}/status`),
+  retryStyleReference: (id: string) =>
+    request<{ id: string; status: string }>(`/api/style-references/${id}/retry`, "POST"),
+  generateInspiration: (data: {
+    reference_ids: string[];
+    style_note?: string;
+    season?: "spring" | "summer" | "autumn" | "winter" | "spring_autumn";
+    scene: string;
+  }) => request<InspirationResult>("/api/inspiration/generate", "POST", data),
   feedback: (data: {
     history_id: string;
     items_worn: string[];
@@ -105,7 +123,32 @@ export function uploadItem(filePath: string): Promise<{ id: string; status: stri
           reject(new Error(errorMessage(data, response.statusCode)));
         }
       },
-      fail: (error) => reject(new Error(error.errMsg || "上传失败")),
+      fail: () => reject(new Error("无法连接造型服务，请检查网络后重试")),
+    });
+  });
+}
+
+export function uploadStyleReference(filePath: string): Promise<{ id: string; status: string }> {
+  return new Promise((resolve, reject) => {
+    uni.uploadFile({
+      url: `${API_BASE}/api/style-references/upload`,
+      filePath,
+      name: "file",
+      success: (response) => {
+        let data: unknown;
+        try {
+          data = JSON.parse(response.data);
+        } catch {
+          reject(new Error("上传返回格式错误"));
+          return;
+        }
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          resolve(data as { id: string; status: string });
+        } else {
+          reject(new Error(errorMessage(data, response.statusCode)));
+        }
+      },
+      fail: () => reject(new Error("无法连接造型服务，请检查网络后重试")),
     });
   });
 }

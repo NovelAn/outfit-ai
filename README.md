@@ -1,12 +1,12 @@
 # Outfit-AI
 
-个人 AI 衣橱：拍真实衣物入库 → 沉淀可编辑 Style DNA → 结合天气/场合/心情，每天给出**基调稳定又能持续变化**的 **Safe / Fresh / Stretch** 三套穿搭，并通过反馈越用越懂。
+个人 AI 衣橱：真实衣物去背景入库，参考 Look 沉淀 Style DNA；每天从真实衣橱给出 **Safe / Fresh / Stretch** 三套穿搭，也可生成不依赖现有单品的未来灵感图。
 
 > v0 跑 H5；同一套 uni-app 代码未来编译微信小程序 / 手机 App。
 
 ## 架构一句话
 
-**多模态造型师 + 硬护栏**：规则只过滤天气/季节/重复（硬护栏，不评分）→ MiniMax-M3 看候选单品**照片** + Style DNA + **品味备忘录**，凭品味组装 Safe/Fresh/Stretch 三档 → 反馈周期性沉淀回品味备忘录，越用越懂。
+**识图、生图、文本造型分工**：本地 `rembg` 处理真实衣物，MiniMax VLM 提取衣物与参考 Look 属性，MiniMax-M3 结合 Style DNA 生成真实衣橱搭配，`image-01` 生成独立灵感图；规则只做真实性和天气等硬护栏。
 
 ## 快速开始
 
@@ -14,8 +14,8 @@
 # 后端
 cd backend
 uv sync                                        # 或 pip install -e ".[dev]"
-cp ../.env.example ../.env                     # 填入 MINIMAX_API_KEY
-uvicorn outfit_ai.main:app --reload            # http://localhost:8000/docs
+# 可设置 MINIMAX_API_KEY；未设置时只读复用 ~/.mmx/config.json
+uvicorn outfit_ai.main:app --reload             # http://localhost:8000/docs
 
 # 前端
 cd frontend

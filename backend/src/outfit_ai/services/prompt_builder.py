@@ -40,14 +40,26 @@ def stylist_context(
     occasion: str,
     mood: str | None,
     recent_looks: list[list[str]],
+    *,
+    references: list[dict] | None = None,
+    style_note: str | None = None,
+    season: str | None = None,
+    scene: str | None = None,
 ) -> str:
     items = [
         {
             "id": item.id,
             "name": item.name,
             "category": item.category,
-            "color": item.primary_color,
-            "style": json.loads(item.style_json or "[]"),
+            "primary_color": item.primary_color,
+            "secondary_color": item.secondary_color,
+            "material": item.material,
+            "fit": item.fit,
+            "formality": item.formality,
+            "styles": json.loads(item.style_json or "[]"),
+            "tags": json.loads(item.tags_json or "[]"),
+            "seasons": json.loads(item.seasons_json or "[]"),
+            "occasions": json.loads(item.occasions_json or "[]"),
         }
         for item in candidates
     ]
@@ -61,7 +73,11 @@ def stylist_context(
             "taste_memo": profile.taste_memo if profile else "",
             "weather": weather,
             "occasion": occasion,
+            "scene": scene or occasion,
+            "season": season,
             "mood": mood,
+            "optional_style_request": style_note,
+            "selected_reference_analyses": references or [],
             "recent_looks": recent_looks,
         },
         ensure_ascii=False,

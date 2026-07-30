@@ -1,6 +1,5 @@
 import json
 from io import BytesIO
-from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
@@ -12,6 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..models import WardrobeItem
 from ..schemas import WardrobePatch
+from ..services.background import background_path, display_image_path
 from ..services.categories import canonical_category, confirmed_category
 from ..services.collage import UnsafeImageError, render
 from ..services.storage import ImageTooLargeError, LocalStorage
@@ -43,7 +43,7 @@ def _item(item: WardrobeItem) -> dict:
     return {
         "id": item.id,
         **attributes,
-        "image_url": f"/media/{Path(item.image_path).name}",
+        "image_url": f"/media/{display_image_path(item).name}",
         "status": item.status,
         "attempt_count": item.attempt_count,
         "confirmed_by_user": item.confirmed_by_user,
@@ -119,7 +119,7 @@ def collage(item_ids: str, db: DbSession):
     by_id = {item.id: item for item in found}
     output = BytesIO()
     try:
-        render([by_id[item_id].image_path for item_id in ids], output)
+        render([display_image_path(by_id[item_id]) for item_id in ids], output)
     except UnsafeImageError as exc:
         raise HTTPException(400, str(exc)) from exc
     except ValueError as exc:
@@ -202,3 +202,4 @@ def delete(item_id: str, db: DbSession):
         db.rollback()
         raise
     storage.delete(image_path)
+    storage.delete(str(background_path(image_path)))

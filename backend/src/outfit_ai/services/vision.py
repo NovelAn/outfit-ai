@@ -1,22 +1,13 @@
 import base64
-import json
 import mimetypes
 from io import BytesIO
 from pathlib import Path
 
 from PIL import Image, ImageOps
 
-from ..schemas import ClothingAttributes
-from .llm import LLMResponseError, chat_multimodal
-
-_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "save_clothing_attributes",
-        "description": "保存图片中主要衣物的结构化属性",
-        "parameters": ClothingAttributes.model_json_schema(),
-    },
-}
+from ..schemas import ClothingAttributes, StyleReferenceAnalysis
+from . import minimax_images
+from .minimax_images import MiniMaxResponseError
 
 
 def image_data_url(path: str | Path, *, max_bytes: int | None = None) -> str:
@@ -42,22 +33,37 @@ def image_data_url(path: str | Path, *, max_bytes: int | None = None) -> str:
 
 
 def extract(image_path: str | Path) -> tuple[ClothingAttributes, str]:
-    response = chat_multimodal(
-        [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "识别这件衣物。category 使用英文单数类别。"},
-                    {"type": "image_url", "image_url": {"url": image_data_url(image_path)}},
-                ],
-            }
-        ],
-        tools=[_TOOL],
-        tool_choice={"type": "function", "function": {"name": "save_clothing_attributes"}},
+    raw = minimax_images.describe_image(
+        image_path,
+        (
+            "识别图片中的主要衣物，只返回 JSON。category 使用英文单数类别。"
+            f"结构必须符合：{ClothingAttributes.model_json_schema()}"
+        ),
     )
     try:
-        arguments = response.choices[0].message.tool_calls[0].function.arguments
-        attributes = ClothingAttributes.model_validate_json(arguments)
-    except (AttributeError, IndexError, TypeError, ValueError) as exc:
-        raise LLMResponseError("MiniMax 未返回有效的衣物属性工具调用") from exc
-    return attributes, json.dumps(response.model_dump(), ensure_ascii=False)
+        return ClothingAttributes.model_validate_json(_json_content(raw)), raw
+    except ValueError as exc:
+        raise MiniMaxResponseError("MiniMax VLM 未返回有效衣物属性") from exc
+
+
+def _json_content(raw: str) -> str:
+    content = raw.strip()
+    if content.startswith("```"):
+        content = content.removeprefix("```json").removeprefix("```")
+        content = content.removesuffix("```").strip()
+    return content
+
+
+def analyze_reference(image_path: str | Path) -> tuple[StyleReferenceAnalysis, str]:
+    raw = minimax_images.describe_image(
+        image_path,
+        (
+            "分析这张完整穿搭参考图，只返回 JSON。提取风格、配色、廓形、叠穿、材质、"
+            "季节、场景和显著元素，不识别人物身份。"
+            f"结构必须符合：{StyleReferenceAnalysis.model_json_schema()}"
+        ),
+    )
+    try:
+        return StyleReferenceAnalysis.model_validate_json(_json_content(raw)), raw
+    except ValueError as exc:
+        raise MiniMaxResponseError("MiniMax VLM 未返回有效参考 Look 分析") from exc
