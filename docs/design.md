@@ -1,5 +1,7 @@
 # Outfit-AI · 前端 UI/UX 设计
 
+> **历史文档，已归档。** 当前前端唯一基准是 `/Users/novel/Downloads/outfit-ai-穿搭与灵感.zip`；本文不得用于改写其视觉、页面或交互。
+
 > **方向已锁定（2026-07-27）：Warm Editorial · 移动优先。**
 > 气质参考：`https://getdesign.md/claude/design-md`（Claude 设计系统：terracotta 强调 + 米白底 + 衬线/无衬线配对 + 编辑式留白）。
 > 移动端化：保留气质，版式/布局按手机（最终微信小程序 + App）重做。目标端：微信小程序 / App / H5（uni-app 一套代码）。

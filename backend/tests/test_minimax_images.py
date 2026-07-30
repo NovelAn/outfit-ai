@@ -76,3 +76,23 @@ def test_generate_image_decodes_one_base64_image(monkeypatch) -> None:
     assert captured["payload"]["model"] == "image-01"
     assert captured["payload"]["n"] == 1
     assert captured["payload"]["response_format"] == "base64"
+
+
+def test_generate_images_requests_and_decodes_three_images(monkeypatch) -> None:
+    expected = [b"image-1", b"image-2", b"image-3"]
+    captured = {}
+
+    def fake_post(path, payload):
+        captured.update(path=path, payload=payload)
+        return {
+            "data": {
+                "image_base64": [
+                    base64.b64encode(image).decode() for image in expected
+                ]
+            }
+        }
+
+    monkeypatch.setattr(minimax_images, "_post_json", fake_post)
+
+    assert minimax_images.generate_images("三套编辑画报", count=3) == expected
+    assert captured["payload"]["n"] == 3

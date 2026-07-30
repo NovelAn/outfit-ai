@@ -1,5 +1,7 @@
 # Stitch Frontend and MiniMax Image Integration Plan
 
+> **执行修正（2026-07-30）：** 不再把 ZIP 转译为 uni-app。前端直接采用用户确认的 ZIP 原版 React/Vite/Tailwind 源码，仅增加 FastAPI 接线；下文涉及 Vue/uni-app 的步骤均为过期记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将 Google AI Studio / Stitch 导出的移动端视觉移植到现有 uni-app + Vue 3，并接通真实衣橱推荐、长期参考 Look 和独立 MiniMax 灵感生图。

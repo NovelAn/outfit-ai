@@ -102,3 +102,16 @@ def retry(
     db.commit()
     background_tasks.add_task(process_reference, reference.id)
     return {"id": reference.id, "status": reference.status}
+
+
+@router.delete("/{reference_id}", status_code=204)
+def delete(reference_id: str, db: DbSession):
+    reference = _get(db, reference_id)
+    image_path = reference.image_path
+    db.delete(reference)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    storage.delete(image_path)

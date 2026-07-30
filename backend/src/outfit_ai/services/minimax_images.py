@@ -129,19 +129,29 @@ def describe_image(path: str | Path, prompt: str) -> str:
     return content
 
 
-def generate_image(prompt: str) -> bytes:
+def generate_images(prompt: str, *, count: int) -> list[bytes]:
+    if not 1 <= count <= 9:
+        raise ValueError("图片数量需要在 1–9 之间")
     body = _post_json(
         "/v1/image_generation",
         {
             "model": "image-01",
             "prompt": prompt,
             "aspect_ratio": "3:4",
-            "n": 1,
+            "n": count,
             "response_format": "base64",
         },
     )
     try:
-        encoded = body["data"]["image_base64"][0]
-        return base64.b64decode(encoded, validate=True)
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        encoded_images = body["data"]["image_base64"]
+        if not isinstance(encoded_images, list) or len(encoded_images) != count:
+            raise ValueError
+        return [
+            base64.b64decode(encoded, validate=True) for encoded in encoded_images
+        ]
+    except (KeyError, TypeError, ValueError) as exc:
         raise MiniMaxResponseError("MiniMax 未返回有效图片") from exc
+
+
+def generate_image(prompt: str) -> bytes:
+    return generate_images(prompt, count=1)[0]

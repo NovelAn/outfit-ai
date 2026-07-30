@@ -8,7 +8,7 @@
 - **模型分工**：MiniMax-M3 只负责文本造型与 Style DNA 合并；MiniMax VLM 负责衣物/参考 Look 识图；`image-01` 负责独立灵感生图。Key 优先读环境变量，再只读复用 `~/.mmx/config.json`，绝不进前端或代码。
 - **天气**：Open-Meteo（免 key）。
 - **图像**：真实衣物上传后先用本地 `rembg` 去背景，再调用 MiniMax VLM；Pillow 负责拼图。
-- **前端**：uni-app + Vue3 + Vite + TS，一套代码出 H5 / 微信小程序 / App。
+- **前端**：用户确认的 Google AI Studio / Stitch ZIP 原版 React 19 + Vite + Tailwind CSS。ZIP 的页面、视觉和交互是唯一前端基准；旧 PRD 和旧 uni-app 页面不得覆盖它。
 - **图片存储**：本地目录起步，`storage.py` 抽象接口，生产换阿里云 OSS。
 
 ## 核心架构决策：品味驱动推荐（多模态造型师）
@@ -29,10 +29,9 @@ backend/src/outfit_ai/   # 后端包（src layout）
   routers/   # HTTP 路由，按资源分文件
   services/  # 业务逻辑/外部依赖（llm/vision/recommender/weather/history/collage/storage）
   workers/   # BackgroundTasks（analysis 状态机）
-frontend/src/             # uni-app 前端
-  pages/     # 今日 / 衣橱 / 灵感 / 我的，历史作为次级页
-  api/       # uni.request / uni.uploadFile 封装
-  stores/    # pinia
+frontend/src/             # Stitch ZIP 原版 React 前端
+  components/ # 今日 / 衣橱 / 灵感 / 灵感库 / 我的
+  lib/api.mjs # FastAPI 接线层
 docs/                     # design.md（架构与署名）
 data/                     # 运行期产物（uploads/、sqlite）—— 不入库
 ```
@@ -54,8 +53,8 @@ python -m outfit_ai.services.recommender   # recommender 自检
 # 前端
 cd frontend
 npm install
-npm run dev:h5                        # v0 主开发端
-npm run dev:mp-weixin                 # 微信开发者工具打开 dist/dev/mp-weixin
+npm run dev                           # http://localhost:5173
+npm test && npm run lint && npm run build
 ```
 
 ## 安全红线（沿用全局）
@@ -75,4 +74,4 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、多用�
 
 ## 部署卡点（小程序上线，尽早准备）
 
-后端 HTTPS 域名 + ICP 备案；微信公众平台配 request/uploadFile/downloadFile 合法域名；图片走对象存储（OSS）；前端主包 ≤2MB。
+后端 HTTPS 域名 + ICP 备案；图片走对象存储（OSS）。微信小程序/App 如需上线，后续基于已确认的 React 前端单独选择容器方案，不回退旧界面。

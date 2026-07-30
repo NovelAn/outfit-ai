@@ -1,7 +1,13 @@
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import uni from "@dcloudio/vite-plugin-uni";
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [uni()],
+  plugins: [react(), tailwindcss()],
+  server: {
+    proxy: {
+      "/api": "http://localhost:8000",
+      "/media": "http://localhost:8000",
+    },
+  },
 });

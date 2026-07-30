@@ -17,7 +17,7 @@ def _jpeg_bytes() -> bytes:
     return output.getvalue()
 
 
-def test_inspiration_generates_one_saved_image(monkeypatch, tmp_path) -> None:
+def test_inspiration_generates_three_saved_images(monkeypatch, tmp_path) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
@@ -55,8 +55,9 @@ def test_inspiration_generates_one_saved_image(monkeypatch, tmp_path) -> None:
         calls = []
         monkeypatch.setattr(
             inspiration,
-            "generate_image",
-            lambda prompt: calls.append(prompt) or _jpeg_bytes(),
+            "generate_images",
+            lambda prompt, count: calls.append((prompt, count))
+            or [_jpeg_bytes(), _jpeg_bytes(), _jpeg_bytes()],
         )
 
         result = inspiration.generate(
@@ -68,7 +69,13 @@ def test_inspiration_generates_one_saved_image(monkeypatch, tmp_path) -> None:
             ),
         )
 
-    assert calls == ["3:4 都市通勤穿搭编辑画报，克制的海军蓝与羊毛层次"]
-    assert result["image_url"].startswith("/media/inspiration_")
+    assert calls == [
+        ("3:4 都市通勤穿搭编辑画报，克制的海军蓝与羊毛层次", 3)
+    ]
+    assert len(result["looks"]) == 3
+    assert all(
+        look["image_url"].startswith("/media/inspiration_")
+        for look in result["looks"]
+    )
     assert result["disclaimer"] == "AI 灵感图 · 不代表衣橱已有单品"
-    assert len(list(tmp_path.glob("inspiration_*.jpg"))) == 1
+    assert len(list(tmp_path.glob("inspiration_*.jpg"))) == 3

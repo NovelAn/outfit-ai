@@ -2,7 +2,7 @@
 
 个人 AI 衣橱：真实衣物去背景入库，参考 Look 沉淀 Style DNA；每天从真实衣橱给出 **Safe / Fresh / Stretch** 三套穿搭，也可生成不依赖现有单品的未来灵感图。
 
-> v0 跑 H5；同一套 uni-app 代码未来编译微信小程序 / 手机 App。
+> v0 跑 H5；前端完整采用用户确认的 Google AI Studio / Stitch React 导出包。
 
 ## 架构一句话
 
@@ -20,7 +20,7 @@ uvicorn outfit_ai.main:app --reload             # http://localhost:8000/docs
 # 前端
 cd frontend
 npm install
-npm run dev:h5                                 # http://localhost:5173
+npm run dev                                    # http://localhost:5173
 ```
 
 详见 [`docs/design.md`](docs/design.md) 与 [`CLAUDE.md`](CLAUDE.md)。
@@ -28,9 +28,8 @@ npm run dev:h5                                 # http://localhost:5173
 ## 部署前准备
 
 - 后端使用 HTTPS 域名；中国大陆部署提前完成 ICP 备案。
-- 在微信公众平台配置 `request`、`uploadFile`、`downloadFile` 合法域名。
 - 生产图片改存阿里云 OSS/CDN；不要把用户图片打进小程序主包。
-- 微信小程序主包保持在 2MB 以内。
+- 微信小程序/App 上线方案需保留当前 React 界面与交互，不回退旧 uni-app 设计。
 
 ## 借鉴与署名
 

@@ -1,5 +1,7 @@
 # Outfit-AI 移动端前端 PRD（Stitch 生成版）
 
+> **历史输入文档，已归档。** 用户最终确认的 `/Users/novel/Downloads/outfit-ai-穿搭与灵感.zip` 是前端唯一事实源；ZIP 与本文冲突时全部以 ZIP 为准。
+
 版本：v1.0
 日期：2026-07-29
 目标：用于 Google Stitch 生成一套可落地的移动端高保真界面，后续由开发侧融合现有 uni-app 前端与 FastAPI 后端。

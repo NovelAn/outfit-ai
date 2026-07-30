@@ -119,3 +119,34 @@ def test_reference_upload_and_list_http_flow(monkeypatch, tmp_path) -> None:
     assert references.status_code == 200
     assert references.json()[0]["id"] == uploaded.json()["id"]
     assert references.json()[0]["status"] == "pending"
+
+
+def test_reference_delete_removes_record_and_uploaded_image(monkeypatch, tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'delete.db'}")
+    Base.metadata.create_all(engine)
+
+    def override_db():
+        with Session(engine) as db:
+            yield db
+
+    image = BytesIO()
+    Image.new("RGB", (8, 12), "navy").save(image, "JPEG")
+    uploads = tmp_path / "uploads"
+    monkeypatch.setattr(router, "storage", LocalStorage(uploads))
+    monkeypatch.setattr(router, "process_reference", lambda _: None)
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            uploaded = client.post(
+                "/api/style-references/upload",
+                files={"file": ("look.jpg", image.getvalue(), "image/jpeg")},
+            )
+            reference_id = uploaded.json()["id"]
+            deleted = client.delete(f"/api/style-references/{reference_id}")
+            remaining = client.get("/api/style-references")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert deleted.status_code == 204
+    assert remaining.json() == []
+    assert list(uploads.iterdir()) == []

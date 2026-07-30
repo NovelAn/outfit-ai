@@ -11,7 +11,7 @@ from ..config import settings
 from ..models import Profile
 from ..schemas import InspirationRequest
 from .llm import generate_json
-from .minimax_images import generate_image
+from .minimax_images import generate_images
 from .style_references import get_reference_analyses
 
 
@@ -62,8 +62,22 @@ def generate(db: Session, request: InspirationRequest) -> dict:
             '{"prompt":"至少二十字的图像生成提示"}',
         )
     ).prompt
-    target = _save_image(generate_image(prompt))
+    targets = [_save_image(image) for image in generate_images(prompt, count=3)]
+    titles = (
+        "Look 01 / Texture Focus",
+        "Look 02 / Silhouette Study",
+        "Look 03 / Color Palette",
+    )
     return {
-        "image_url": f"/media/{target.name}",
+        "image_url": f"/media/{targets[0].name}",
+        "looks": [
+            {
+                "id": f"look-{index + 1}",
+                "title": titles[index],
+                "subtitle": f"{request.scene} · {request.season or '当季'}",
+                "image_url": f"/media/{target.name}",
+            }
+            for index, target in enumerate(targets)
+        ],
         "disclaimer": "AI 灵感图 · 不代表衣橱已有单品",
     }
