@@ -1,13 +1,13 @@
 # Outfit-AI 当前前端与后端集成
 
-> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-07-30，提交 `685af03`。
+> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-07-30。
 
 ## 1. 前端基准
 
 - 原始视觉与交互基准：用户确认的 Google AI Studio / Stitch ZIP。
 - 项目内可执行源码：`frontend/src`。
 - 技术栈：React 19、Vite 6、Tailwind CSS 4、TypeScript。
-- 旧 `docs/design.md`、旧 Stitch PRD 和旧 uni-app/Vue 页面均为历史资料，不得用于覆盖当前界面。
+- 旧 `docs/design.md` 和旧 Stitch PRD 是历史资料；旧 uni-app/Vue 源码已从 `frontend` 删除，不得恢复或用于覆盖当前界面。
 - MiniMax Key 仅由 FastAPI 后端读取，前端只请求 `/api/*` 和 `/media/*`。
 
 ## 2. 应用入口与导航

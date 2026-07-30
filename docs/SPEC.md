@@ -20,6 +20,7 @@
 
 - FastAPI、SQLAlchemy、SQLite、后台识图任务、MiniMax 服务、测试均已实现。
 - 前端已直接采用用户确认的 Stitch React ZIP，共五个页面；详见当前前端事实源。
+- 旧 Vue/uni-app 源码与旧 H5 smoke 脚本已删除，当前前端只有 React 运行链。
 - 本地运行数据写入 SQLite 与上传目录；v0 仍是单用户、无鉴权。
 - 当前自动化基线：后端 70 个测试、前端 6 个 API/视觉契约测试，另有 TypeScript 与生产构建检查。
 

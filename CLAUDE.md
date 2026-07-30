@@ -41,7 +41,7 @@ backend/src/outfit_ai/   # 后端包（src layout）
 frontend/src/             # Stitch ZIP 原版 React 前端
   components/ # 今日 / 衣橱 / 灵感 / 灵感库 / 我的
   lib/api.mjs # FastAPI 接线层
-docs/                     # design.md（架构与署名）
+docs/                     # SPEC.md + 当前前端集成文档；旧设计文档已归档
 data/                     # 运行期产物（uploads/、sqlite）—— 不入库
 ```
 
