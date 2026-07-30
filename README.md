@@ -4,6 +4,12 @@
 
 > v0 跑 H5；前端完整采用用户确认的 Google AI Studio / Stitch React 导出包。
 
+当前实现文档：
+
+- [前端页面、入口、功能与 API 映射](docs/frontend/CURRENT_FRONTEND_INTEGRATION.md)
+- [后端、数据模型与 API 规格](docs/SPEC.md)
+- [项目开发规则](CLAUDE.md)
+
 ## 架构一句话
 
 **识图、生图、文本造型分工**：本地 `rembg` 处理真实衣物，MiniMax VLM 提取衣物与参考 Look 属性，MiniMax-M3 结合 Style DNA 生成真实衣橱搭配，`image-01` 生成独立灵感图；规则只做真实性和天气等硬护栏。
@@ -23,7 +29,7 @@ npm install
 npm run dev                                    # http://localhost:5173
 ```
 
-详见 [`docs/design.md`](docs/design.md) 与 [`CLAUDE.md`](CLAUDE.md)。
+要求 Node.js 20 及以上。前端开发服务器会把 `/api` 和 `/media` 代理到 `http://localhost:8000`。
 
 ## 部署前准备
 

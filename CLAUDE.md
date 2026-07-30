@@ -2,6 +2,15 @@
 
 > 个人 AI 衣橱：拍真实衣物入库 → 沉淀可编辑 Style DNA → 结合天气/场合/心情，每天给出**基调稳定又能持续变化**的 Safe/Fresh/Stretch 三套穿搭，并通过反馈越用越懂。终端目标微信小程序 + 手机 App，v0 先跑通 H5。
 
+## 当前事实源
+
+- 后端、数据模型与 API：`docs/SPEC.md`
+- 前端页面、入口、功能与 API 映射：`docs/frontend/CURRENT_FRONTEND_INTEGRATION.md`
+- 快速启动：`README.md`
+- `docs/design.md` 与 `docs/frontend/OUTFIT_AI_FRONTEND_PRD_STITCH.md` 已归档，不得作为当前实现依据。
+
+**文档同步是完成条件：** 页面、交互、API、数据模型、技术栈、依赖或运行命令发生变化时，必须在同一提交更新相应当前文档。代码已经变化但当前文档仍旧，视为未完成。
+
 ## 技术栈
 
 - **后端**：Python 3.11 + FastAPI（同步）+ SQLAlchemy 2.0 sync + SQLite。单用户零运维；后台任务用 FastAPI `BackgroundTasks`，不上 Redis/arq。
@@ -11,7 +20,7 @@
 - **前端**：用户确认的 Google AI Studio / Stitch ZIP 原版 React 19 + Vite + Tailwind CSS。ZIP 的页面、视觉和交互是唯一前端基准；旧 PRD 和旧 uni-app 页面不得覆盖它。
 - **图片存储**：本地目录起步，`storage.py` 抽象接口，生产换阿里云 OSS。
 
-## 核心架构决策：品味驱动推荐（多模态造型师）
+## 核心架构决策：品味驱动推荐（文本造型师）
 
 时尚是主观品味，规则公式再精巧也产不出"懂你"的推荐。规则退居硬护栏，品味判断全交 LLM：
 
