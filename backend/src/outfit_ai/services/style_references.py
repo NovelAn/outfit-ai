@@ -79,7 +79,7 @@ def merge_style_dna(
         merged.style_keywords,
         {**preferences, "pinned": []},
     )
-    pinned = active_style_keywords([], preferences)
+    pinned = active_style_keywords([], {**preferences, "hidden": []})
     style_keywords = model_keywords[: 7 - len(pinned)]
     style_keywords.extend(tag for tag in pinned if tag not in style_keywords)
     return merged.model_copy(

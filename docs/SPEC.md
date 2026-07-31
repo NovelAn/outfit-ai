@@ -204,7 +204,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。
 - `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。造型师收到的长期档案只包括应用 pin/hide/alias 后的有效关键词、最近风格信号和 `taste_memo`。来源：ai-closet 结构（适配 chat completions）
 - `workers/analysis.py`：真实衣物 BackgroundTask（pending→analyzing→rembg→VLM→ready/failed）。
-- `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）；重试只复用有效非空分析，旧空缓存会重新调用 VLM。合并结果的核心关键词最多 7 个（仅可复用且有证据的风格概念，不含单件、场景或季节），最近信号最多 3 个，色板最多 5 个且仅可使用 `黑色、白色、深蓝色、浅蓝色、灰色、米白色、米黄色、卡其色、棕色、绿色、红色、紫色`；pin 在模型合并后保留，hidden 与 alias 最后应用。
+- `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）；重试只复用有效非空分析，旧空缓存会重新调用 VLM。合并结果的核心关键词最多 7 个（仅可复用且有证据的风格概念，不含单件、场景或季节），最近信号最多 3 个，色板最多 5 个且仅可使用 `黑色、白色、深蓝色、浅蓝色、灰色、米白色、米黄色、卡其色、棕色、绿色、红色、紫色`；alias 先归一化标签，再应用 hidden，最后保留 pin（`pinned > hidden`）。
 - `routers/{wardrobe,profile,recommend,feedback,style_references,inspiration}.py`：见 §6
 - `main.py`：FastAPI app、CORS、lifespan `init_db()`、挂载 routers、静态托管 `/media`→upload_dir
 

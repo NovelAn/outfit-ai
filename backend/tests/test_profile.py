@@ -168,6 +168,18 @@ def test_legacy_profile_put_keeps_unmentioned_curation_fields(tmp_path) -> None:
     assert saved.json()["last_location"] == {"city": "上海"}
 
 
+def test_legacy_profile_put_does_not_attach_transient_curation_attrs() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        profile = _save(db, ProfileIn(city="杭州"))
+
+    assert not hasattr(profile, "recent_style_signals")
+    assert not hasattr(profile, "style_tag_preferences")
+    assert not hasattr(profile, "last_location")
+
+
 def test_style_dna_draft_does_not_save_before_user_confirms(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

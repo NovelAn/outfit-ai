@@ -62,20 +62,23 @@ def _save(db: Session, payload: ProfileIn) -> Profile:
         ("formulas", "formulas_json"),
     ):
         setattr(profile, target, json.dumps(data.pop(source), ensure_ascii=False))
+    recent_style_signals = data.pop("recent_style_signals")
+    style_tag_preferences = data.pop("style_tag_preferences")
+    last_location = data.pop("last_location")
     profile.learned_from_feedback_json = encode_profile_state(
         learnings=data.pop("learned_from_feedback"),
         recent_style_signals=(
-            data.pop("recent_style_signals")
+            recent_style_signals
             if "recent_style_signals" in payload.model_fields_set
             else state["recent_style_signals"]
         ),
         style_tag_preferences=(
-            data.pop("style_tag_preferences")
+            style_tag_preferences
             if "style_tag_preferences" in payload.model_fields_set
             else state["style_tag_preferences"]
         ),
         last_location=(
-            data.pop("last_location")
+            last_location
             if "last_location" in payload.model_fields_set
             else state["last_location"]
         ),

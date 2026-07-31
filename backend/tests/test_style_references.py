@@ -179,7 +179,7 @@ def test_merge_style_dna_curates_keywords_signals_and_palette(monkeypatch) -> No
                 "recent_style_signals": [],
                 "style_tag_preferences": {
                     "pinned": ["复古"],
-                    "hidden": ["商务会议"],
+                    "hidden": ["商务会议", "复古"],
                     "aliases": {"日杂休闲": "日系松弛"},
                 },
                 "last_location": None,
