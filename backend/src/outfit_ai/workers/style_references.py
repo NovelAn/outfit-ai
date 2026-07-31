@@ -6,6 +6,7 @@ from ..config import settings
 from ..db import SessionLocal
 from ..models import Profile, StyleReference
 from ..schemas import StyleDnaMerge, StyleReferenceAnalysis
+from ..services.profile_state import decode_profile_state, encode_profile_state
 from ..services.style_references import merge_style_dna
 from ..services.vision import analyze_reference
 
@@ -60,6 +61,13 @@ def process_reference(reference_id: str) -> None:
                     f"{field}_json",
                     json.dumps(getattr(merged, field), ensure_ascii=False),
                 )
+            state = decode_profile_state(profile.learned_from_feedback_json or "[]")
+            profile.learned_from_feedback_json = encode_profile_state(
+                learnings=state["learnings"],
+                recent_style_signals=merged.recent_style_signals,
+                style_tag_preferences=state["style_tag_preferences"],
+                last_location=state["last_location"],
+            )
             profile.taste_memo = merged.taste_memo
             reference.status = "ready"
         except Exception as exc:

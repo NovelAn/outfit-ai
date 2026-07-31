@@ -1,6 +1,8 @@
 import json
 from typing import Any
 
+from .profile_state import active_style_keywords, decode_profile_state
+
 
 def style_dna_messages(samples: list[str], text: str) -> list[dict[str, Any]]:
     content: list[dict[str, Any]] = [
@@ -63,12 +65,20 @@ def stylist_context(
         }
         for item in candidates
     ]
+    state = (
+        decode_profile_state(profile.learned_from_feedback_json or "[]")
+        if profile
+        else decode_profile_state("[]")
+    )
     return json.dumps(
         {
             "items": items,
             "style_dna": {
-                "keywords": json.loads(profile.style_keywords_json or "[]") if profile else [],
-                "avoids": json.loads(profile.avoids_json or "[]") if profile else [],
+                "keywords": active_style_keywords(
+                    json.loads(profile.style_keywords_json or "[]") if profile else [],
+                    state["style_tag_preferences"],
+                ),
+                "recent_style_signals": state["recent_style_signals"],
             },
             "taste_memo": profile.taste_memo if profile else "",
             "weather": weather,

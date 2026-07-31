@@ -98,6 +98,14 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 5.1 `profile`（Style DNA + 品味备忘录，1 行/用户）
 `user_id`(PK) · `body_json`(Text) · `color_season`? · `color_undertone`? · `palette_json` · `style_keywords_json` · `avoids_json` · `preferred_colors_json`（onboarding 结构化偏好，喂造型师作上下文） · `preferred_styles_json` · `brand_sizes_json` · `city`? · `climate`? · `occasions_json` · `budget_*_cents` ×3 · `learned_from_feedback_json` · `formulas_json` · `last_profile_refresh`? · **`taste_memo`**(Text) · **`taste_memo_updated_at`**(DateTime?) · **`feedback_since_refresh`**(Integer default 0)
 
+不新增表或列：`learned_from_feedback_json` 兼容旧版 `list[str]`（直接作为 `learnings` 读取），新版为以下 version-1 封套；损坏数据安全回退为空值。
+
+```json
+{"version":1,"learnings":[],"recent_style_signals":[],"style_tag_preferences":{"pinned":[],"hidden":[],"aliases":{}},"last_location":null}
+```
+
+`learnings` 保持原有公开字段 `learned_from_feedback`。Profile 另公开 `recent_style_signals`、`style_tag_preferences` 与 `last_location`；字符串去重且保序，`pinned` 与 `recent_style_signals` 最多各 3 个。
+
 ### 5.2 `wardrobe_items`（含上传状态机）
 `id`(PK) · `user_id` · `name`? · `category`? · `primary_color`? · `secondary_color`? · `material`? · `fit`? · `formality`? · `style_json` · `tags_json` · `seasons_json` · `occasions_json` · `versatility`? · `brand`? · `size`? · `image_path` · `status`(pending/analyzing/ready/failed) · `attempt_count` · `ai_raw_response`? · `duplicate_of`? · `duplicate_confidence`? · `confirmed_by_user`(Bool) · `added_at`
 索引：`(user_id,category)`、`(user_id,status)`、`(user_id,confirmed_by_user)`
@@ -142,6 +150,8 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 | POST | `/api/profile/style-dna/draft` | body `{samples:[url], text}` → LLM 草稿 | 200 `{draft:Profile}` |
 | POST | `/api/profile/taste-memo/refresh` | 手动触发 LLM 刷新品味备忘录 | 202 `{ok:true}` |
 
+`Profile` 保持既有字段，并新增 `recent_style_signals:list[str]`、`style_tag_preferences:{pinned:list[str],hidden:list[str],aliases:object}` 和 `last_location:object|null`。旧客户端仍可只提交既有字段，未提交的新字段会保留现有值。
+
 ### 6.3 recommend
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
@@ -184,6 +194,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测
 - `services/stylist.py`：`propose(...) -> list[Look]`（M3 文本属性 + 参考分析，tool use）
+- `services/profile_state.py`：profile JSON 封套的兼容解码/编码，以及 pin、hide、alias 后的有效 Style DNA 关键词；有效关键词最多 7 个，alias 归一化后移除 hidden 标签。
 - `services/validator.py`（**新**）：`validate_looks(looks, candidate_ids)->(ok, error)`（item_id 真实、无重复、含 top+bottom+shoes）。来源：ai-closet 校验链，port 为内部自检 + `tests/test_validation.py`
 - `services/recommend.py`（**新**，编排）：guardrail→stylist→validator(重试)→返回三卡
 - `services/taste_memo.py`（**新**）：`refresh(db,user_id)`（旧 memo + 新 feedback → LLM → 新 memo）；`seed(onboarding)`（Style DNA+样例图→初版）
@@ -191,9 +202,9 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - `services/history.py`：`get_recent_item_ids`（跳 shoes）、`get_recent_outfits(limit=7)`、`record_outfit`。来源：ai-closet
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。
-- `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。来源：ai-closet 结构（适配 chat completions）
+- `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。造型师收到的长期档案只包括应用 pin/hide/alias 后的有效关键词、最近风格信号和 `taste_memo`。来源：ai-closet 结构（适配 chat completions）
 - `workers/analysis.py`：真实衣物 BackgroundTask（pending→analyzing→rembg→VLM→ready/failed）。
-- `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）；重试只复用有效非空分析，旧空缓存会重新调用 VLM。
+- `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）；重试只复用有效非空分析，旧空缓存会重新调用 VLM。合并结果的核心关键词最多 7 个（仅可复用且有证据的风格概念，不含单件、场景或季节），最近信号最多 3 个，色板最多 5 个且仅可使用 `黑色、白色、深蓝色、浅蓝色、灰色、米白色、米黄色、卡其色、棕色、绿色、红色、紫色`；pin 在模型合并后保留，hidden 与 alias 最后应用。
 - `routers/{wardrobe,profile,recommend,feedback,style_references,inspiration}.py`：见 §6
 - `main.py`：FastAPI app、CORS、lifespan `init_db()`、挂载 routers、静态托管 `/media`→upload_dir
 

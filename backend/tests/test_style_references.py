@@ -12,8 +12,9 @@ from outfit_ai.main import app
 from outfit_ai.models import Profile, StyleReference
 from outfit_ai.routers import style_references as router
 from outfit_ai.schemas import StyleReferenceAnalysis
+from outfit_ai.services.profile_state import CANONICAL_PALETTE_NAMES
 from outfit_ai.services.storage import LocalStorage
-from outfit_ai.services.style_references import get_reference_analyses
+from outfit_ai.services.style_references import get_reference_analyses, merge_style_dna
 from outfit_ai.workers import style_references as worker
 
 
@@ -150,6 +151,48 @@ def test_selected_references_must_be_ready_and_owned() -> None:
 
         with pytest.raises(ValueError, match="参考 Look"):
             get_reference_analyses(db, ["ref-1"])
+
+
+def test_merge_style_dna_curates_keywords_signals_and_palette(monkeypatch) -> None:
+    from outfit_ai.services import style_references
+
+    monkeypatch.setattr(
+        style_references,
+        "generate_json",
+        lambda *args: {
+            "style_keywords": ["日杂休闲", "轻量叠穿", "商务会议"],
+            "recent_style_signals": ["近期尝试低饱和"] * 4,
+            "palette": ["深蓝色", "海军蓝", "棕色", "灰色", "白色", "黑色"],
+            "preferred_colors": [],
+            "preferred_styles": [],
+            "avoids": [],
+            "taste_memo": "偏爱松弛层次。",
+        },
+    )
+    profile = Profile(
+        user_id="local",
+        style_keywords_json='["复古"]',
+        learned_from_feedback_json=json.dumps(
+            {
+                "version": 1,
+                "learnings": [],
+                "recent_style_signals": [],
+                "style_tag_preferences": {
+                    "pinned": ["复古"],
+                    "hidden": ["商务会议"],
+                    "aliases": {"日杂休闲": "日系松弛"},
+                },
+                "last_location": None,
+            },
+            ensure_ascii=False,
+        ),
+    )
+
+    merged = merge_style_dna(profile, StyleReferenceAnalysis(style_keywords=["日杂休闲"]))
+
+    assert merged.style_keywords == ["日系松弛", "轻量叠穿", "复古"]
+    assert merged.recent_style_signals == ["近期尝试低饱和"]
+    assert set(merged.palette) <= CANONICAL_PALETTE_NAMES
 
 
 def test_reference_upload_and_list_http_flow(monkeypatch, tmp_path) -> None:

@@ -49,6 +49,7 @@ class StyleReferenceAnalysis(BaseModel):
 
 class StyleDnaMerge(BaseModel):
     style_keywords: list[str] = Field(default_factory=list)
+    recent_style_signals: list[str] = Field(default_factory=list)
     palette: list[str] = Field(default_factory=list)
     preferred_colors: list[str] = Field(default_factory=list)
     preferred_styles: list[str] = Field(default_factory=list)
@@ -99,6 +100,11 @@ class ProfileIn(BaseModel):
     budget_bottom_cents: int | None = Field(None, ge=0)
     budget_outerwear_cents: int | None = Field(None, ge=0)
     learned_from_feedback: list[str] = Field(default_factory=list)
+    recent_style_signals: list[str] = Field(default_factory=list)
+    style_tag_preferences: dict = Field(
+        default_factory=lambda: {"pinned": [], "hidden": [], "aliases": {}}
+    )
+    last_location: dict | None = None
     formulas: list[str] = Field(default_factory=list)
     taste_memo: str = ""
 
