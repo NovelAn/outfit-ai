@@ -27,13 +27,15 @@ frontend/index.html
 
 当前导航由 React 本地状态管理，不使用 URL Router；刷新页面回到“今日”。
 
-城市选择、最近一次推荐、收藏显示和评分表单使用 `localStorage` 作为当前设备的界面缓存；有对应推荐历史的收藏与评分仍通过 `POST /api/feedback` 写入后端学习链。`localStorage` 不是业务事实源。
+今日页优先使用浏览器原生 Geolocation 获取当前位置：坐标按三位小数缓存到 `OUTFIT_AI_LOCATION`，缓存有效期 24 小时；定位成功后调用天气接口。定位被拒绝、超时（8 秒）或不可用时，依次回退到有效坐标缓存、`OUTFIT_AI_CITY` 中的手动城市，最后才显示“需要定位或选择城市”。手动城市是定位不可用时的后备项，不会覆盖当前定位。
+
+最近一次推荐、收藏显示和评分表单使用 `localStorage` 作为当前设备的界面缓存；有对应推荐历史的收藏与评分仍通过 `POST /api/feedback` 写入后端学习链。`localStorage` 不是业务事实源。
 
 ## 3. 五个页面
 
 | 页面 | 源文件 | 用户功能 | 主要后端接口 |
 |---|---|---|---|
-| 今日 | `ScreenToday.tsx` | 从真实衣橱生成 Safe / Fresh / Stretch；收藏、打分和反馈 | `GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
+| 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；收藏、打分和反馈 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
 | 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
@@ -55,6 +57,7 @@ frontend/index.html
 | `referenceStatus(id)` | `GET /api/style-references/{id}/status` | 轮询 VLM 分析与 Style DNA 合并状态 |
 | `deleteReference(id)` | `DELETE /api/style-references/{id}` | 删除参考 Look 和图片 |
 | `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存 Style DNA |
+| `weather({city,latitude,longitude})` | `GET /api/weather` | 以同一位置上下文读取本地日期、城市、温度、天气和降雨数据 |
 | `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐 |
 | `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈 |
 | `history()` | `GET /api/history` | 读取近期推荐记录 |
@@ -67,6 +70,8 @@ frontend/index.html
 衣橱展示层把 `outerwear` 归入“上装”、`dress` 归入“下装”，并单列 `accessory` 为“配饰”；后端仍保留稳定英文类别码。VLM 返回的衣物名称、颜色、材质、版型、风格、标签、季节和场景使用简体中文，品牌名和内部 `category` 除外。
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
+
+今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；只有用户主动要求重新生成时才传 `force_refresh: true`。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
 
 ## 5. 两条核心数据流
 

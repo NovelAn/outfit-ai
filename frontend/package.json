@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "tsc --noEmit",
-    "test": "node scripts/stitch-contract.mjs && node --test scripts/api-contract.test.mjs"
+    "test": "node scripts/stitch-contract.mjs && node --test scripts/api-contract.test.mjs scripts/location-context.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

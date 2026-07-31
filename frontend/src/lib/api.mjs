@@ -148,14 +148,24 @@ export const api = {
       body: JSON.stringify(profile),
     }),
   history: () => request("/api/history"),
-  recommend: async (data) =>
-    mapRecommendation(
+  weather: ({ city, latitude, longitude } = {}) => {
+    const params = new URLSearchParams();
+    if (city) params.set("city", city);
+    if (latitude !== undefined) params.set("latitude", String(latitude));
+    if (longitude !== undefined) params.set("longitude", String(longitude));
+    const query = params.toString();
+    return request(`/api/weather${query ? `?${query}` : ""}`);
+  },
+  recommend: async (data) => {
+    const { force_refresh, ...payload } = data;
+    return mapRecommendation(
       await request("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...payload, ...(force_refresh ? { force_refresh: true } : {}) }),
       }),
-    ),
+    );
+  },
   feedback: (data) =>
     request("/api/feedback", {
       method: "POST",

@@ -6,23 +6,21 @@ interface SideDrawerProps {
   onClose: () => void;
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
+  locationLabel?: string;
 }
 
 const CITIES = [
-  { name: 'TOKYO', temp: '24°C', label: '东京 / 晴' },
-  { name: 'SHANGHAI', temp: '22°C', label: '上海 / 多云' },
-  { name: 'BEIJING', temp: '19°C', label: '北京 / 晴' },
-  { name: 'PARIS', temp: '18°C', label: '巴黎 / 阴' },
-  { name: 'NEW YORK', temp: '21°C', label: '纽约 / 晴' }
+  '东京', '上海', '北京', '巴黎', '纽约'
 ];
 
 export const SideDrawer: React.FC<SideDrawerProps> = ({
   isOpen,
   onClose,
   currentScreen,
-  onNavigate
+  onNavigate,
+  locationLabel,
 }) => {
-  const [selectedCity, setSelectedCity] = useState('TOKYO');
+  const [selectedCity, setSelectedCity] = useState('');
   const [favoritesCount, setFavoritesCount] = useState(0);
   const [ratingsCount, setRatingsCount] = useState(0);
 
@@ -101,24 +99,33 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           {/* Location & Weather Selector */}
           <div className="mb-6">
             <label className="block text-[10px] uppercase font-bold tracking-wider text-[#74777d] mb-2">
-              📍 城市与天气匹配 / City & Weather
+              📍 定位与城市 / Location & City
             </label>
+            <p className="text-[10px] text-[#43474c] mb-2">{locationLabel || `手动城市：${selectedCity || '未设置'}`}</p>
+            <p className="text-[10px] text-[#74777d] mb-2">手动城市仅在定位不可用时使用</p>
             <div className="grid grid-cols-2 gap-1.5">
-              {CITIES.map((c) => (
+              {CITIES.map((city) => (
                 <button
-                  key={c.name}
-                  onClick={() => handleCityChange(c.name)}
+                  key={city}
+                  onClick={() => handleCityChange(city)}
                   className={`text-[11px] p-2 rounded text-left transition-all border flex flex-col justify-between ${
-                    selectedCity === c.name
+                    selectedCity === city
                       ? 'bg-[#162839] text-white border-[#162839] shadow-xs'
                       : 'bg-white text-[#43474c] border-[#c4c6cd]/40 hover:border-[#162839]'
                   }`}
                 >
-                  <span className="font-bold font-mono text-[10px]">{c.name}</span>
-                  <span className="text-[10px] opacity-80">{c.temp}</span>
+                  <span className="font-bold text-[10px]">{city}</span>
                 </button>
               ))}
             </div>
+            <a
+              href="https://www.openstreetmap.org/copyright"
+              target="_blank"
+              rel="noreferrer"
+              className="block mt-2 text-[9px] text-[#74777d] underline"
+            >
+              © OpenStreetMap contributors
+            </a>
           </div>
 
           {/* Main Navigation Links */}

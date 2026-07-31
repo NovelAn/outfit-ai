@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api } from '../lib/api.mjs';
+import { resolveLocationContext } from '../lib/location.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -160,7 +161,10 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [activeModalItem, setActiveModalItem] = useState<{ title: string; desc: string } | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [currentCity, setCurrentCity] = useState('TOKYO / 24°C');
+  const [locationContext, setLocationContext] = useState<any>({ source: 'missing' });
+  const [weather, setWeather] = useState<any>(null);
+  const [weatherIsStale, setWeatherIsStale] = useState(false);
+  const weatherRef = useRef<any>(null);
   const [liveLooks, setLiveLooks] = useState<any>(() => {
     try {
       const cached = localStorage.getItem('OUTFIT_AI_LATEST_RECOMMENDATION');
@@ -275,15 +279,39 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [commentText, setCommentText] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const refreshDailyContext = async () => {
+    const context = await resolveLocationContext({ storage: localStorage });
+    setLocationContext(context);
+    if (context.source === 'missing') {
+      setWeatherIsStale(Boolean(weatherRef.current));
+      return context;
+    }
+    try {
+      const latestWeather = await api.weather(context);
+      setWeather(latestWeather);
+      weatherRef.current = latestWeather;
+      setWeatherIsStale(false);
+    } catch {
+      setWeatherIsStale(Boolean(weatherRef.current));
+    }
+    return context;
+  };
+
   const handleSwapLook = async (tier: 'safe' | 'fresh' | 'stretch') => {
     setSwappingTier(tier);
     try {
+      if (locationContext.source === 'missing') {
+        triggerToast('需要定位或选择城市');
+        return;
+      }
       const references = await api.references();
-      const city = localStorage.getItem('OUTFIT_AI_CITY') || '上海';
       const recommendation = await api.recommend({
         occasion: '日常',
         scene: '日常',
-        city,
+        city: weather?.city || locationContext.city,
+        latitude: locationContext.latitude,
+        longitude: locationContext.longitude,
+        force_refresh: true,
         reference_ids: references
           .filter((item: any) => item.status === 'ready')
           .slice(0, 6)
@@ -292,9 +320,11 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       });
       setLiveLooks(recommendation);
       localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(recommendation));
-      if (recommendation.weather?.temp !== undefined) {
-        setCurrentCity(`${city} / ${Math.round(recommendation.weather.temp)}°C`);
+      if (recommendation.weather) {
+        setWeather(recommendation.weather);
+        weatherRef.current = recommendation.weather;
       }
+      setWeatherIsStale(false);
       (['safe', 'fresh', 'stretch'] as const).forEach((key) => {
         const look = recommendation[key];
         LOOK_DETAILS[key] = {
@@ -316,18 +346,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     }
   };
 
-  const loadCityAndFavorites = () => {
+  const loadFavorites = () => {
     try {
-      const city = localStorage.getItem('OUTFIT_AI_CITY') || 'TOKYO';
-      const cityMap: Record<string, string> = {
-        TOKYO: 'TOKYO / 24°C',
-        SHANGHAI: 'SHANGHAI / 22°C',
-        BEIJING: 'BEIJING / 19°C',
-        PARIS: 'PARIS / 18°C',
-        'NEW YORK': 'NEW YORK / 21°C'
-      };
-      setCurrentCity(cityMap[city] || 'TOKYO / 24°C');
-
       const favsStr = localStorage.getItem('OUTFIT_AI_FAVORITES');
       if (favsStr) {
         const favs: FavoriteLook[] = JSON.parse(favsStr);
@@ -349,9 +369,13 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       if (saved) {
         setRatings(JSON.parse(saved));
       }
-      loadCityAndFavorites();
+      loadFavorites();
+      void refreshDailyContext();
 
-      const handleStorageChange = () => loadCityAndFavorites();
+      const handleStorageChange = () => {
+        loadFavorites();
+        void refreshDailyContext();
+      };
       window.addEventListener('storage', handleStorageChange);
       return () => window.removeEventListener('storage', handleStorageChange);
     } catch (e) {
@@ -363,6 +387,17 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  const locationLabel = weather
+    ? `${weather.city || locationContext.city || '当前地点'} / ${Math.round(weather.temp)}°C · ${weather.condition}`
+    : locationContext.source === 'missing'
+      ? '需要定位或选择城市'
+      : '正在获取天气';
+  const rainSummary = weather?.rain_window
+    ? `降雨时段 ${weather.rain_window}`
+    : weather
+      ? `降雨概率 ${weather.precipitation_probability_max ?? 0}%${weather.precipitation_sum ? ` · ${weather.precipitation_sum} mm` : ''}`
+      : '';
 
   const toggleLike = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -487,6 +522,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
         onClose={() => setIsDrawerOpen(false)}
         currentScreen="today"
         onNavigate={onNavigate}
+        locationLabel={locationLabel}
       />
 
       {/* Header */}
@@ -502,9 +538,9 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 <span className="material-symbols-outlined text-2xl block">menu</span>
               </button>
               <div className="flex flex-col">
-                <span className="font-semibold text-[10px] uppercase tracking-widest text-[#43474c]">{currentCity}</span>
+                <span className="font-semibold text-[10px] tracking-widest text-[#43474c]">{locationLabel}</span>
                 <span className="font-semibold text-[10px] uppercase tracking-widest text-[#43474c]">
-                  {new Date().toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {weather ? `${weather.local_date} · ${rainSummary}${weatherIsStale ? ' · 上次更新' : ''}` : ''}
                 </span>
               </div>
             </div>

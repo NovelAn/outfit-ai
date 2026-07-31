@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-const [app, nav, html, pkg, inspiration, archive, wardrobe] = await Promise.all([
+const [app, nav, html, pkg, inspiration, archive, wardrobe, today, drawer] = await Promise.all([
   read("src/App.tsx"),
   read("src/components/BottomNav.tsx"),
   read("index.html"),
@@ -11,6 +11,8 @@ const [app, nav, html, pkg, inspiration, archive, wardrobe] = await Promise.all(
   read("src/components/ScreenInspiration.tsx"),
   read("src/components/ScreenArchive.tsx"),
   read("src/components/ScreenWardrobe.tsx"),
+  read("src/components/ScreenToday.tsx"),
+  read("src/components/SideDrawer.tsx"),
 ]);
 
 for (const screen of ["ScreenToday", "ScreenWardrobe", "ScreenInspiration", "ScreenArchive", "ScreenProfile"]) {
@@ -37,5 +39,9 @@ assert.match(
 assert.match(wardrobe, /首次处理.*去背景模型/, "wardrobe must explain slow first-time setup");
 assert.match(wardrobe, /grid-cols-3/, "mobile wardrobe must show three compact columns");
 assert.match(wardrobe, /aspect-\[4\/5\]/, "wardrobe thumbnails must use a compact fixed ratio");
+assert.doesNotMatch(today, /TOKYO \/ 24°C/);
+assert.match(today, /resolveLocationContext/);
+assert.match(today, /precipitation_probability_max/);
+assert.match(drawer, /OpenStreetMap contributors/);
 
 console.log("Stitch visual contract passed: five screens and original design dependencies preserved");
