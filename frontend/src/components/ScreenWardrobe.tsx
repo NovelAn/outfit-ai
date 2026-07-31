@@ -306,6 +306,9 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
               <p className="text-[11px] text-gray-200">
                 正在识别 {extractCount} 张上传实拍照片的材质、材质落色与裁剪分类...
               </p>
+              <p className="text-[10px] text-gray-300 mt-1">
+                首次处理需要准备本地去背景模型，可能耗时 2–3 分钟；缓存后会明显加快。
+              </p>
               <div className="w-full bg-white/20 h-1 rounded-full mt-2 overflow-hidden">
                 <div className="bg-[#f4dfcb] h-full w-2/3 animate-pulse"></div>
               </div>

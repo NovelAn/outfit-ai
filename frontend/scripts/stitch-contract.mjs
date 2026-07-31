@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-const [app, nav, html, pkg, inspiration, archive] = await Promise.all([
+const [app, nav, html, pkg, inspiration, archive, wardrobe] = await Promise.all([
   read("src/App.tsx"),
   read("src/components/BottomNav.tsx"),
   read("index.html"),
   read("package.json"),
   read("src/components/ScreenInspiration.tsx"),
   read("src/components/ScreenArchive.tsx"),
+  read("src/components/ScreenWardrobe.tsx"),
 ]);
 
 for (const screen of ["ScreenToday", "ScreenWardrobe", "ScreenInspiration", "ScreenArchive", "ScreenProfile"]) {
@@ -33,5 +34,6 @@ assert.match(
   /<img\s+onClick=\{\(\) => setPreviewItem\(null\)\}/,
   "clicking the enlarged image must restore the archive",
 );
+assert.match(wardrobe, /首次处理.*去背景模型/, "wardrobe must explain slow first-time setup");
 
 console.log("Stitch visual contract passed: five screens and original design dependencies preserved");

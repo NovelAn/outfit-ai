@@ -81,6 +81,15 @@ test("polls analysis until the backend returns ready", async () => {
   assert.equal(result.id, "item-1");
 });
 
+test("keeps polling through slow first-time background setup", async () => {
+  const states = [
+    ...Array.from({ length: 120 }, () => ({ status: "analyzing" })),
+    { status: "ready", id: "item-slow" },
+  ];
+  const result = await waitForReady(() => Promise.resolve(states.shift()), { delay: 0 });
+  assert.equal(result.id, "item-slow");
+});
+
 test("stops polling when analysis fails", async () => {
   await assert.rejects(
     () => waitForReady(() => Promise.resolve({ status: "failed" }), { delay: 0 }),

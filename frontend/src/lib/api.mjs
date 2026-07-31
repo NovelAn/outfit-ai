@@ -115,14 +115,14 @@ export function seasonCode(label) {
   return { 春: "spring", 夏: "summer", 秋: "autumn", 冬: "winter" }[label];
 }
 
-export async function waitForReady(getStatus, { delay = 800, maxAttempts = 90 } = {}) {
+export async function waitForReady(getStatus, { delay = 800, maxAttempts = 375 } = {}) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const result = await getStatus();
     if (result.status === "ready") return result;
     if (result.status === "failed") throw new Error("AI 识别失败，请重新上传");
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
   }
-  throw new Error("AI 识别超时，请稍后重试");
+  throw new Error("AI 处理时间较长，任务仍在后台继续，请勿重复上传");
 }
 
 export const api = {

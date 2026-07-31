@@ -31,6 +31,8 @@ npm run dev                                    # http://localhost:5173
 
 要求 Node.js 20 及以上。前端开发服务器会把 `/api` 和 `/media` 代理到 `http://localhost:8000`。
 
+首次上传真实衣物时，`rembg` 会下载约 176MB 的本地去背景模型到 `~/.u2net/`，可能需要 2–3 分钟；模型缓存后，后续衣物无需重复下载。
+
 ## 部署前准备
 
 - 后端使用 HTTPS 域名；中国大陆部署提前完成 ICP 备案。
