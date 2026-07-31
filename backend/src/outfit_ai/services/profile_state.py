@@ -103,6 +103,10 @@ def active_style_keywords(keywords: list[str], preferences: dict) -> list[str]:
         return aliases.get(tag, tag)
 
     hidden = {normalize(tag) for tag in preferences["hidden"]}
-    candidates = [normalize(tag) for tag in preferences["pinned"]]
+    pinned = _strings([normalize(tag) for tag in preferences["pinned"]])
+    candidates = pinned.copy()
     candidates.extend(normalize(tag) for tag in _strings(keywords))
-    return _strings([tag for tag in candidates if tag not in hidden], 7)
+    return _strings(
+        [tag for tag in candidates if tag in pinned or tag not in hidden],
+        7,
+    )
