@@ -3,7 +3,8 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine, update
+from sqlalchemy import create_engine, inspect, text, update
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -48,10 +49,23 @@ def init_db() -> None:
     from . import models  # noqa: F401  确保模型已注册
 
     Base.metadata.create_all(bind=engine)
+    _add_outfit_history_context_column(engine)
     with SessionLocal() as db:
         recover_interrupted_analyses(db)
         recover_interrupted_references(db)
         db.commit()
+
+
+def _add_outfit_history_context_column(db_engine: Engine) -> None:
+    if db_engine.dialect.name != "sqlite":
+        return
+    if "outfit_history" not in inspect(db_engine).get_table_names():
+        return
+    columns = inspect(db_engine).get_columns("outfit_history")
+    if "context_json" in {column["name"] for column in columns}:
+        return
+    with db_engine.begin() as connection:
+        connection.execute(text("ALTER TABLE outfit_history ADD COLUMN context_json TEXT"))
 
 
 def recover_interrupted_analyses(db: Session) -> int:

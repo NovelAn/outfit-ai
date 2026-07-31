@@ -116,9 +116,11 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 参考 Look 保留完整场景，不执行 rembg；VLM 分析成功后再由 M3 合并进长期 Style DNA。只有包含可见风格证据的非空 VLM 分析才可复用；旧空结果或无效 JSON 在重试时必须重新识图，不能被标记为成功。
 
 ### 5.4 `outfit_history`
-`id`(PK) · `user_id` · `date` · `occasion`? · `mood`? · `weather_summary`? · `temp`? · `outfit_name`? · `item_ids_json` · `pick_mode`(safe/fresh/stretch) · `reason`? · `collage_path`? · `action`(shown/saved/skipped/worn) · `user_rating`? · `wore_it`(Bool)
+`id`(PK) · `user_id` · `date` · `occasion`? · `mood`? · `weather_summary`? · `temp`? · `outfit_name`? · `item_ids_json` · `pick_mode`(safe/fresh/stretch) · `reason`? · `collage_path`? · `context_json`?(Text JSON) · `action`(shown/saved/skipped/worn/prepared) · `user_rating`? · `wore_it`(Bool)
 （**已删 `base_score`**——规则评分产物，新架构无此数）
 索引：`(user_id,date)`、`(user_id,action)`
+
+`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`weather_fit`、`occasion_fit`。`prepared` 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作；当天读取时每档只取最新一条，并且 Safe/Fresh/Stretch 三档齐全才可用。`init_db()` 在 `create_all()` 后仅对缺少该列的 SQLite `outfit_history` 执行一次 `ALTER TABLE ... ADD COLUMN context_json TEXT`；不改写或删除既有行。
 
 ### 5.5 `feedback`
 `id`(PK) · `user_id` · `date` · `items_worn_json` · `occasion`? · `occasion_type`? · `sentiment`? · `compliments_json` · `didnt_work`? · `learnings`?
@@ -199,7 +201,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - `services/recommend.py`（**新**，编排）：guardrail→stylist→validator(重试)→返回三卡
 - `services/taste_memo.py`（**新**）：`refresh(db,user_id)`（旧 memo + 新 feedback → LLM → 新 memo）；`seed(onboarding)`（Style DNA+样例图→初版）
 - `services/weather.py`：`get_weather(city?,latitude?,longitude?)->WeatherData`；返回本地日期/时区、当前降水与雨量、当天降水概率/总量，以及未来 12 小时首段 `>=50%` 的连续降雨窗口。Open-Meteo 天气缓存 30min；Nominatim 反查城市用坐标四舍五入键缓存 24h，反查失败只返回 `city:null`。使用 Nominatim/OpenStreetMap 数据的用户可见界面必须显示 OpenStreetMap attribution。`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
-- `services/history.py`：`get_recent_item_ids`（跳 shoes）、`get_recent_outfits(limit=7)`、`record_outfit`。来源：ai-closet
+- `services/history.py`：`get_recent_item_ids`（跳 shoes）、`get_recent_outfits(limit=7)`、`get_prepared_outfits(local_date)`（齐全三档且每档取最新）、`record_outfit(action, context)`。来源：ai-closet
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。
 - `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。造型师收到的长期档案只包括应用 pin/hide/alias 后的有效关键词、最近风格信号和 `taste_memo`。来源：ai-closet 结构（适配 chat completions）

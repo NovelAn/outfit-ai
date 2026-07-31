@@ -1,7 +1,11 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, Field, model_validator
+
+OutfitHistoryAction: TypeAlias = Literal[
+    "shown", "saved", "skipped", "worn", "prepared"
+]
 
 
 class ClothingAttributes(BaseModel):

@@ -1,11 +1,12 @@
 import json
+from datetime import date
 from uuid import uuid4
 
 from sqlalchemy import literal_column, select
 from sqlalchemy.orm import Session
 
 from ..models import OutfitHistory, WardrobeItem
-from ..schemas import ProposedLook
+from ..schemas import OutfitHistoryAction, ProposedLook
 from .categories import canonical_category
 
 
@@ -39,6 +40,28 @@ def get_recent_item_ids(
     return ids - shoes
 
 
+def get_prepared_outfits(
+    db: Session, user_id: str, local_date: date
+) -> list[OutfitHistory]:
+    tiers = ("safe", "fresh", "stretch")
+    rows = db.scalars(
+        select(OutfitHistory)
+        .where(
+            OutfitHistory.user_id == user_id,
+            OutfitHistory.date == local_date,
+            OutfitHistory.action == "prepared",
+            OutfitHistory.pick_mode.in_(tiers),
+        )
+        .order_by(literal_column("outfit_history.rowid").desc())
+    )
+    latest_by_tier = {}
+    for row in rows:
+        latest_by_tier.setdefault(row.pick_mode, row)
+    if any(tier not in latest_by_tier for tier in tiers):
+        return []
+    return [latest_by_tier[tier] for tier in tiers]
+
+
 def record_outfit(
     db: Session,
     user_id: str,
@@ -48,6 +71,8 @@ def record_outfit(
     mood: str | None,
     weather_summary: str,
     temp: float,
+    action: OutfitHistoryAction = "shown",
+    context: dict[str, object] | None = None,
 ) -> OutfitHistory:
     history = OutfitHistory(
         id=uuid4().hex,
@@ -59,7 +84,8 @@ def record_outfit(
         item_ids_json=json.dumps(look.item_ids),
         pick_mode=look.tier,
         reason=look.reason,
-        action="shown",
+        action=action,
+        context_json=json.dumps(context, ensure_ascii=False) if context is not None else None,
     )
     db.add(history)
     return history
