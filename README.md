@@ -39,6 +39,14 @@ npm run dev                                    # http://localhost:5173
 - 生产图片改存阿里云 OSS/CDN；不要把用户图片打进小程序主包。
 - 微信小程序/App 上线方案需保留当前 React 界面与交互，不回退旧 uni-app 设计。
 
+生产环境可由平台调度器在本地 06:30 预生成每日三套穿搭：
+
+```cron
+30 6 * * * cd /app/backend && uv run python -m outfit_ai.precompute_daily
+```
+
+项目不安装本地 cron/launchd；休眠中的电脑无法保证 06:30 执行。
+
 ## 借鉴与署名
 
 本项目站在三个开源项目肩膀上（源码级调研后选择性 port / 抽象）：

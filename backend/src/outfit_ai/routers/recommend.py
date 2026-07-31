@@ -31,7 +31,7 @@ def weather(
 def recommendation(payload: RecommendRequest, db: DbSession):
     try:
         require_api_key()
-        return recommend(db, payload)
+        return recommend(db, payload, history_action="shown")
     except LLMUnavailableError as exc:
         raise HTTPException(503, str(exc)) from exc
     except LLMResponseError as exc:

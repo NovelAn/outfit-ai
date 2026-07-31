@@ -95,6 +95,35 @@ def encode_profile_state(
     )
 
 
+def save_last_location(
+    profile: Any,
+    *,
+    latitude: float | None,
+    longitude: float | None,
+    city: str | None,
+    timezone: str,
+    updated_at: str,
+) -> None:
+    state = decode_profile_state(profile.learned_from_feedback_json or "[]")
+    previous = state["last_location"] or {}
+    profile.learned_from_feedback_json = encode_profile_state(
+        learnings=state["learnings"],
+        recent_style_signals=state["recent_style_signals"],
+        style_tag_preferences=state["style_tag_preferences"],
+        last_location={
+            "latitude": round(latitude, 3)
+            if latitude is not None
+            else previous.get("latitude"),
+            "longitude": round(longitude, 3)
+            if longitude is not None
+            else previous.get("longitude"),
+            "city": city,
+            "timezone": timezone,
+            "updated_at": updated_at,
+        },
+    )
+
+
 def active_style_keywords(keywords: list[str], preferences: dict) -> list[str]:
     preferences = _preferences(preferences)
     aliases = preferences["aliases"]

@@ -1,4 +1,6 @@
 import json
+from datetime import date, datetime
+from math import asin, cos, radians, sin, sqrt
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -9,7 +11,13 @@ from ..schemas import RecommendRequest
 from .background import display_image_path
 from .categories import canonical_category
 from .guardrail import filter_candidates
-from .history import get_recent_item_ids, get_recent_outfits, record_outfit
+from .history import (
+    get_prepared_outfits,
+    get_recent_item_ids,
+    get_recent_outfits,
+    record_outfit,
+)
+from .profile_state import save_last_location
 from .style_references import get_reference_analyses
 from .stylist import propose
 from .validator import validate_looks
@@ -24,15 +32,119 @@ def _season(temp: float) -> str:
     return "spring_autumn"
 
 
-def recommend(db: Session, request: RecommendRequest) -> dict:
+def _haversine_km(
+    latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float
+) -> float:
+    latitude_delta = radians(latitude_b - latitude_a)
+    longitude_delta = radians(longitude_b - longitude_a)
+    distance = sin(latitude_delta / 2) ** 2 + cos(radians(latitude_a)) * cos(
+        radians(latitude_b)
+    ) * sin(longitude_delta / 2) ** 2
+    return 6371 * 2 * asin(sqrt(distance))
+
+
+def _weather_context(weather: object) -> dict:
+    return json.loads(json.dumps(weather.model_dump(), default=str))
+
+
+def _prepared_matches(prepared: list, request: RecommendRequest, weather: object) -> bool:
+    if request.latitude is None or request.longitude is None:
+        return False
+    weather_context = _weather_context(weather)
+    for history in prepared:
+        try:
+            context = json.loads(history.context_json or "{}")
+            prepared_weather = context["weather"]
+            prepared_temp = prepared_weather.get("temp")
+            distance = _haversine_km(
+                context["latitude"],
+                context["longitude"],
+                request.latitude,
+                request.longitude,
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not isinstance(prepared_temp, int | float):
+            return False
+        if (
+            distance > 20
+            or _season(prepared_temp) != _season(weather.temp)
+            or (prepared_weather.get("precipitation_probability_max", 0) >= 50)
+            != (weather_context.get("precipitation_probability_max", 0) >= 50)
+        ):
+            return False
+    return True
+
+
+def _card(history: object, items: dict[str, WardrobeItem]) -> dict | None:
+    try:
+        item_ids = json.loads(history.item_ids_json)
+        context = json.loads(history.context_json or "{}")
+        cards = [
+            {
+                "id": item_id,
+                "name": items[item_id].name,
+                "category": items[item_id].category,
+                "image_url": f"/media/{display_image_path(items[item_id]).name}",
+                "primary_color": items[item_id].primary_color,
+            }
+            for item_id in item_ids
+        ]
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {
+        "history_id": history.id,
+        "items": cards,
+        "reason": history.reason,
+        "weather_fit": context.get("weather_fit", ""),
+        "occasion_fit": context.get("occasion_fit", ""),
+        "pick_mode": history.pick_mode,
+    }
+
+
+def _reuse_prepared(
+    db: Session, request: RecommendRequest, weather: object, items: dict[str, WardrobeItem]
+) -> dict | None:
+    prepared = get_prepared_outfits(
+        db, settings.user_id, getattr(weather, "local_date", date.today())
+    )
+    if not prepared or not _prepared_matches(prepared, request, weather):
+        return None
+    cards = {history.pick_mode: _card(history, items) for history in prepared}
+    if any(card is None for card in cards.values()):
+        return None
+    for history in prepared:
+        history.action = "shown"
+    return {"weather": weather.model_dump(), **cards}
+
+
+def recommend(
+    db: Session, request: RecommendRequest, *, history_action: str = "shown"
+) -> dict:
     profile = db.get(Profile, settings.user_id)
     city = request.city or (profile.city if profile else None)
     weather = get_weather(
         city, latitude=request.latitude, longitude=request.longitude
     )
+    if profile is None:
+        profile = Profile(user_id=settings.user_id)
+        db.add(profile)
+    save_last_location(
+        profile,
+        latitude=request.latitude,
+        longitude=request.longitude,
+        city=getattr(weather, "city", None) or city,
+        timezone=getattr(weather, "timezone", ""),
+        updated_at=datetime.now().astimezone().isoformat(),
+    )
     items = list(
         db.scalars(select(WardrobeItem).where(WardrobeItem.user_id == settings.user_id))
     )
+    if not request.force_refresh and history_action != "prepared":
+        reused = _reuse_prepared(db, request, weather, {item.id: item for item in items})
+        if reused is not None:
+            db.commit()
+            return reused
     candidates = filter_candidates(
         items,
         season=request.season or _season(weather.temp),
@@ -77,6 +189,13 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
     else:
         raise ValueError(f"造型师结果校验失败：{error}")
     by_id = {item.id: item for item in candidates}
+    context_base = {
+        "latitude": round(request.latitude, 3) if request.latitude is not None else None,
+        "longitude": round(request.longitude, 3) if request.longitude is not None else None,
+        "weather": _weather_context(weather),
+        "local_date": getattr(weather, "local_date", date.today()).isoformat(),
+        "prepared_at": datetime.now().astimezone().isoformat(),
+    }
     result = {"weather": weather.model_dump()}
     for look in looks:
         history = record_outfit(
@@ -87,7 +206,14 @@ def recommend(db: Session, request: RecommendRequest) -> dict:
             mood=request.mood,
             weather_summary=weather.condition,
             temp=weather.temp,
+            action=history_action,
+            context={
+                **context_base,
+                "weather_fit": look.weather_fit,
+                "occasion_fit": look.occasion_fit,
+            },
         )
+        history.date = getattr(weather, "local_date", date.today())
         result[look.tier] = {
             "history_id": history.id,
             "items": [

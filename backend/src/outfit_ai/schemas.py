@@ -130,6 +130,7 @@ class RecommendRequest(BaseModel):
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
     locked_item_ids: list[str] = Field(default_factory=list)
+    force_refresh: bool = False
 
 
 class InspirationRequest(BaseModel):
