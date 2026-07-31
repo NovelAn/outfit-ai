@@ -135,6 +135,71 @@ def test_recommend_reuses_matching_prepared_looks_without_stylist(monkeypatch) -
         assert isinstance(location["updated_at"], str)
 
 
+def test_recommend_reuses_prepared_looks_with_saved_coordinates(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    weather_calls = []
+
+    def fake_weather(city, **kwargs):
+        weather_calls.append((city, kwargs))
+        return _weather()
+
+    monkeypatch.setattr(recommend_service, "get_weather", fake_weather)
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: pytest.fail("stylist should not be called"),
+    )
+
+    with Session(engine) as db:
+        db.add_all(_recommendation_items() + _prepared_rows())
+        db.add(
+            recommend_service.Profile(
+                user_id="local",
+                city="上海",
+                learned_from_feedback_json=encode_profile_state(
+                    learnings=[],
+                    recent_style_signals=[],
+                    style_tag_preferences={},
+                    last_location={"latitude": 31.23, "longitude": 121.474},
+                ),
+            )
+        )
+        db.commit()
+
+        result = recommend_service.recommend(db, RecommendRequest(city="上海"))
+
+        assert result["safe"]["history_id"] == "prepared-safe"
+        assert weather_calls == [("上海", {"latitude": None, "longitude": None})]
+
+
+def test_recommend_regenerates_for_malformed_prepared_weather_context(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    calls = []
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: calls.append(1) or _looks(),
+    )
+
+    with Session(engine) as db:
+        prepared = _prepared_rows()
+        prepared[0].context_json = json.dumps(
+            {"latitude": 31.23, "longitude": 121.474, "weather": None}
+        )
+        db.add_all(_recommendation_items() + prepared)
+        db.commit()
+
+        recommend_service.recommend(
+            db, RecommendRequest(latitude=31.230, longitude=121.474)
+        )
+
+        assert calls == [1]
+
+
 def test_recommend_preserves_saved_coordinates_for_city_only_request(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

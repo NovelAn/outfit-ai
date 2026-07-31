@@ -17,7 +17,7 @@ from .history import (
     get_recent_outfits,
     record_outfit,
 )
-from .profile_state import save_last_location
+from .profile_state import decode_profile_state, save_last_location
 from .style_references import get_reference_analyses
 from .stylist import propose
 from .validator import validate_looks
@@ -47,29 +47,59 @@ def _weather_context(weather: object) -> dict:
     return json.loads(json.dumps(weather.model_dump(), default=str))
 
 
-def _prepared_matches(prepared: list, request: RecommendRequest, weather: object) -> bool:
-    if request.latitude is None or request.longitude is None:
+def _effective_coordinates(
+    profile: Profile | None, request: RecommendRequest
+) -> tuple[float | None, float | None]:
+    if request.latitude is not None or request.longitude is not None:
+        return request.latitude, request.longitude
+    state = decode_profile_state(profile.learned_from_feedback_json) if profile else {}
+    location = state.get("last_location") or {}
+    latitude, longitude = location.get("latitude"), location.get("longitude")
+    if (
+        not isinstance(latitude, int | float)
+        or isinstance(latitude, bool)
+        or not isinstance(longitude, int | float)
+        or isinstance(longitude, bool)
+        or not -90 <= latitude <= 90
+        or not -180 <= longitude <= 180
+    ):
+        return None, None
+    return latitude, longitude
+
+
+def _prepared_matches(
+    prepared: list, latitude: float | None, longitude: float | None, weather: object
+) -> bool:
+    if latitude is None or longitude is None:
         return False
     weather_context = _weather_context(weather)
     for history in prepared:
         try:
             context = json.loads(history.context_json or "{}")
             prepared_weather = context["weather"]
+            if not isinstance(prepared_weather, dict):
+                return False
             prepared_temp = prepared_weather.get("temp")
+            prepared_rain = prepared_weather.get("precipitation_probability_max", 0)
             distance = _haversine_km(
                 context["latitude"],
                 context["longitude"],
-                request.latitude,
-                request.longitude,
+                latitude,
+                longitude,
             )
         except (KeyError, TypeError, ValueError):
             return False
-        if not isinstance(prepared_temp, int | float):
+        if (
+            not isinstance(prepared_temp, int | float)
+            or isinstance(prepared_temp, bool)
+            or not isinstance(prepared_rain, int | float)
+            or isinstance(prepared_rain, bool)
+        ):
             return False
         if (
             distance > 20
             or _season(prepared_temp) != _season(weather.temp)
-            or (prepared_weather.get("precipitation_probability_max", 0) >= 50)
+            or (prepared_rain >= 50)
             != (weather_context.get("precipitation_probability_max", 0) >= 50)
         ):
             return False
@@ -103,12 +133,16 @@ def _card(history: object, items: dict[str, WardrobeItem]) -> dict | None:
 
 
 def _reuse_prepared(
-    db: Session, request: RecommendRequest, weather: object, items: dict[str, WardrobeItem]
+    db: Session,
+    latitude: float | None,
+    longitude: float | None,
+    weather: object,
+    items: dict[str, WardrobeItem],
 ) -> dict | None:
     prepared = get_prepared_outfits(
         db, settings.user_id, getattr(weather, "local_date", date.today())
     )
-    if not prepared or not _prepared_matches(prepared, request, weather):
+    if not prepared or not _prepared_matches(prepared, latitude, longitude, weather):
         return None
     cards = {history.pick_mode: _card(history, items) for history in prepared}
     if any(card is None for card in cards.values()):
@@ -122,6 +156,7 @@ def recommend(
     db: Session, request: RecommendRequest, *, history_action: str = "shown"
 ) -> dict:
     profile = db.get(Profile, settings.user_id)
+    latitude, longitude = _effective_coordinates(profile, request)
     city = request.city or (profile.city if profile else None)
     weather = get_weather(
         city, latitude=request.latitude, longitude=request.longitude
@@ -131,8 +166,8 @@ def recommend(
         db.add(profile)
     save_last_location(
         profile,
-        latitude=request.latitude,
-        longitude=request.longitude,
+        latitude=latitude,
+        longitude=longitude,
         city=getattr(weather, "city", None) or city,
         timezone=getattr(weather, "timezone", ""),
         updated_at=datetime.now().astimezone().isoformat(),
@@ -141,7 +176,9 @@ def recommend(
         db.scalars(select(WardrobeItem).where(WardrobeItem.user_id == settings.user_id))
     )
     if not request.force_refresh and history_action != "prepared":
-        reused = _reuse_prepared(db, request, weather, {item.id: item for item in items})
+        reused = _reuse_prepared(
+            db, latitude, longitude, weather, {item.id: item for item in items}
+        )
         if reused is not None:
             db.commit()
             return reused
@@ -190,8 +227,8 @@ def recommend(
         raise ValueError(f"造型师结果校验失败：{error}")
     by_id = {item.id: item for item in candidates}
     context_base = {
-        "latitude": round(request.latitude, 3) if request.latitude is not None else None,
-        "longitude": round(request.longitude, 3) if request.longitude is not None else None,
+        "latitude": round(latitude, 3) if latitude is not None else None,
+        "longitude": round(longitude, 3) if longitude is not None else None,
         "weather": _weather_context(weather),
         "local_date": getattr(weather, "local_date", date.today()).isoformat(),
         "prepared_at": datetime.now().astimezone().isoformat(),
