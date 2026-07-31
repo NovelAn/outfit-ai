@@ -7,13 +7,13 @@ from ..db import get_db
 from ..schemas import RecommendRequest
 from ..services.llm import LLMResponseError, LLMUnavailableError, require_api_key
 from ..services.recommend import recommend
-from ..services.weather import WeatherInputError, WeatherServiceError, get_weather
+from ..services.weather import WeatherData, WeatherInputError, WeatherServiceError, get_weather
 
 router = APIRouter(tags=["recommend"])
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-@router.get("/weather")
+@router.get("/weather", response_model=WeatherData)
 def weather(
     city: str | None = None,
     latitude: float | None = Query(None, ge=-90, le=90),

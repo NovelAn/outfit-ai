@@ -145,7 +145,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 6.3 recommend
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| GET | `/api/weather?city=` | Open-Meteo；内存缓存 30min | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min}` |
+| GET | `/api/weather?city=` | Open-Meteo 预报（天气内存缓存 30min）；按坐标以 Nominatim 反查城市（坐标四舍五入键，缓存 24h，失败不影响天气） | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
 | POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,locked_item_ids?[]}` → guardrail→stylist→validator | 200 `{weather,safe,fresh,stretch}` |
 
 `recommend` 卡片结构（**无 base_score**）：
@@ -187,7 +187,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - `services/validator.py`（**新**）：`validate_looks(looks, candidate_ids)->(ok, error)`（item_id 真实、无重复、含 top+bottom+shoes）。来源：ai-closet 校验链，port 为内部自检 + `tests/test_validation.py`
 - `services/recommend.py`（**新**，编排）：guardrail→stylist→validator(重试)→返回三卡
 - `services/taste_memo.py`（**新**）：`refresh(db,user_id)`（旧 memo + 新 feedback → LLM → 新 memo）；`seed(onboarding)`（Style DNA+样例图→初版）
-- `services/weather.py`：`get_weather(city)->WeatherData`；`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
+- `services/weather.py`：`get_weather(city?,latitude?,longitude?)->WeatherData`；返回本地日期/时区、当前降水与雨量、当天降水概率/总量，以及未来 12 小时首段 `>=50%` 的连续降雨窗口。Open-Meteo 天气缓存 30min；Nominatim 反查城市用坐标四舍五入键缓存 24h，反查失败只返回 `city:null`。使用 Nominatim/OpenStreetMap 数据的用户可见界面必须显示 OpenStreetMap attribution。`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
 - `services/history.py`：`get_recent_item_ids`（跳 shoes）、`get_recent_outfits(limit=7)`、`record_outfit`。来源：ai-closet
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 from pydantic import BaseModel, ConfigDict
@@ -34,6 +34,7 @@ _WMO_CONDITION = {
     99: "强雷暴伴冰雹",
 }
 _CACHE: dict[str, tuple[datetime, "WeatherData"]] = {}
+_REVERSE_CITY_CACHE: dict[str, tuple[datetime, str | None]] = {}
 
 
 class WeatherInputError(ValueError):
@@ -55,6 +56,75 @@ class WeatherData(BaseModel):
     is_daytime: bool
     temp_max: float
     temp_min: float
+    city: str | None
+    local_date: date
+    timezone: str
+    precipitation: float
+    rain: float
+    precipitation_probability_max: int
+    precipitation_sum: float
+    rain_window: str | None
+
+
+def _coordinate_key(latitude: float, longitude: float) -> str:
+    return f"{latitude:.3f}:{longitude:.3f}"
+
+
+def _reverse_city(client: httpx.Client, latitude: float, longitude: float) -> str | None:
+    key = _coordinate_key(latitude, longitude)
+    cached = _REVERSE_CITY_CACHE.get(key)
+    if cached and datetime.now() - cached[0] < timedelta(hours=24):
+        return cached[1]
+    city = None
+    try:
+        geocoding = (
+            client.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params={
+                    "lat": latitude,
+                    "lon": longitude,
+                    "format": "geocodejson",
+                    "zoom": 10,
+                    "accept-language": "zh-CN",
+                },
+                headers={"User-Agent": "Outfit-AI/0.1"},
+            )
+            .raise_for_status()
+            .json()["features"][0]["properties"]["geocoding"]
+        )
+        city = next(
+            (
+                geocoding[name]
+                for name in ("city", "locality", "county", "state")
+                if geocoding.get(name)
+            ),
+            None,
+        )
+    except (AttributeError, httpx.HTTPError, IndexError, KeyError, TypeError, ValueError):
+        pass
+    _REVERSE_CITY_CACHE[key] = (datetime.now(), city)
+    return city
+
+
+def _rain_window(current_time: str, hourly: dict) -> str | None:
+    start = datetime.fromisoformat(current_time)
+    end = start + timedelta(hours=12)
+    first = last = None
+    for raw_time, probability in zip(
+        hourly.get("time", []), hourly.get("precipitation_probability", []), strict=True
+    ):
+        point = datetime.fromisoformat(raw_time)
+        if point <= start or point > end:
+            continue
+        if probability >= 50:
+            if first is None:
+                first = point
+            last = point
+        elif first is not None:
+            break
+    if first is None or last is None:
+        return None
+    return f"{first:%H:%M}–{last:%H:%M}"
 
 
 def get_weather(
@@ -91,8 +161,11 @@ def get_weather(
                         "latitude": latitude,
                         "longitude": longitude,
                         "current": "temperature_2m,apparent_temperature,"
-                        "relative_humidity_2m,weather_code,wind_speed_10m,is_day",
-                        "daily": "temperature_2m_max,temperature_2m_min",
+                        "relative_humidity_2m,weather_code,wind_speed_10m,is_day,"
+                        "precipitation,rain",
+                        "hourly": "precipitation_probability",
+                        "daily": "temperature_2m_max,temperature_2m_min,"
+                        "precipitation_probability_max,precipitation_sum",
                         "forecast_days": 1,
                         "timezone": "auto",
                     },
@@ -100,6 +173,7 @@ def get_weather(
                 .raise_for_status()
                 .json()
             )
+            reverse_city = _reverse_city(client, latitude, longitude)
         current, daily = payload["current"], payload["daily"]
         weather = WeatherData(
             temp=current["temperature_2m"],
@@ -110,6 +184,14 @@ def get_weather(
             is_daytime=bool(current["is_day"]),
             temp_max=daily["temperature_2m_max"][0],
             temp_min=daily["temperature_2m_min"][0],
+            city=reverse_city,
+            local_date=datetime.fromisoformat(current["time"]).date(),
+            timezone=payload["timezone"],
+            precipitation=current["precipitation"],
+            rain=current["rain"],
+            precipitation_probability_max=daily["precipitation_probability_max"][0],
+            precipitation_sum=daily["precipitation_sum"][0],
+            rain_window=_rain_window(current["time"], payload["hourly"]),
         )
     except WeatherInputError:
         raise
