@@ -188,6 +188,30 @@ def test_prepared_outfits_ignore_non_object_context() -> None:
         assert get_prepared_outfits(db, "local", date(2026, 7, 31)) == []
 
 
+def test_prepared_outfits_ignore_invalid_json_for_every_action() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add_all(
+            [
+                OutfitHistory(
+                    id=f"invalid-{action}-{tier}",
+                    user_id="local",
+                    date=date(2026, 7, 31),
+                    item_ids_json="[]",
+                    pick_mode=tier,
+                    action=action,
+                    context_json="{",
+                )
+                for action in ("prepared", "shown")
+                for tier in ("safe", "fresh", "stretch")
+            ]
+        )
+        db.commit()
+
+        assert get_prepared_outfits(db, "local", date(2026, 7, 31)) == []
+
+
 def test_record_outfit_stores_optional_context_without_ascii_escaping() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

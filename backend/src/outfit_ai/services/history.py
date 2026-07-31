@@ -56,9 +56,9 @@ def get_prepared_outfits(
     latest_by_tier = {}
     for row in rows:
         try:
-            context = json.loads(row.context_json or "{}")
+            context = json.loads(row.context_json) if row.context_json else {}
         except (TypeError, ValueError):
-            context = {}
+            continue
         if not isinstance(context, dict):
             continue
         if row.action != "prepared" and context.get("prepared") is not True:
