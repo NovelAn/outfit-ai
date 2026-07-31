@@ -97,8 +97,9 @@ Nominatim 只由后端代理调用，使用明确的应用 `User-Agent`，限制
   （`≤12°C`、`13–24°C`、`≥25°C`），或当日最高降水概率跨过 50% 分界，则自动重新
   生成；否则继续使用 06:30 结果，避免重复消耗 MiniMax。
 
-`outfit_history` 增加 nullable `context_json`，只保存粗略经纬度、天气、当地日期和
-`prepared_at`。现有五表结构不变；`init_db()` 对旧 SQLite 执行一次幂等的加列检查。
+`outfit_history` 增加 nullable `context_json`，保存粗略经纬度、天气、当地日期、
+`prepared_at`，以及还原卡片所需的 `weather_fit` 和 `occasion_fit`。现有五表结构不变；
+`init_db()` 对旧 SQLite 执行一次幂等的加列检查。
 
 ### 调度边界
 
@@ -133,11 +134,13 @@ Nominatim 只由后端代理调用，使用明确的应用 `User-Agent`，限制
 - 隐藏：不显示，也不发送给推荐模型；
 - 合并：选择两个近义标签，保存一个规范标签并记录别名。
 
-这些规则复用 `learned_from_feedback_json`。旧值是字符串数组；新值使用
-`{"version":1,"learnings":[],"recent_style_signals":[],"style_tag_preferences":{...}}`
+这些规则和最近一次粗略定位复用 `learned_from_feedback_json`。旧值是字符串数组；新值
+使用
+`{"version":1,"learnings":[],"recent_style_signals":[],"style_tag_preferences":{...},"last_location":{...}}`
 信封。Profile API 仍把 `learned_from_feedback` 暴露为字符串数组，并新增独立的
-`recent_style_signals` 和 `style_tag_preferences`；前端不解析内部存储格式，旧数组读取
-时自动视作 `learnings`。
+`recent_style_signals`、`style_tag_preferences` 和 `last_location`；前端不解析内部存储
+格式，旧数组读取时自动视作 `learnings`。每次带经纬度请求推荐并成功取得天气后，后端
+更新 `last_location`，供次日 06:30 使用。
 
 “AI 契合度”不再显示由评分数量推算出的虚假百分比。反馈不足时显示“正在学习”；存在
 真实反馈时显示“已根据 N 次反馈更新”，不制造准确率数值。
@@ -175,6 +178,13 @@ Style DNA 合并只允许以下规范色名：
     "pinned": ["日系松弛"],
     "hidden": ["商务会议"],
     "aliases": {"日杂休闲": "日系松弛"}
+  },
+  "last_location": {
+    "latitude": 31.230,
+    "longitude": 121.474,
+    "city": "上海",
+    "timezone": "Asia/Shanghai",
+    "updated_at": "2026-07-31T08:00:00+08:00"
   }
 }
 ```
