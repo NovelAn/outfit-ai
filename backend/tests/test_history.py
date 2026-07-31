@@ -175,7 +175,7 @@ def test_prepared_outfits_ignore_non_object_context() -> None:
                     date=date(2026, 7, 31),
                     item_ids_json="[]",
                     pick_mode=tier,
-                    action="shown",
+                    action="prepared",
                     context_json=context_json,
                 )
                 for tier, context_json in zip(

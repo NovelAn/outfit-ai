@@ -60,7 +60,7 @@ def get_prepared_outfits(
         except (TypeError, ValueError):
             context = {}
         if not isinstance(context, dict):
-            context = {}
+            continue
         if row.action != "prepared" and context.get("prepared") is not True:
             continue
         latest_by_tier.setdefault(row.pick_mode, row)
