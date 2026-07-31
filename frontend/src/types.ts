@@ -4,7 +4,7 @@ export interface OutfitItem {
   id: string;
   brand: string;
   name: string;
-  category: '上装' | '叠穿' | '下装' | '连衣裙' | '鞋履';
+  category: '上装' | '下装' | '鞋履' | '配饰';
   imageUrl: string;
   isNew?: boolean;
 }

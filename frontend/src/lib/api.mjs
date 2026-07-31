@@ -38,16 +38,15 @@ export function mediaUrl(path) {
 
 function categoryLabel(category = "") {
   const value = category.toLowerCase();
-  if (["top", "shirt", "t-shirt", "tee", "sweater", "knitwear"].includes(value)) return "上装";
-  if (["outerwear", "jacket", "coat", "blazer", "cardigan"].includes(value)) return "叠穿";
-  if (["bottom", "pants", "trousers", "jeans", "shorts", "skirt"].includes(value)) return "下装";
-  if (["dress"].includes(value)) return "连衣裙";
+  if (["top", "shirt", "t-shirt", "tee", "sweater", "knitwear", "outerwear", "jacket", "coat", "blazer", "cardigan"].includes(value)) return "上装";
+  if (["bottom", "pants", "trousers", "jeans", "shorts", "skirt", "dress"].includes(value)) return "下装";
   if (["shoes", "shoe", "sneakers", "boots", "loafers", "derbies"].includes(value)) return "鞋履";
+  if (["accessory", "accessories", "bag", "belt", "hat", "scarf", "jewelry", "watch"].includes(value)) return "配饰";
   return "上装";
 }
 
 export function categoryCode(label) {
-  return { 上装: "top", 叠穿: "outerwear", 下装: "bottom", 连衣裙: "dress", 鞋履: "shoes" }[label] || "top";
+  return { 上装: "top", 下装: "bottom", 鞋履: "shoes", 配饰: "accessory" }[label] || "top";
 }
 
 export function mapWardrobeItem(item) {
@@ -70,13 +69,14 @@ export function mapStyleReference(reference) {
     .filter(Boolean)
     .slice(0, 3)
     .map((value) => `#${String(value).replace(/^#/, "")}`);
+  const statusBadges = { pending: "等待中", analyzing: "分析中", failed: "处理失败" };
   return {
     id: reference.id,
     title: keywords[0] || "正在沉淀的灵感",
     category: keywords[0] || "Reference",
     imageUrl: mediaUrl(reference.image_url),
     tags,
-    badge: reference.status === "ready" ? undefined : reference.status.toUpperCase(),
+    badge: statusBadges[reference.status],
     date: reference.added_at,
     status: reference.status,
   };

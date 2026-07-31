@@ -35,5 +35,7 @@ assert.match(
   "clicking the enlarged image must restore the archive",
 );
 assert.match(wardrobe, /首次处理.*去背景模型/, "wardrobe must explain slow first-time setup");
+assert.match(wardrobe, /grid-cols-3/, "mobile wardrobe must show three compact columns");
+assert.match(wardrobe, /aspect-\[4\/5\]/, "wardrobe thumbnails must use a compact fixed ratio");
 
 console.log("Stitch visual contract passed: five screens and original design dependencies preserved");

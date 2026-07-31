@@ -34,7 +34,7 @@ const INITIAL_ITEMS: OutfitItem[] = [
     id: '4',
     brand: 'AURALEE',
     name: '棉质风衣',
-    category: '叠穿',
+    category: '上装',
     imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBuRUKU2ptL8Ug55H8Zc8CuPihQ7OQ9rzIVjv1mcpJmtdT7v9dYNc1xgKxavZl-rFOCr8waLbcjC1bxY-pe3IUW3z8Y6z5wlvPRhqPpqDAo3RQWG50r3gk-FrQx4bq4vqL8zNQznl1UbMPiPAox_3ToAiKWnKld1RtRcgJaG-TF35WHoYESsnP0ra_F6NxujGy8Ca-qcRZhWWc022XrzI2znI_UdaRbkFnCP5ZJJ1GnbFjS9xlPApFw'
   },
   {
@@ -58,7 +58,7 @@ const MORE_ITEMS: OutfitItem[] = [
     id: '7',
     brand: 'MARNI',
     name: '马海毛撞色开衫',
-    category: '叠穿',
+    category: '上装',
     imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBHql_kA1QBu5PdlksjBh57JEYklOBf9QFgGOemLmBKOIcR1_4HYVUfx8__czG7X8xJao48bfq_5Qc9WiKU7vs8zlNs-5QTgdbLuw6s9pkespNnL89bpuEqBv-xyt6lMXV_U6_NyBkZqqFnkkTXwTDK9DdoWOFQS44o0UhL4iNLmv93AlS7xo_xDcT7UbE4-2cbn-uYJ4tOAtGTt3goA9h1iucCnjRKzMK3bdeVtB88eXkop0hCgDRg',
     isNew: true
   },
@@ -74,7 +74,7 @@ const MORE_ITEMS: OutfitItem[] = [
     id: '9',
     brand: 'KAPITAL',
     name: '刺绣水洗牛仔外套',
-    category: '叠穿',
+    category: '上装',
     imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBuRUKU2ptL8Ug55H8Zc8CuPihQ7OQ9rzIVjv1mcpJmtdT7v9dYNc1xgKxavZl-rFOCr8waLbcjC1bxY-pe3IUW3z8Y6z5wlvPRhqPpqDAo3RQWG50r3gk-FrQx4bq4vqL8zNQznl1UbMPiPAox_3ToAiKWnKld1RtRcgJaG-TF35WHoYESsnP0ra_F6NxujGy8Ca-qcRZhWWc022XrzI2znI_UdaRbkFnCP5ZJJ1GnbFjS9xlPApFw'
   },
   {
@@ -94,7 +94,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [newBrand, setNewBrand] = useState('');
   const [newName, setNewName] = useState('');
-  const [newCategory, setNewCategory] = useState<'上装' | '叠穿' | '下装' | '连衣裙' | '鞋履'>('上装');
+  const [newCategory, setNewCategory] = useState<OutfitItem['category']>('上装');
   const [newItemImageUrl, setNewItemImageUrl] = useState<string>('');
   const [newItemFile, setNewItemFile] = useState<File | null>(null);
   const singleFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -107,7 +107,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const categories = ['全部', '上装', '叠穿', '下装', '连衣裙', '鞋履'];
+  const categories = ['全部', '上装', '下装', '鞋履', '配饰'];
 
   const filteredItems = selectedCategory === '全部'
     ? items
@@ -345,14 +345,14 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
         </nav>
 
         {/* Grid View */}
-        <section className="grid grid-cols-2 gap-x-5 gap-y-6 mt-2 pb-6">
+        <section className="grid grid-cols-3 gap-2 mt-1 pb-6">
           {filteredItems.map((item) => (
             <article
               key={item.id}
               onClick={() => setSelectedItem(item)}
-              className="flex flex-col items-center gap-1.5 group cursor-pointer bg-white/60 p-3 rounded-lg border border-[#e4e2dd]/60 hover:shadow-sm transition-all"
+              className="flex flex-col items-center gap-1 group cursor-pointer bg-white/60 p-1.5 rounded-md border border-[#e4e2dd]/60 hover:shadow-sm transition-all"
             >
-              <div className="w-full aspect-square flex items-center justify-center relative p-1 overflow-hidden rounded bg-white/40">
+              <div className="w-full aspect-[4/5] flex items-center justify-center relative overflow-hidden rounded bg-white/40">
                 <img
                   alt={item.name}
                   className="object-contain w-full h-full group-hover:scale-105 transition-transform duration-300"
@@ -364,10 +364,12 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                   </span>
                 )}
               </div>
-              <span className="text-xs font-bold text-[#162839] text-center uppercase tracking-widest mt-1">
-                {item.brand}
-              </span>
-              <span className="text-[11px] text-[#43474c] text-center line-clamp-1">{item.name}</span>
+              {item.brand && (
+                <span className="text-[9px] font-bold text-[#162839] text-center uppercase tracking-wide mt-0.5 line-clamp-1">
+                  {item.brand}
+                </span>
+              )}
+              <span className="text-[10px] leading-tight text-[#43474c] text-center line-clamp-2">{item.name}</span>
             </article>
           ))}
         </section>
@@ -477,10 +479,9 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                   className="w-full p-2 border border-[#c4c6cd] rounded bg-white text-[#162839]"
                 >
                   <option value="上装">上装</option>
-                  <option value="叠穿">叠穿</option>
                   <option value="下装">下装</option>
-                  <option value="连衣裙">连衣裙</option>
                   <option value="鞋履">鞋履</option>
+                  <option value="配饰">配饰</option>
                 </select>
               </div>
             </div>

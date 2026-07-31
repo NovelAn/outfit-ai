@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  categoryCode,
   mapRecommendation,
   mapStyleReference,
   mapWardrobeItem,
@@ -28,6 +29,13 @@ test("maps backend wardrobe records into the unchanged Stitch card model", () =>
   );
 });
 
+test("groups wardrobe items into the five user-facing categories", () => {
+  assert.equal(mapWardrobeItem({ id: "coat", category: "outerwear" }).category, "上装");
+  assert.equal(mapWardrobeItem({ id: "dress", category: "dress" }).category, "下装");
+  assert.equal(mapWardrobeItem({ id: "belt", category: "accessory" }).category, "配饰");
+  assert.equal(categoryCode("配饰"), "accessory");
+});
+
 test("maps analyzed references into archive cards", () => {
   const mapped = mapStyleReference({
     id: "ref-1",
@@ -43,6 +51,16 @@ test("maps analyzed references into archive cards", () => {
   assert.equal(mapped.title, "IvyStyle");
   assert.deepEqual(mapped.tags, ["#IvyStyle", "#Layering", "#海军蓝"]);
   assert.equal(mapped.imageUrl, "/media/look.jpg");
+});
+
+test("localizes failed inspiration status for archive cards", () => {
+  const mapped = mapStyleReference({
+    id: "ref-failed",
+    image_url: "/media/look.jpg",
+    status: "failed",
+  });
+
+  assert.equal(mapped.badge, "处理失败");
 });
 
 test("maps three real wardrobe recommendations into Safe Fresh Stretch cards", () => {

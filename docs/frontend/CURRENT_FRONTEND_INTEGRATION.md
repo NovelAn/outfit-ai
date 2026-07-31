@@ -34,9 +34,9 @@ frontend/index.html
 | 页面 | 源文件 | 用户功能 | 主要后端接口 |
 |---|---|---|---|
 | 今日 | `ScreenToday.tsx` | 从真实衣橱生成 Safe / Fresh / Stretch；收藏、打分和反馈 | `GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
-| 衣橱 | `ScreenWardrobe.tsx` | 批量或单张上传真实衣物；明确提示首次本地去背景模型准备可能耗时 2–3 分钟；等待去背景和识图后确认并展示单品 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
+| 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
 | 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
-| 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
+| 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
 | 我的 | `ScreenProfile.tsx` | 查看和编辑风格关键词、色板、反馈历史、推荐历史和收藏 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history` |
 
 ## 4. 前端 API 接线
@@ -63,6 +63,8 @@ frontend/index.html
 灵感参考图批量上传复用现有单文件接口：前端对每张图片分别调用 `uploadReference()` 和 `referenceStatus()`，使用独立结算保证单张失败不影响同批其他图片，完成后只刷新一次灵感库。
 
 识图状态默认每 800ms 轮询一次、最长等待 5 分钟，以覆盖 `rembg` 首次下载本地模型的准备时间；超过窗口时提示任务仍在后台处理并要求不要重复上传，不再把慢任务误报为识别失败。
+
+衣橱展示层把 `outerwear` 归入“上装”、`dress` 归入“下装”，并单列 `accessory` 为“配饰”；后端仍保留稳定英文类别码。VLM 返回的衣物名称、颜色、材质、版型、风格、标签、季节和场景使用简体中文，品牌名和内部 `category` 除外。
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
 

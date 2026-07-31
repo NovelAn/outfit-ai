@@ -37,6 +37,7 @@ def extract(image_path: str | Path) -> tuple[ClothingAttributes, str]:
         image_path,
         (
             "识别图片中的主要衣物，只返回 JSON。category 使用英文单数类别。"
+            "除 category 外，所有面向用户的字段必须使用简体中文；品牌名可保留原文。"
             f"结构必须符合：{ClothingAttributes.model_json_schema()}"
         ),
     )
