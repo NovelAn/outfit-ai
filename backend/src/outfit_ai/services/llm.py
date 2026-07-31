@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from openai import OpenAI, OpenAIError
@@ -56,6 +57,19 @@ def chat_multimodal(
     )
 
 
+def _parse_json_object(content: str) -> dict[str, Any]:
+    decoder = json.JSONDecoder()
+    for start, character in enumerate(content):
+        if character != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(content[start:])
+        except json.JSONDecodeError:
+            continue
+        return _JSON_OBJECT.validate_python(value)
+    return _JSON_OBJECT.validate_json(content.strip())
+
+
 def generate_json(system: str, user: str, schema_hint: str, max_attempts: int = 2) -> dict:
     messages = [
         {"role": "system", "content": system},
@@ -69,9 +83,7 @@ def generate_json(system: str, user: str, schema_hint: str, max_attempts: int = 
         content = ""
         try:
             content = response.choices[0].message.content or ""
-            return _JSON_OBJECT.validate_json(
-                content.removeprefix("```json").removesuffix("```").strip()
-            )
+            return _parse_json_object(content)
         except (AttributeError, IndexError, ValidationError) as exc:
             last_error = str(exc)
             messages.append({"role": "assistant", "content": content})

@@ -11,6 +11,7 @@ from ..config import settings
 MAX_IMAGE_PIXELS = 25_000_000
 _FORMATS = {
     "JPEG": (".jpg", "JPEG"),
+    "MPO": (".jpg", "JPEG"),
     "PNG": (".png", "PNG"),
     "WEBP": (".webp", "WEBP"),
 }

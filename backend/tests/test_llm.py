@@ -45,6 +45,21 @@ def test_generate_json_rejects_non_object_json(monkeypatch) -> None:
         llm.generate_json("system", "user", "{}", max_attempts=1)
 
 
+def test_generate_json_extracts_object_after_reasoning(monkeypatch) -> None:
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content='<think>先整理字段</think>\n{"prompt":"valid"}'
+                )
+            )
+        ]
+    )
+    monkeypatch.setattr(llm, "_create_completion", lambda **kwargs: response)
+
+    assert llm.generate_json("system", "user", "{}") == {"prompt": "valid"}
+
+
 def test_text_client_reuses_resolved_mmx_credentials(monkeypatch) -> None:
     captured = {}
     monkeypatch.setattr(

@@ -1,6 +1,6 @@
 # Outfit-AI · 当前后端与 API 规格
 
-> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-07-30。
+> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-07-31。
 > 配套：[`CLAUDE.md`](../CLAUDE.md)=项目规范（必读）；[`README.md`](../README.md)=概览；[`CURRENT_FRONTEND_INTEGRATION.md`](./frontend/CURRENT_FRONTEND_INTEGRATION.md)=当前前端事实源。
 > 文档不重复——架构/数据/API 只在此处定义，CLAUDE.md 与 README 仅引用。
 
@@ -22,7 +22,7 @@
 - 前端已直接采用用户确认的 Stitch React ZIP，共五个页面；详见当前前端事实源。
 - 旧 Vue/uni-app 源码与旧 H5 smoke 脚本已删除，当前前端只有 React 运行链。
 - 本地运行数据写入 SQLite 与上传目录；v0 仍是单用户、无鉴权。
-- 当前自动化基线：后端 70 个测试、前端 6 个 API/视觉契约测试，另有 TypeScript 与生产构建检查。
+- 当前自动化基线：后端 73 个测试、前端 6 个 API 测试及 Stitch 视觉契约检查，另有 TypeScript 与生产构建检查。
 
 ## 2. 已锁定决策（勿再争论，需改先问 novel）
 | 项 | 决策 |
@@ -124,7 +124,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 6.1 wardrobe
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| POST | `/api/wardrobe/upload` | multipart `file`；校验 mime/size；落盘+建 item(pending)+触发 BackgroundTask | 201 `{id,status:"pending"}` |
+| POST | `/api/wardrobe/upload` | multipart `file`；按图片实际内容校验格式/尺寸（兼容 iPhone MPO/JPG），落盘为标准 JPEG/PNG/WebP + 建 item(pending) + 触发 BackgroundTask | 201 `{id,status:"pending"}` |
 | GET | `/api/wardrobe/{id}/status` | 轻量轮询 | 200 `{id,status,name,attempt_count,attributes?}` |
 | GET | `/api/wardrobe/items` | 已确认物品，可按 category 过滤 | 200 `[Item]` |
 | GET | `/api/wardrobe/{id}` | 单件 | 200 `Item` |
@@ -158,7 +158,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 6.4 style references
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| POST | `/api/style-references/upload` | 上传完整参考 Look，触发 VLM 分析和 Style DNA 合并 | 201 `{id,status}` |
+| POST | `/api/style-references/upload` | 上传完整参考 Look；按实际图片内容校验而不依赖浏览器 MIME，触发 VLM 分析和 Style DNA 合并 | 201 `{id,status}` |
 | GET | `/api/style-references` | 当前用户长期参考 Look | 200 `[StyleReference]` |
 | GET | `/api/style-references/{id}/status` | 轮询分析状态 | 200 `StyleReference` |
 | POST | `/api/style-references/{id}/retry` | 仅失败任务可重试 | 202 `{id,status}` |
@@ -179,7 +179,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 
 ## 7. 模块规格（文件级，标 port/borrow 来源）
 - `services/minimax_images.py`：读取环境变量或 `~/.mmx/config.json`；调用 Coding Plan VLM 与 `image-01`，校验和解码响应。
-- `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；统一错误处理且不泄漏 Key。
+- `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；统一错误处理且不泄漏 Key。
 - `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`。来源：Hangar schema + ai-closet 重试
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测
@@ -190,7 +190,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - `services/weather.py`：`get_weather(city)->WeatherData`；`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
 - `services/history.py`：`get_recent_item_ids`（跳 shoes）、`get_recent_outfits(limit=7)`、`record_outfit`。来源：ai-closet
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
-- `services/storage.py`：`Storage` Protocol + `LocalStorage`
+- `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。
 - `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。来源：ai-closet 结构（适配 chat completions）
 - `workers/analysis.py`：真实衣物 BackgroundTask（pending→analyzing→rembg→VLM→ready/failed）。
 - `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）。

@@ -47,8 +47,6 @@ def upload(
     file: ImageUpload,
     db: DbSession,
 ):
-    if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
-        raise HTTPException(415, "仅支持 JPEG、PNG、WebP")
     try:
         path = storage.save(file)
     except ImageTooLargeError as exc:

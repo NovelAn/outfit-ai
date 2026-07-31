@@ -3,11 +3,13 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-const [app, nav, html, pkg] = await Promise.all([
+const [app, nav, html, pkg, inspiration, archive] = await Promise.all([
   read("src/App.tsx"),
   read("src/components/BottomNav.tsx"),
   read("index.html"),
   read("package.json"),
+  read("src/components/ScreenInspiration.tsx"),
+  read("src/components/ScreenArchive.tsx"),
 ]);
 
 for (const screen of ["ScreenToday", "ScreenWardrobe", "ScreenInspiration", "ScreenArchive", "ScreenProfile"]) {
@@ -22,5 +24,14 @@ assert.match(html, /Hanken\+Grotesk/);
 assert.match(html, /Libre\+Caslon\+Text/);
 assert.match(html, /Material\+Symbols\+Outlined/);
 assert.equal(JSON.parse(pkg).dependencies.react, "^19.0.1");
+assert.match(inspiration, /input\.multiple = true/, "inspiration upload must accept multiple files");
+assert.match(inspiration, /Promise\.allSettled/, "one failed reference must not stop the batch");
+assert.match(archive, /grid-cols-3/, "mobile archive must use a compact three-column grid");
+assert.match(archive, /aspect-\[3\/4\]/, "archive thumbnails must use a fixed crop");
+assert.match(
+  archive,
+  /<img\s+onClick=\{\(\) => setPreviewItem\(null\)\}/,
+  "clicking the enlarged image must restore the archive",
+);
 
 console.log("Stitch visual contract passed: five screens and original design dependencies preserved");

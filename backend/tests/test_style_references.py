@@ -109,7 +109,13 @@ def test_reference_upload_and_list_http_flow(monkeypatch, tmp_path) -> None:
         with TestClient(app) as client:
             uploaded = client.post(
                 "/api/style-references/upload",
-                files={"file": ("look.jpg", image.getvalue(), "image/jpeg")},
+                files={
+                    "file": (
+                        "look.jpg",
+                        image.getvalue(),
+                        "application/octet-stream",
+                    )
+                },
             )
             references = client.get("/api/style-references")
     finally:

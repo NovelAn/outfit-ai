@@ -109,6 +109,57 @@ def test_storage_uses_detected_format_and_safe_extension(tmp_path) -> None:
         assert saved.format == "PNG"
 
 
+def test_storage_converts_mpo_jpg_to_standard_jpeg(tmp_path) -> None:
+    image = BytesIO()
+    Image.new("RGB", (10, 10), "blue").save(
+        image,
+        "MPO",
+        save_all=True,
+        append_images=[Image.new("RGB", (10, 10), "red")],
+    )
+    image.seek(0)
+
+    path = LocalStorage(tmp_path).save(
+        UploadFile(image, filename="iphone.jpg")
+    )
+
+    assert path.suffix == ".jpg"
+    with Image.open(path) as saved:
+        assert saved.format == "JPEG"
+        assert getattr(saved, "n_frames", 1) == 1
+
+
+def test_upload_accepts_valid_jpeg_with_generic_browser_mime(
+    monkeypatch, tmp_path
+) -> None:
+    class RecordingDb:
+        def add(self, item):
+            self.item = item
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    image = BytesIO()
+    Image.new("RGB", (10, 10), "blue").save(image, "JPEG")
+    image.seek(0)
+    monkeypatch.setattr(wardrobe, "storage", LocalStorage(tmp_path))
+
+    created = wardrobe.upload(
+        BackgroundTasks(),
+        UploadFile(
+            image,
+            filename="iphone.jpg",
+            headers=Headers({"content-type": "application/octet-stream"}),
+        ),
+        RecordingDb(),
+    )
+
+    assert created["status"] == "pending"
+
+
 def test_storage_rejects_excessive_pixel_count(monkeypatch, tmp_path) -> None:
     from outfit_ai.services import storage as storage_service
 

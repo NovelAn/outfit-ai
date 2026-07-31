@@ -77,18 +77,27 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
+    input.multiple = true;
     input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      try {
-        showToast('图片已上传，正在分析并沉淀 Style DNA…');
-        const uploaded = await api.uploadReference(file);
-        await waitForReady(() => api.referenceStatus(uploaded.id));
+      const files = Array.from(input.files || []);
+      if (files.length === 0) return;
+      showToast(`正在分析 ${files.length} 张图片并沉淀 Style DNA…`);
+      const results = await Promise.allSettled(
+        files.map(async (file) => {
+          const uploaded = await api.uploadReference(file);
+          return waitForReady(() => api.referenceStatus(uploaded.id));
+        }),
+      );
+      const succeeded = results.filter((result) => result.status === 'fulfilled').length;
+      const failed = files.length - succeeded;
+      if (succeeded > 0) {
         await loadReferences();
-        showToast('图片已成功添加至长期灵感库！');
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : '灵感上传失败');
       }
+      showToast(
+        failed === 0
+          ? `${succeeded} 张图片已成功添加至长期灵感库！`
+          : `已添加 ${succeeded} 张，${failed} 张上传或分析失败`,
+      );
     };
     input.click();
   };

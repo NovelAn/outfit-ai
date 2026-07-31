@@ -278,41 +278,41 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
         )}
 
         {/* Contact Sheet Grid */}
-        <div className="columns-2 md:columns-3 lg:columns-4 gap-4 md:gap-6 space-y-4 md:space-y-6">
+        <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-4">
           {filteredItems.map((item) => {
             const isSelected = selectedIds.includes(item.id);
             return (
               <div
                 key={item.id}
                 onClick={() => isManaging ? null : setPreviewItem(item)}
-                className="break-inside-avoid relative group cursor-pointer"
+                className="relative group cursor-pointer min-w-0"
               >
                 {(isManaging || isSelected) && (
                   <div
                     onClick={(e) => toggleSelect(item.id, e)}
-                    className="absolute top-2 right-2 z-20"
+                    className="absolute top-1 right-1 z-20"
                   >
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => {}}
-                      className="w-5 h-5 accent-[#162839] cursor-pointer"
+                      className="w-4 h-4 md:w-5 md:h-5 accent-[#162839] cursor-pointer"
                     />
                   </div>
                 )}
 
-                <div className="bg-[#f5f3ee] p-2.5 pb-8 relative contact-shadow border border-[#e4e2dd]">
+                <div className="bg-[#f5f3ee] p-1.5 md:p-2.5 md:pb-8 relative contact-shadow border border-[#e4e2dd] overflow-hidden">
                   {item.badge && (
-                    <div className="washi-tape top-[6px] right-2 bg-[#162839] text-white">
+                    <div className="absolute top-1 right-1 z-10 bg-[#9a442a] text-white px-1.5 py-0.5 text-[8px] md:text-[10px] font-bold tracking-wide">
                       {item.badge}
                     </div>
                   )}
                   <img
                     src={item.imageUrl}
                     alt={item.title}
-                    className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                    className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform duration-300"
                   />
-                  <div className="absolute bottom-2 left-2.5 right-2.5 flex flex-wrap gap-1 text-[10px] text-[#43474c] font-mono">
+                  <div className="hidden md:flex absolute bottom-2 left-2.5 right-2.5 flex-wrap gap-1 text-[10px] text-[#43474c] font-mono">
                     {item.tags.map(t => (
                       <span
                         key={t}
@@ -357,7 +357,12 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
       {previewItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-[#fbf9f4] p-4 max-w-md w-full border border-[#162839] relative">
-            <img src={previewItem.imageUrl} alt={previewItem.title} className="w-full h-auto max-h-[60vh] object-contain mb-4" />
+            <img
+              onClick={() => setPreviewItem(null)}
+              src={previewItem.imageUrl}
+              alt={previewItem.title}
+              className="w-full h-auto max-h-[70vh] object-contain mb-4 cursor-zoom-out"
+            />
             <h3 className="font-serif-display text-lg text-[#162839] font-bold">{previewItem.title}</h3>
             <div className="flex gap-2 mt-2 mb-6">
               {previewItem.tags.map(t => (

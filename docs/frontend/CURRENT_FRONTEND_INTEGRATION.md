@@ -1,6 +1,6 @@
 # Outfit-AI 当前前端与后端集成
 
-> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-07-30。
+> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-07-31。
 
 ## 1. 前端基准
 
@@ -35,8 +35,8 @@ frontend/index.html
 |---|---|---|---|
 | 今日 | `ScreenToday.tsx` | 从真实衣橱生成 Safe / Fresh / Stretch；收藏、打分和反馈 | `GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
 | 衣橱 | `ScreenWardrobe.tsx` | 批量或单张上传真实衣物；等待去背景和识图；确认并展示单品 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
-| 灵感 | `ScreenInspiration.tsx` | 上传长期参考 Look；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
-| 灵感存档 | `ScreenArchive.tsx` | 查看、批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
+| 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
+| 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
 | 我的 | `ScreenProfile.tsx` | 查看和编辑风格关键词、色板、反馈历史、推荐历史和收藏 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history` |
 
 ## 4. 前端 API 接线
@@ -59,6 +59,8 @@ frontend/index.html
 | `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈 |
 | `history()` | `GET /api/history` | 读取近期推荐记录 |
 | `generateInspiration(data)` | `POST /api/inspiration/generate` | 一次返回三张独立灵感图 |
+
+灵感参考图批量上传复用现有单文件接口：前端对每张图片分别调用 `uploadReference()` 和 `referenceStatus()`，使用独立结算保证单张失败不影响同批其他图片，完成后只刷新一次灵感库。
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
 
@@ -121,6 +123,8 @@ npm run build
 ```
 
 `frontend/scripts/stitch-contract.mjs` 防止五页结构、四主导航和原版字体依赖被误改；`frontend/scripts/api-contract.test.mjs` 验证后端数据到 Stitch 页面模型的映射和轮询分支。
+
+当前视觉契约还固定以下已确认的移动端行为：灵感上传文件选择器支持多选；灵感存档在手机端使用三列 `3:4` 缩略图；放大图可再次点击关闭。
 
 ## 8. 文档同步规则
 
