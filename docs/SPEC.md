@@ -22,7 +22,7 @@
 - 前端已直接采用用户确认的 Stitch React ZIP，共五个页面；详见当前前端事实源。
 - 旧 Vue/uni-app 源码与旧 H5 smoke 脚本已删除，当前前端只有 React 运行链。
 - 本地运行数据写入 SQLite 与上传目录；v0 仍是单用户、无鉴权。
-- 当前自动化基线：后端 74 个测试、前端 9 个 API 测试及 Stitch 视觉契约检查，另有 TypeScript 与生产构建检查。
+- 当前自动化基线：后端 76 个测试、前端 9 个 API 测试及 Stitch 视觉契约检查，另有 TypeScript 与生产构建检查。
 
 ## 2. 已锁定决策（勿再争论，需改先问 novel）
 | 项 | 决策 |
@@ -105,7 +105,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 5.3 `style_references`
 `id`(PK) · `user_id` · `image_path` · `status`(pending/analyzing/ready/failed) · `attempt_count` · `analysis_json` · `ai_raw_response`? · `added_at`
 
-参考 Look 保留完整场景，不执行 rembg；VLM 分析成功后再由 M3 合并进长期 Style DNA。失败任务可复用已保存的分析结果重试。
+参考 Look 保留完整场景，不执行 rembg；VLM 分析成功后再由 M3 合并进长期 Style DNA。只有包含可见风格证据的非空 VLM 分析才可复用；旧空结果或无效 JSON 在重试时必须重新识图，不能被标记为成功。
 
 ### 5.4 `outfit_history`
 `id`(PK) · `user_id` · `date` · `occasion`? · `mood`? · `weather_summary`? · `temp`? · `outfit_name`? · `item_ids_json` · `pick_mode`(safe/fresh/stretch) · `reason`? · `collage_path`? · `action`(shown/saved/skipped/worn) · `user_rating`? · `wore_it`(Bool)
@@ -180,7 +180,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ## 7. 模块规格（文件级，标 port/borrow 来源）
 - `services/minimax_images.py`：读取环境变量或 `~/.mmx/config.json`；调用 Coding Plan VLM 与 `image-01`，校验和解码响应。
 - `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；统一错误处理且不泄漏 Key。
-- `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 `category` 保持英文内部码，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）。来源：Hangar schema + ai-closet 重试
+- `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 `category` 保持英文内部码，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测
 - `services/stylist.py`：`propose(...) -> list[Look]`（M3 文本属性 + 参考分析，tool use）
@@ -193,7 +193,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。
 - `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。来源：ai-closet 结构（适配 chat completions）
 - `workers/analysis.py`：真实衣物 BackgroundTask（pending→analyzing→rembg→VLM→ready/failed）。
-- `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）。
+- `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）；重试只复用有效非空分析，旧空缓存会重新调用 VLM。
 - `routers/{wardrobe,profile,recommend,feedback,style_references,inspiration}.py`：见 §6
 - `main.py`：FastAPI app、CORS、lifespan `init_db()`、挂载 routers、静态托管 `/media`→upload_dir
 

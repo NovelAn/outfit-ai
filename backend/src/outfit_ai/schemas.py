@@ -29,6 +29,23 @@ class StyleReferenceAnalysis(BaseModel):
     scenes: list[str] = Field(default_factory=list)
     notable_elements: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def require_visible_style_evidence(self):
+        if not any(
+            (
+                self.style_keywords,
+                self.palette,
+                self.silhouettes,
+                self.layering,
+                self.materials,
+                self.seasons,
+                self.scenes,
+                self.notable_elements,
+            )
+        ):
+            raise ValueError("参考 Look 分析不能全部为空")
+        return self
+
 
 class StyleDnaMerge(BaseModel):
     style_keywords: list[str] = Field(default_factory=list)

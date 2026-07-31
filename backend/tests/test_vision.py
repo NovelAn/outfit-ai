@@ -1,8 +1,10 @@
 import base64
 
+import pytest
 from PIL import Image
 
 from outfit_ai.services import minimax_images
+from outfit_ai.services.minimax_images import MiniMaxResponseError
 from outfit_ai.services.vision import analyze_reference, extract, image_data_url
 
 
@@ -60,17 +62,36 @@ def test_extract_requests_simplified_chinese_display_fields(monkeypatch, tmp_pat
 def test_reference_analysis_is_structured(monkeypatch, tmp_path) -> None:
     image_path = tmp_path / "look.png"
     Image.new("RGB", (2, 2), "white").save(image_path)
-    monkeypatch.setattr(
-        minimax_images,
-        "describe_image",
-        lambda *_: (
+    prompts = []
+
+    def describe_image(_, prompt):
+        prompts.append(prompt)
+        return (
             '{"style_keywords":["克制"],"palette":["海军蓝"],'
             '"silhouettes":["直线"],"layering":[],"materials":["羊毛"],'
-            '"seasons":["autumn"],"scenes":["通勤"],"notable_elements":[]}'
-        ),
-    )
+            '"seasons":["秋季"],"scenes":["通勤"],"notable_elements":["低饱和"]}'
+        )
+
+    monkeypatch.setattr(minimax_images, "describe_image", describe_image)
 
     analysis, _ = analyze_reference(image_path)
 
     assert analysis.style_keywords == ["克制"]
     assert analysis.scenes == ["通勤"]
+    assert "style_keywords、palette、silhouettes 和 notable_elements 各至少填写 1 项" in prompts[0]
+
+
+def test_reference_analysis_rejects_an_all_empty_result(monkeypatch, tmp_path) -> None:
+    image_path = tmp_path / "look.png"
+    Image.new("RGB", (2, 2), "white").save(image_path)
+    monkeypatch.setattr(
+        minimax_images,
+        "describe_image",
+        lambda *_: (
+            '{"style_keywords":[],"palette":[],"silhouettes":[],"layering":[],'
+            '"materials":[],"seasons":[],"scenes":[],"notable_elements":[]}'
+        ),
+    )
+
+    with pytest.raises(MiniMaxResponseError, match="有效参考 Look 分析"):
+        analyze_reference(image_path)

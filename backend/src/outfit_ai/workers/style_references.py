@@ -31,11 +31,15 @@ def process_reference(reference_id: str) -> None:
         if not reference:
             return
         try:
+            analysis = None
             if reference.analysis_json:
-                analysis = StyleReferenceAnalysis.model_validate_json(
-                    reference.analysis_json
-                )
-            else:
+                try:
+                    analysis = StyleReferenceAnalysis.model_validate_json(
+                        reference.analysis_json
+                    )
+                except ValueError:
+                    pass
+            if analysis is None:
                 analysis, raw = analyze_reference(reference.image_path)
                 reference.analysis_json = analysis.model_dump_json()
                 reference.ai_raw_response = raw

@@ -59,9 +59,12 @@ def analyze_reference(image_path: str | Path) -> tuple[StyleReferenceAnalysis, s
     raw = minimax_images.describe_image(
         image_path,
         (
-            "分析这张完整穿搭参考图，只返回 JSON。提取风格、配色、廓形、叠穿、材质、"
-            "季节、场景和显著元素，不识别人物身份。"
-            f"结构必须符合：{StyleReferenceAnalysis.model_json_schema()}"
+            "分析这张完整穿搭参考图，不识别人物身份。只返回一个 JSON 对象，不要"
+            " Markdown 或解释。所有文本使用简体中文。结构："
+            '{"style_keywords":[],"palette":[],"silhouettes":[],"layering":[],'
+            '"materials":[],"seasons":[],"scenes":[],"notable_elements":[]}。'
+            "必须基于图片填写可见特征，不要照抄空数组模板；style_keywords、palette、"
+            "silhouettes 和 notable_elements 各至少填写 1 项，其余无法判断时可为空。"
         ),
     )
     try:

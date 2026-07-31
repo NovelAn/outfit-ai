@@ -11,6 +11,7 @@ from outfit_ai.db import Base, get_db
 from outfit_ai.main import app
 from outfit_ai.models import Profile, StyleReference
 from outfit_ai.routers import style_references as router
+from outfit_ai.schemas import StyleReferenceAnalysis
 from outfit_ai.services.storage import LocalStorage
 from outfit_ai.services.style_references import get_reference_analyses
 from outfit_ai.workers import style_references as worker
@@ -72,6 +73,65 @@ def test_reference_worker_reuses_valid_analysis(monkeypatch, tmp_path) -> None:
         profile = db.get(Profile, "local")
         assert reference.status == "ready"
         assert profile.taste_memo == "偏爱克制且利落的造型。"
+
+
+def test_reference_worker_reanalyzes_an_empty_cached_result(monkeypatch, tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'references.db'}")
+    Base.metadata.create_all(engine)
+
+    def session_factory():
+        return Session(engine)
+
+    monkeypatch.setattr(worker, "SessionLocal", session_factory)
+    monkeypatch.setattr(
+        worker,
+        "analyze_reference",
+        lambda _: (
+            StyleReferenceAnalysis(style_keywords=["复古"], palette=["棕色"]),
+            '{"style_keywords":["复古"],"palette":["棕色"]}',
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        "merge_style_dna",
+        lambda profile, analysis: {
+            "style_keywords": analysis.style_keywords,
+            "palette": analysis.palette,
+            "preferred_colors": analysis.palette,
+            "preferred_styles": analysis.style_keywords,
+            "avoids": [],
+            "taste_memo": "偏爱复古配色。",
+        },
+    )
+    with session_factory() as db:
+        db.add(
+            StyleReference(
+                id="ref-empty",
+                user_id="local",
+                image_path=str(tmp_path / "look.jpg"),
+                analysis_json=json.dumps(
+                    {
+                        "style_keywords": [],
+                        "palette": [],
+                        "silhouettes": [],
+                        "layering": [],
+                        "materials": [],
+                        "seasons": [],
+                        "scenes": [],
+                        "notable_elements": [],
+                    }
+                ),
+                status="pending",
+            )
+        )
+        db.commit()
+
+    worker.process_reference("ref-empty")
+
+    with session_factory() as db:
+        reference = db.get(StyleReference, "ref-empty")
+        assert reference.status == "ready"
+        assert json.loads(reference.analysis_json)["style_keywords"] == ["复古"]
 
 
 def test_selected_references_must_be_ready_and_owned() -> None:
