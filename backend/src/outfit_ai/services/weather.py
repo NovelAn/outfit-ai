@@ -133,7 +133,11 @@ def get_weather(
     latitude: float | None = None,
     longitude: float | None = None,
 ) -> WeatherData:
-    key = f"{city}:{latitude}:{longitude}"
+    key = (
+        _coordinate_key(latitude, longitude)
+        if latitude is not None and longitude is not None
+        else city or ""
+    )
     cached = _CACHE.get(key)
     if cached and datetime.now() - cached[0] < timedelta(minutes=30):
         return cached[1]

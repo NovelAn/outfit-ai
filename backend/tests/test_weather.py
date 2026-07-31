@@ -122,6 +122,54 @@ def test_reverse_city_failure_does_not_fail_weather(monkeypatch) -> None:
     assert result.rain == 0.2
 
 
+def test_weather_cache_uses_rounded_coordinate_key(monkeypatch) -> None:
+    forecast = {
+        "timezone": "Asia/Shanghai",
+        "current": {
+            "time": "2026-07-31T08:00",
+            "temperature_2m": 27.1,
+            "apparent_temperature": 30.2,
+            "relative_humidity_2m": 81,
+            "weather_code": 61,
+            "wind_speed_10m": 8.0,
+            "is_day": 1,
+            "precipitation": 0.2,
+            "rain": 0.2,
+        },
+        "hourly": {
+            "time": ["2026-07-31T08:00"],
+            "precipitation_probability": [20],
+        },
+        "daily": {
+            "time": ["2026-07-31"],
+            "temperature_2m_max": [31.0],
+            "temperature_2m_min": [25.0],
+            "precipitation_probability_max": [20],
+            "precipitation_sum": [0.0],
+        },
+    }
+    forecast_calls = []
+
+    class CountingClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "forecast" in url:
+                forecast_calls.append(url)
+            return super().get(url, **kwargs)
+
+    weather._CACHE.clear()
+    weather._REVERSE_CITY_CACHE.clear()
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: CountingClient(forecast, {"features": []}),
+    )
+
+    weather.get_weather(latitude=40.0001, longitude=116.0001)
+    weather.get_weather(latitude=40.0004, longitude=116.0004)
+
+    assert forecast_calls == ["https://api.open-meteo.com/v1/forecast"]
+
+
 def test_weather_wraps_network_failure(monkeypatch) -> None:
     class BrokenClient:
         def __init__(self, **kwargs):
