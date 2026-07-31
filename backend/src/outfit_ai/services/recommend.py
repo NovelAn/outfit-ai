@@ -232,6 +232,7 @@ def recommend(
         "weather": _weather_context(weather),
         "local_date": getattr(weather, "local_date", date.today()).isoformat(),
         "prepared_at": datetime.now().astimezone().isoformat(),
+        "prepared": history_action == "prepared",
     }
     result = {"weather": weather.model_dump()}
     for look in looks:

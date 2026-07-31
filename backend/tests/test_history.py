@@ -122,6 +122,47 @@ def test_prepared_outfits_require_each_tier() -> None:
         assert get_prepared_outfits(db, "local", date(2026, 7, 31)) == []
 
 
+def test_prepared_marker_survives_a_user_action_and_skips_ordinary_shown_rows() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add_all(
+            [
+                OutfitHistory(
+                    id=f"prepared-{tier}",
+                    user_id="local",
+                    date=date(2026, 7, 31),
+                    item_ids_json="[]",
+                    pick_mode=tier,
+                    action="shown",
+                    context_json='{"prepared": true}',
+                )
+                for tier in ("safe", "fresh", "stretch")
+            ]
+            + [
+                OutfitHistory(
+                    id=f"shown-{tier}",
+                    user_id="local",
+                    date=date(2026, 7, 31),
+                    item_ids_json="[]",
+                    pick_mode=tier,
+                    action="shown",
+                    context_json="{}",
+                )
+                for tier in ("safe", "fresh", "stretch")
+            ]
+        )
+        db.commit()
+
+        prepared = get_prepared_outfits(db, "local", date(2026, 7, 31))
+
+        assert [row.id for row in prepared] == [
+            "prepared-safe",
+            "prepared-fresh",
+            "prepared-stretch",
+        ]
+
+
 def test_record_outfit_stores_optional_context_without_ascii_escaping() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

@@ -49,13 +49,18 @@ def get_prepared_outfits(
         .where(
             OutfitHistory.user_id == user_id,
             OutfitHistory.date == local_date,
-            OutfitHistory.action == "prepared",
             OutfitHistory.pick_mode.in_(tiers),
         )
         .order_by(literal_column("outfit_history.rowid").desc())
     )
     latest_by_tier = {}
     for row in rows:
+        try:
+            context = json.loads(row.context_json or "{}")
+        except (TypeError, ValueError):
+            context = {}
+        if row.action != "prepared" and context.get("prepared") is not True:
+            continue
         latest_by_tier.setdefault(row.pick_mode, row)
     if any(tier not in latest_by_tier for tier in tiers):
         return []

@@ -120,7 +120,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 （**已删 `base_score`**——规则评分产物，新架构无此数）
 索引：`(user_id,date)`、`(user_id,action)`
 
-`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`weather_fit`、`occasion_fit`。`prepared` 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作；当天读取时每档只取最新一条，并且 Safe/Fresh/Stretch 三档齐全才可用。`init_db()` 在 `create_all()` 后仅对缺少该列的 SQLite `outfit_history` 执行一次 `ALTER TABLE ... ADD COLUMN context_json TEXT`；不改写或删除既有行。
+`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`prepared`、`weather_fit`、`occasion_fit`。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作；当天读取时每档只取最新一条，并且 Safe/Fresh/Stretch 三档齐全才可用。`init_db()` 在 `create_all()` 后仅对缺少该列的 SQLite `outfit_history` 执行一次 `ALTER TABLE ... ADD COLUMN context_json TEXT`；不改写或删除既有行。
 
 ### 5.5 `feedback`
 `id`(PK) · `user_id` · `date` · `items_worn_json` · `occasion`? · `occasion_type`? · `sentiment`? · `compliments_json` · `didnt_work`? · `learnings`?

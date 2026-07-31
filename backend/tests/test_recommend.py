@@ -64,6 +64,7 @@ def _prepared_rows(*, latitude: float = 31.230, longitude: float = 121.474) -> l
                     "weather": {"temp": 20, "precipitation_probability_max": 20},
                     "local_date": "2026-07-31",
                     "prepared_at": "2026-07-31T06:30:00+08:00",
+                    "prepared": True,
                     "weather_fit": "适合",
                     "occasion_fit": "日常",
                 },
@@ -119,6 +120,15 @@ def test_recommend_reuses_matching_prepared_looks_without_stylist(monkeypatch) -
         )
 
         assert [result[tier]["history_id"] for tier in ("safe", "fresh", "stretch")] == [
+            "prepared-safe",
+            "prepared-fresh",
+            "prepared-stretch",
+        ]
+        repeated = recommend_service.recommend(
+            db,
+            RecommendRequest(latitude=31.230, longitude=121.474, force_refresh=False),
+        )
+        assert [repeated[tier]["history_id"] for tier in ("safe", "fresh", "stretch")] == [
             "prepared-safe",
             "prepared-fresh",
             "prepared-stretch",
