@@ -4,6 +4,7 @@ import test from "node:test";
 import * as profileApi from "../src/lib/api.mjs";
 import {
   categoryCode,
+  createSingleFlight,
   mapRecommendation,
   mapStyleReference,
   mapWardrobeItem,
@@ -185,4 +186,21 @@ test("settles failed wardrobe uploads without stopping the batch", async () => {
     "rejected",
     "fulfilled",
   ]);
+});
+
+test("ignores a second batch start while the first is still running", async () => {
+  const run = createSingleFlight();
+  let release;
+  let calls = 0;
+  const first = run(async () => {
+    calls += 1;
+    await new Promise((resolve) => { release = resolve; });
+  });
+
+  assert.equal(await run(async () => { calls += 1; }), false);
+  assert.equal(calls, 1);
+  release();
+  assert.equal(await first, true);
+  assert.equal(await run(async () => { calls += 1; }), true);
+  assert.equal(calls, 2);
 });

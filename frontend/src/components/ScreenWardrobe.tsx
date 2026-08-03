@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScreenId, OutfitItem } from '../types';
-import { api, categoryCode, mapWardrobeItem, settleInPairs, waitForReady } from '../lib/api.mjs';
+import { api, categoryCode, createSingleFlight, mapWardrobeItem, settleInPairs, waitForReady } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -98,6 +98,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   const [newItemImageUrl, setNewItemImageUrl] = useState<string>('');
   const [newItemFile, setNewItemFile] = useState<File | null>(null);
   const singleFileInputRef = useRef<HTMLInputElement | null>(null);
+  const batchFlightRef = useRef(createSingleFlight());
 
   // Batch import and AI extraction state
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -137,34 +138,36 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   };
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    const count = files.length;
-    setExtractCount(count);
-    setIsExtracting(true);
+    await batchFlightRef.current(async () => {
+      const count = files.length;
+      setExtractCount(count);
+      setIsExtracting(true);
 
-    try {
-      const results = await settleInPairs(
-        Array.from(files),
-        async (file) => {
-          const uploaded = await api.uploadWardrobe(file);
-          const ready = await waitForReady(() => api.wardrobeStatus(uploaded.id));
-          await api.confirmWardrobe(uploaded.id, {
-            ...(ready.attributes || {}),
-            confirmed_by_user: true,
-          });
-        },
-      );
-      setItems(await api.wardrobe());
-      const succeeded = results.filter(({ status }) => status === 'fulfilled').length;
-      triggerToast(`批量处理完成：成功 ${succeeded} 张，失败 ${count - succeeded} 张`);
-    } catch (error) {
-      triggerToast(error instanceof Error ? error.message : '衣橱刷新失败');
-    } finally {
-      setIsExtracting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+      try {
+        const results = await settleInPairs(
+          files,
+          async (file) => {
+            const uploaded = await api.uploadWardrobe(file);
+            const ready = await waitForReady(() => api.wardrobeStatus(uploaded.id));
+            await api.confirmWardrobe(uploaded.id, {
+              ...(ready.attributes || {}),
+              confirmed_by_user: true,
+            });
+          },
+        );
+        setItems(await api.wardrobe());
+        const succeeded = results.filter(({ status }) => status === 'fulfilled').length;
+        triggerToast(`批量处理完成：成功 ${succeeded} 张，失败 ${count - succeeded} 张`);
+      } catch (error) {
+        triggerToast(error instanceof Error ? error.message : '衣橱刷新失败');
+      } finally {
+        setIsExtracting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    });
   };
 
   const handleLoadMore = () => {
@@ -265,7 +268,8 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
         <div className="flex items-center gap-3">
           <button
             onClick={handleBatchImportClick}
-            className="text-[#9a442a] hover:opacity-80 transition-opacity flex items-center gap-1 text-xs font-semibold bg-[#f4dfcb]/30 px-2.5 py-1 rounded border border-[#9a442a]/20"
+            disabled={isExtracting}
+            className="text-[#9a442a] hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex items-center gap-1 text-xs font-semibold bg-[#f4dfcb]/30 px-2.5 py-1 rounded border border-[#9a442a]/20"
             title="批量导入真实衣橱"
           >
             <span className="material-symbols-outlined text-[16px]">cloud_upload</span>

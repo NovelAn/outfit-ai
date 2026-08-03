@@ -167,6 +167,20 @@ export async function settleInPairs(items, worker) {
   return results;
 }
 
+export function createSingleFlight() {
+  let active = false;
+  return async (worker) => {
+    if (active) return false;
+    active = true;
+    try {
+      await worker();
+      return true;
+    } finally {
+      active = false;
+    }
+  };
+}
+
 export const api = {
   wardrobe: async () => (await request("/api/wardrobe/items")).map(mapWardrobeItem),
   wardrobeStatus: (id) => request(`/api/wardrobe/${id}/status`),
