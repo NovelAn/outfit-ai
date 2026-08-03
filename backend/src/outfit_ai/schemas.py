@@ -25,6 +25,8 @@ class ClothingAttributes(BaseModel):
     @field_validator("versatility", mode="before")
     @classmethod
     def normalize_semantic_versatility(cls, value):
+        if isinstance(value, bool):
+            raise ValueError("versatility 必须是数值")
         if isinstance(value, str):
             normalized = value.strip().lower()
             return {

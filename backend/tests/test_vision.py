@@ -2,7 +2,9 @@ import base64
 
 import pytest
 from PIL import Image
+from pydantic import ValidationError
 
+from outfit_ai.schemas import ClothingAttributes
 from outfit_ai.services import minimax_images
 from outfit_ai.services.minimax_images import MiniMaxResponseError
 from outfit_ai.services.vision import analyze_reference, extract, image_data_url
@@ -80,6 +82,42 @@ def test_extract_normalizes_common_semantic_versatility(monkeypatch, tmp_path) -
     attributes, _ = extract(image_path)
 
     assert attributes.versatility == 0.85
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("高", 0.85),
+        ("high", 0.85),
+        ("中", 0.5),
+        ("medium", 0.5),
+        ("低", 0.25),
+        ("low", 0.25),
+        (0, 0.0),
+        (1, 1.0),
+        ("0.7", 0.7),
+    ],
+)
+def test_clothing_attributes_accepts_supported_versatility(value, expected) -> None:
+    attributes = ClothingAttributes(
+        name="衬衫",
+        category="top",
+        primary_color="蓝色",
+        versatility=value,
+    )
+
+    assert attributes.versatility == expected
+
+
+@pytest.mark.parametrize("value", ["未知", -0.1, 1.1, True, False])
+def test_clothing_attributes_rejects_unsupported_versatility(value) -> None:
+    with pytest.raises(ValidationError):
+        ClothingAttributes(
+            name="衬衫",
+            category="top",
+            primary_color="蓝色",
+            versatility=value,
+        )
 
 
 def test_extract_requests_simplified_chinese_display_fields(monkeypatch, tmp_path) -> None:
