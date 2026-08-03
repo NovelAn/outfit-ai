@@ -217,11 +217,13 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 AI Engine Active
               </span>
               <span className="text-xs font-bold text-[#f4dfcb]">
-                {Math.min(98, 85 + ratingsCount * 4)}% Match
+                {ratingsCount === 0 ? '正在学习' : `已根据 ${ratingsCount} 次反馈更新`}
               </span>
             </div>
             <p className="text-[11px] text-[#c4c6cd] leading-tight mb-2">
-              基于 {ratingsCount} 次真实反馈评价 & 衣橱基因深度训练
+              {ratingsCount === 0
+                ? '完成穿搭反馈后，AI 会逐步学习你的品味'
+                : `基于 ${ratingsCount} 次真实反馈与衣橱数据持续学习`}
             </p>
             <div className="flex items-center gap-2 text-[10px] text-[#f4dfcb] pt-2 border-t border-white/10 font-mono">
               <span>❤️ 已收藏: {favoritesCount} 套</span>
