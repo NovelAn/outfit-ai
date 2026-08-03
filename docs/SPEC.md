@@ -157,7 +157,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 6.3 recommend
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| GET | `/api/weather?city=` | Open-Meteo 预报（天气内存缓存 30min）；按坐标以 Nominatim 反查城市（坐标四舍五入键，缓存 24h，失败不影响天气） | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
+| GET | `/api/weather?city=` | 输入经纬度先四舍五入至三位再用于 Open-Meteo、Nominatim、缓存和下游上下文；天气内存缓存 30min，反查城市缓存 24h，反查失败不影响天气 | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
 | POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,locked_item_ids?[],force_refresh?:false}`；同日 prepared 三档在坐标、温度带和降雨阈值不变时直接复用，否则 guardrail→stylist→validator | 200 `{weather,safe,fresh,stretch}` |
 
 `recommend` 卡片结构（**无 base_score**）：
@@ -168,6 +168,8 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ```
 
 每次推荐会把粗略经纬度、返回城市、时区和更新时间写入 Profile 的 `last_location`。正常请求优先复用当天的 `prepared` 三档，并将三条历史标为 `shown` 后按卡片结构重建返回，不调用 MiniMax；任一条件不满足即重新生成：距离超过 20km、温度跨越 `<=12` / `13–24` / `>=25`、当天降水概率跨越 50%，或 `force_refresh=true`。预生成调用本身使用 `history_action="prepared"`，始终跳过复用。
+
+MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因此未配置 Key 但存在有效 prepared 时仍返回 200，未命中 prepared 时返回 503。
 
 每日预生成入口是 `python -m outfit_ai.precompute_daily`：读取 `last_location` 的坐标（否则 Profile `city`），先校验 MiniMax Key，再强制生成并保存 prepared 三档；没有位置/城市或衣橱不足时以非零退出。项目不安装本地 cron/launchd。
 
@@ -200,12 +202,12 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测
 - `services/stylist.py`：`propose(...) -> list[Look]`（M3 文本属性 + 参考分析，tool use）
-- `services/profile_state.py`：profile JSON 封套的兼容解码/编码，以及 pin、hide、alias 后的有效 Style DNA 关键词；有效关键词最多 7 个，alias 归一化后移除 hidden 标签。
+- `services/profile_state.py`：profile JSON 封套的兼容解码/编码，以及 pin、hide、alias 后的有效 Style DNA 关键词；有效关键词最多 7 个，alias 归一化后应用 hidden，冲突时 pinned 优先保留。
 - `services/validator.py`（**新**）：`validate_looks(looks, candidate_ids)->(ok, error)`（item_id 真实、无重复、含 top+bottom+shoes）。来源：ai-closet 校验链，port 为内部自检 + `tests/test_validation.py`
 - `services/recommend.py`（**新**，编排）：prepared 复用/卡片重建或 guardrail→stylist→validator(重试)→返回三卡；复用阈值为 20km、三个温度带和 50% 降雨概率
 - `precompute_daily.py`：每日 CLI，读取 Profile `last_location` 后强制生成 `prepared` 三档；由生产调度器调用，不安装本地调度
 - `services/taste_memo.py`（**新**）：`refresh(db,user_id)`（旧 memo + 新 feedback → LLM → 新 memo）；`seed(onboarding)`（Style DNA+样例图→初版）
-- `services/weather.py`：`get_weather(city?,latitude?,longitude?)->WeatherData`；返回本地日期/时区、当前降水与雨量、当天降水概率/总量，以及未来 12 小时首段 `>=50%` 的连续降雨窗口。Open-Meteo 天气缓存 30min；Nominatim 反查城市用坐标四舍五入键缓存 24h，反查失败只返回 `city:null`。使用 Nominatim/OpenStreetMap 数据的用户可见界面必须显示 OpenStreetMap attribution。`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
+- `services/weather.py`：`get_weather(city?,latitude?,longitude?)->WeatherData`；输入/解析出的坐标先统一到三位小数，再用于外部请求、缓存和推荐上下文；返回本地日期/时区、当前降水与雨量、当天降水概率/总量，以及未来 12 小时首段 `>=50%` 的连续降雨窗口。Open-Meteo 天气缓存 30min；Nominatim 反查城市缓存 24h，反查失败只返回 `city:null`。使用 Nominatim/OpenStreetMap 数据的用户可见界面必须显示 OpenStreetMap attribution。`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
 - `services/history.py`：`get_recent_item_ids`（跳 shoes）、`get_recent_outfits(limit=7)`、`get_prepared_outfits(local_date)`（齐全三档且每档取最新）、`record_outfit(action, context)`。来源：ai-closet
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。

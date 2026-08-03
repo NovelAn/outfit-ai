@@ -133,6 +133,8 @@ def get_weather(
     latitude: float | None = None,
     longitude: float | None = None,
 ) -> WeatherData:
+    latitude = round(latitude, 3) if latitude is not None else None
+    longitude = round(longitude, 3) if longitude is not None else None
     key = (
         _coordinate_key(latitude, longitude)
         if latitude is not None and longitude is not None
@@ -158,6 +160,7 @@ def get_weather(
                 if not result:
                     raise WeatherInputError(f"找不到城市：{city}")
                 latitude, longitude = result[0]["latitude"], result[0]["longitude"]
+                latitude, longitude = round(latitude, 3), round(longitude, 3)
             payload = (
                 client.get(
                     "https://api.open-meteo.com/v1/forecast",

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api } from '../lib/api.mjs';
-import { resolveLocationContext } from '../lib/location.mjs';
+import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -162,9 +162,13 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [activeModalItem, setActiveModalItem] = useState<{ title: string; desc: string } | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [locationContext, setLocationContext] = useState<any>({ source: 'missing' });
+  const locationRef = useRef<any>({ source: 'missing' });
   const [weather, setWeather] = useState<any>(null);
   const [weatherIsStale, setWeatherIsStale] = useState(false);
   const weatherRef = useRef<any>(null);
+  const dailyRefreshRef = useRef<Promise<any> | null>(null);
+  const recommendationRequestRef = useRef(0);
+  const swapInFlightRef = useRef(false);
   const [liveLooks, setLiveLooks] = useState<any>(() => {
     try {
       const cached = localStorage.getItem('OUTFIT_AI_LATEST_RECOMMENDATION');
@@ -279,69 +283,93 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [commentText, setCommentText] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const refreshDailyContext = async () => {
-    const context = await resolveLocationContext({ storage: localStorage });
-    setLocationContext(context);
-    if (context.source === 'missing') {
-      setWeatherIsStale(Boolean(weatherRef.current));
-      return context;
+  const applyRecommendation = (recommendation: any) => {
+    setLiveLooks(recommendation);
+    localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(recommendation));
+    if (recommendation.weather) {
+      setWeather(recommendation.weather);
+      weatherRef.current = recommendation.weather;
     }
-    try {
-      const latestWeather = await api.weather(context);
-      setWeather(latestWeather);
-      weatherRef.current = latestWeather;
-      setWeatherIsStale(false);
-    } catch {
-      setWeatherIsStale(Boolean(weatherRef.current));
-    }
-    return context;
+    setWeatherIsStale(false);
+    (['safe', 'fresh', 'stretch'] as const).forEach((key) => {
+      const look = recommendation[key];
+      LOOK_DETAILS[key] = {
+        id: key,
+        title: look.title,
+        tag: look.tag,
+        imageUrl: look.imageUrl,
+        dateAdded: '今日推荐',
+        type: 'look',
+        description: look.description,
+        lookItems: look.items,
+      };
+    });
+  };
+
+  const refreshDailyContext = () => {
+    if (dailyRefreshRef.current) return dailyRefreshRef.current;
+    const requestId = ++recommendationRequestRef.current;
+    const task = (async () => {
+      const context = await resolveLocationContext({ storage: localStorage });
+      setLocationContext(context);
+      locationRef.current = context;
+      if (context.source === 'missing') {
+        setWeatherIsStale(Boolean(weatherRef.current));
+        return;
+      }
+      let latestWeather = weatherRef.current;
+      try {
+        latestWeather = await api.weather(context);
+        setWeather(latestWeather);
+        weatherRef.current = latestWeather;
+        setWeatherIsStale(false);
+      } catch {
+        setWeatherIsStale(Boolean(weatherRef.current));
+      }
+      try {
+        const recommendation = await loadDailyRecommendation({
+          api,
+          context,
+          weather: latestWeather,
+        });
+        if (requestId === recommendationRequestRef.current) applyRecommendation(recommendation);
+      } catch (error) {
+        if (requestId === recommendationRequestRef.current && !liveLooks) {
+          triggerToast(error instanceof Error ? error.message : '每日推荐加载失败');
+        }
+      }
+    })();
+    const tracked = task.finally(() => {
+      if (dailyRefreshRef.current === tracked) dailyRefreshRef.current = null;
+    });
+    dailyRefreshRef.current = tracked;
+    return tracked;
   };
 
   const handleSwapLook = async (tier: 'safe' | 'fresh' | 'stretch') => {
+    if (swapInFlightRef.current) return;
+    swapInFlightRef.current = true;
     setSwappingTier(tier);
     try {
-      if (locationContext.source === 'missing') {
+      if (dailyRefreshRef.current) await dailyRefreshRef.current;
+      const currentContext = locationRef.current;
+      if (currentContext.source === 'missing') {
         triggerToast('需要定位或选择城市');
         return;
       }
-      const references = await api.references();
-      const recommendation = await api.recommend({
-        occasion: '日常',
-        scene: '日常',
-        city: weather?.city || locationContext.city,
-        latitude: locationContext.latitude,
-        longitude: locationContext.longitude,
-        force_refresh: true,
-        reference_ids: references
-          .filter((item: any) => item.status === 'ready')
-          .slice(0, 6)
-          .map((item: any) => item.id),
-        locked_item_ids: [],
+      ++recommendationRequestRef.current;
+      const recommendation = await loadDailyRecommendation({
+        api,
+        context: currentContext,
+        weather: weatherRef.current || weather,
+        forceRefresh: true,
       });
-      setLiveLooks(recommendation);
-      localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(recommendation));
-      if (recommendation.weather) {
-        setWeather(recommendation.weather);
-        weatherRef.current = recommendation.weather;
-      }
-      setWeatherIsStale(false);
-      (['safe', 'fresh', 'stretch'] as const).forEach((key) => {
-        const look = recommendation[key];
-        LOOK_DETAILS[key] = {
-          id: key,
-          title: look.title,
-          tag: look.tag,
-          imageUrl: look.imageUrl,
-          dateAdded: '今日推荐',
-          type: 'look',
-          description: look.description,
-          lookItems: look.items,
-        };
-      });
+      applyRecommendation(recommendation);
       triggerToast('✨ AI 已根据真实衣橱与 Style DNA 生成三套新搭配！');
     } catch (error) {
       triggerToast(error instanceof Error ? error.message : '推荐生成失败');
     } finally {
+      swapInFlightRef.current = false;
       setSwappingTier(null);
     }
   };

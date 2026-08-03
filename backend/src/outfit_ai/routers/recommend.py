@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..schemas import RecommendRequest
-from ..services.llm import LLMResponseError, LLMUnavailableError, require_api_key
+from ..services.llm import LLMResponseError, LLMUnavailableError
 from ..services.recommend import recommend
 from ..services.weather import WeatherData, WeatherInputError, WeatherServiceError, get_weather
 
@@ -30,7 +30,6 @@ def weather(
 @router.post("/recommend")
 def recommendation(payload: RecommendRequest, db: DbSession):
     try:
-        require_api_key()
         return recommend(db, payload, history_action="shown")
     except LLMUnavailableError as exc:
         raise HTTPException(503, str(exc)) from exc

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId, LookRating, FavoriteLook, HistoryLook } from '../types';
-import { api, paletteHex } from '../lib/api.mjs';
+import { api, paletteHex, visibleStyleTags } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -174,14 +174,8 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
   const ratingCount = ratingList.length;
   const tagPreferences = profile?.style_tag_preferences || EMPTY_TAG_PREFERENCES;
   const normalizeTag = (tag: string) => tagPreferences.aliases?.[tag] || tag;
-  const hiddenTags = new Set((tagPreferences.hidden || []).map(normalizeTag));
-  const pinnedTags = uniqueTags((tagPreferences.pinned || []).map(normalizeTag));
-  const visibleTags = (tags: string[], limit: number) => uniqueTags([
-    ...pinnedTags.filter((tag) => tags.map(normalizeTag).includes(tag)),
-    ...tags.map(normalizeTag),
-  ]).filter((tag) => !hiddenTags.has(tag)).slice(0, limit);
-  const coreTags = visibleTags(profile?.style_keywords || [], 7);
-  const recentSignals = visibleTags(profile?.recent_style_signals || [], 3);
+  const coreTags = visibleStyleTags(profile?.style_keywords || [], tagPreferences, 7);
+  const recentSignals = visibleStyleTags(profile?.recent_style_signals || [], tagPreferences, 3);
   const allTags = uniqueTags([...(profile?.style_keywords || []), ...(profile?.recent_style_signals || [])]);
 
   const saveTagProfile = async (nextProfile: any) => {
@@ -219,7 +213,6 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
     const isHidden = hidden.includes(tag);
     updateTagPreferences({
       ...tagPreferences,
-      pinned: isHidden ? tagPreferences.pinned || [] : (tagPreferences.pinned || []).filter((value: string) => value !== tag),
       hidden: isHidden ? hidden.filter((value: string) => value !== tag) : [...hidden, tag],
     });
   };

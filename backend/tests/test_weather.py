@@ -170,6 +170,53 @@ def test_weather_cache_uses_rounded_coordinate_key(monkeypatch) -> None:
     assert forecast_calls == ["https://api.open-meteo.com/v1/forecast"]
 
 
+def test_weather_rounds_coordinates_before_provider_requests(monkeypatch) -> None:
+    forecast = {
+        "timezone": "Asia/Shanghai",
+        "current": {
+            "time": "2026-07-31T08:00",
+            "temperature_2m": 27.1,
+            "apparent_temperature": 30.2,
+            "relative_humidity_2m": 81,
+            "weather_code": 61,
+            "wind_speed_10m": 8.0,
+            "is_day": 1,
+            "precipitation": 0.2,
+            "rain": 0.2,
+        },
+        "hourly": {"time": ["2026-07-31T08:00"], "precipitation_probability": [20]},
+        "daily": {
+            "time": ["2026-07-31"],
+            "temperature_2m_max": [31.0],
+            "temperature_2m_min": [25.0],
+            "precipitation_probability_max": [20],
+            "precipitation_sum": [0.0],
+        },
+    }
+    request_params = []
+
+    class RecordingClient(FakeClient):
+        def get(self, url, **kwargs):
+            request_params.append((url, kwargs.get("params", {})))
+            return super().get(url, **kwargs)
+
+    weather._CACHE.clear()
+    weather._REVERSE_CITY_CACHE.clear()
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: RecordingClient(forecast, {"features": []}),
+    )
+
+    weather.get_weather(latitude=31.230416, longitude=121.473701)
+
+    for url, params in request_params:
+        if "open-meteo.com/v1/forecast" in url:
+            assert (params["latitude"], params["longitude"]) == (31.23, 121.474)
+        if "nominatim.openstreetmap.org" in url:
+            assert (params["lat"], params["lon"]) == (31.23, 121.474)
+
+
 def test_weather_wraps_network_failure(monkeypatch) -> None:
     class BrokenClient:
         def __init__(self, **kwargs):

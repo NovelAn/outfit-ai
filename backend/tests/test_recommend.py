@@ -3,7 +3,6 @@ from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -12,7 +11,6 @@ from outfit_ai.config import settings
 from outfit_ai.db import Base, get_db
 from outfit_ai.main import app
 from outfit_ai.models import OutfitHistory, StyleReference, WardrobeItem
-from outfit_ai.routers.recommend import recommendation
 from outfit_ai.schemas import ProposedLook, RecommendRequest
 from outfit_ai.services import recommend as recommend_service
 from outfit_ai.services.profile_state import decode_profile_state, encode_profile_state
@@ -391,9 +389,19 @@ def test_recommend_rejects_unavailable_locked_item_before_calling_stylist(
             )
 
 
-def test_recommend_api_reports_missing_minimax_key_before_network(monkeypatch) -> None:
+def test_recommend_http_reuses_prepared_without_minimax_key(monkeypatch, tmp_path) -> None:
     from outfit_ai.services import llm
     from outfit_ai.services.minimax_images import MiniMaxUnavailableError
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'prepared-no-key.db'}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add_all(_recommendation_items() + _prepared_rows())
+        db.commit()
+
+    def override_db():
+        with Session(engine) as db:
+            yield db
 
     monkeypatch.setattr(
         llm,
@@ -405,14 +413,58 @@ def test_recommend_api_reports_missing_minimax_key_before_network(monkeypatch) -
     monkeypatch.setattr(
         recommend_service,
         "get_weather",
-        lambda *args, **kwargs: pytest.fail("weather should not be called"),
+        lambda *args, **kwargs: _weather(),
     )
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: pytest.fail("MiniMax should not be called"),
+    )
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/recommend",
+                json={"latitude": 31.23, "longitude": 121.474},
+            )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
-    with pytest.raises(HTTPException) as error:
-        recommendation(RecommendRequest(city="上海"), None)
+    assert response.status_code == 200
+    assert response.json()["safe"]["history_id"] == "prepared-safe"
 
-    assert error.value.status_code == 503
-    assert error.value.detail == "未配置 MiniMax API Key"
+
+def test_recommend_http_requires_minimax_key_without_prepared(monkeypatch, tmp_path) -> None:
+    from outfit_ai.services import llm
+    from outfit_ai.services.minimax_images import MiniMaxUnavailableError
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'no-prepared-no-key.db'}")
+    Base.metadata.create_all(engine)
+
+    def override_db():
+        with Session(engine) as db:
+            yield db
+
+    monkeypatch.setattr(
+        llm,
+        "resolve_minimax_access",
+        lambda: (_ for _ in ()).throw(
+            MiniMaxUnavailableError("未配置 MiniMax API Key")
+        ),
+    )
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/recommend",
+                json={"latitude": 31.23, "longitude": 121.474},
+            )
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "未配置 MiniMax API Key"
 
 
 def test_recommend_feedback_history_http_loop(monkeypatch, tmp_path) -> None:

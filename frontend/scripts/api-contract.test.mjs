@@ -20,6 +20,22 @@ test("maps canonical Style DNA palette names without positional fallback colors"
   assert.equal(profileApi.paletteHex("constructor"), null);
 });
 
+test("keeps pinned tags visible when an alias is also hidden", () => {
+  assert.equal(typeof profileApi.visibleStyleTags, "function");
+  assert.deepEqual(
+    profileApi.visibleStyleTags(
+      ["日杂休闲", "轻量叠穿"],
+      {
+        pinned: ["日杂休闲"],
+        hidden: ["日系松弛"],
+        aliases: { "日杂休闲": "日系松弛" },
+      },
+      7,
+    ),
+    ["日系松弛", "轻量叠穿"],
+  );
+});
+
 test("maps backend wardrobe records into the unchanged Stitch card model", () => {
   assert.deepEqual(
     mapWardrobeItem({

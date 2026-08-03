@@ -17,6 +17,19 @@ export function paletteHex(name) {
   return Object.hasOwn(PALETTE_HEX, name) ? PALETTE_HEX[name] : null;
 }
 
+export function visibleStyleTags(tags = [], preferences = {}, limit = 7) {
+  const aliases = preferences.aliases || {};
+  const normalize = (tag) => aliases[tag] || tag;
+  const unique = (values) => [...new Set(values.filter(Boolean))];
+  const normalizedTags = tags.map(normalize);
+  const pinned = unique((preferences.pinned || []).map(normalize));
+  const hidden = new Set((preferences.hidden || []).map(normalize));
+  return unique([
+    ...pinned.filter((tag) => normalizedTags.includes(tag)),
+    ...normalizedTags,
+  ]).filter((tag) => pinned.includes(tag) || !hidden.has(tag)).slice(0, limit);
+}
+
 function apiUrl(path) {
   return `${API_BASE}${path}`;
 }

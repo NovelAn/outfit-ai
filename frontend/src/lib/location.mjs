@@ -67,3 +67,25 @@ export async function resolveLocationContext({
   }
   return { source: "missing" };
 }
+
+export async function loadDailyRecommendation({
+  api,
+  context,
+  weather,
+  forceRefresh = false,
+}) {
+  const references = await api.references().catch(() => []);
+  return api.recommend({
+    occasion: "日常",
+    scene: "日常",
+    city: weather?.city || context.city,
+    latitude: context.latitude,
+    longitude: context.longitude,
+    ...(forceRefresh ? { force_refresh: true } : {}),
+    reference_ids: references
+      .filter((item) => item.status === "ready")
+      .slice(0, 6)
+      .map((item) => item.id),
+    locked_item_ids: [],
+  });
+}

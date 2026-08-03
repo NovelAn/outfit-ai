@@ -17,6 +17,7 @@ from .history import (
     get_recent_outfits,
     record_outfit,
 )
+from .llm import require_api_key
 from .profile_state import decode_profile_state, save_last_location
 from .style_references import get_reference_analyses
 from .stylist import propose
@@ -182,6 +183,7 @@ def recommend(
         if reused is not None:
             db.commit()
             return reused
+    require_api_key()
     candidates = filter_candidates(
         items,
         season=request.season or _season(weather.temp),
