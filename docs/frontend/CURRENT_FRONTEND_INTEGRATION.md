@@ -36,7 +36,7 @@ frontend/index.html
 | 页面 | 源文件 | 用户功能 | 主要后端接口 |
 |---|---|---|---|
 | 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；收藏、打分和反馈 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
-| 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
+| 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开详情，可编辑识别字段或二次确认删除单品及图片 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
 | 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
 | 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；查看反馈、推荐历史和收藏 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history` |
@@ -51,6 +51,7 @@ frontend/index.html
 | `uploadWardrobe(file)` | `POST /api/wardrobe/upload` | 上传真实衣物 |
 | `wardrobeStatus(id)` | `GET /api/wardrobe/{id}/status` | 轮询识图状态 |
 | `confirmWardrobe(id,data)` | `POST /api/wardrobe/{id}/confirm` | 确认 AI 属性及用户修改 |
+| `updateWardrobe(id,data)` | `PATCH /api/wardrobe/{id}` | 保存详情浮层中用户编辑的名称、分类、颜色、材质、厚薄度、版型、季节、场景和风格/其他标签 |
 | `deleteWardrobe(id)` | `DELETE /api/wardrobe/{id}` | 删除衣物和图片 |
 | `references()` | `GET /api/style-references` | 读取长期参考 Look |
 | `uploadReference(file)` | `POST /api/style-references/upload` | 上传完整参考 Look，不去背景 |
@@ -70,6 +71,8 @@ frontend/index.html
 衣橱批量导入固定最多同时处理 2 张图片；每张独立执行上传、轮询和确认，单张失败不会中止同批其他图片。处理期间禁用批量导入按钮，并由同步 single-flight guard 忽略重复触发。全部结算后只请求一次权威衣橱列表，并提示成功和失败数量，避免大量图片同时占用 `rembg`、内存和 MiniMax 识图额度。
 
 衣橱展示层把 `outerwear` 归入“上装”、`dress` 归入“下装”，并单列 `accessory` 为“配饰”；后端保留稳定英文类别码，并在确认时将 VLM 常见别名（如 `hat`、`cap`、`baseball cap`）容错归入 `accessory`。VLM 实际读取 rembg 生成的透明 `.nobg.png`；返回的衣物名称、颜色、材质、版型、风格、标签、季节和场景使用简体中文，品牌名和内部 `category` 除外。
+
+衣橱单品详情浮层支持“编辑信息”和“删除单品”。编辑保存调用 `PATCH` 并立即更新当前卡片；厚薄度使用 `轻薄`、`适中`、`厚实` 受控标签保存，不新增数据库列。删除必须在浮层内二次确认，后端会同时删除数据库记录、原图和 `.nobg` 图片；图片替换、手工抠图和重新调用 AI 不在当前版本范围内。
 
 我的页面的色板仅使用统一的名称映射：黑色 `#1B1C19`、白色 `#F7F5EF`、深蓝色 `#162839`、浅蓝色 `#A9C7DD`、灰色 `#8A8D91`、米白色 `#EEE8DA`、米黄色 `#D8C49A`、卡其色 `#B39B72`、棕色 `#7A5337`、绿色 `#647B5B`、红色 `#9A442A`、紫色 `#75627D`。未知颜色只显示文字和中性描边底色，绝不按数组位置猜测颜色。
 
