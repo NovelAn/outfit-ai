@@ -29,7 +29,7 @@ frontend/index.html
 
 今日页优先使用浏览器原生 Geolocation 获取当前位置：坐标按三位小数缓存到 `OUTFIT_AI_LOCATION`，缓存有效期 24 小时；定位成功后调用天气接口。定位被拒绝、超时（8 秒）或不可用时，依次回退到有效坐标缓存、`OUTFIT_AI_CITY` 中的手动城市，最后才显示“需要定位或选择城市”。手动城市是定位不可用时的后备项，不会覆盖当前定位。
 
-最近一次推荐、收藏显示和评分表单使用 `localStorage` 作为当前设备的界面缓存；有对应推荐历史的收藏与评分仍通过 `POST /api/feedback` 写入后端学习链。`localStorage` 不是业务事实源。
+最近一次推荐、收藏显示和评分表单分别使用 `OUTFIT_AI_LATEST_RECOMMENDATION`、`OUTFIT_AI_FAVORITES`、`OUTFIT_AI_LOOK_RATINGS` 的 `localStorage` 作为当前设备的界面缓存；有对应推荐历史的收藏与评分仍通过 `POST /api/feedback` 写入后端学习链。`localStorage` 不是业务事实源。
 
 ## 3. 五个页面
 
