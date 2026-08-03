@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScreenId, OutfitItem } from '../types';
-import { api, categoryCode, mapWardrobeItem, waitForReady } from '../lib/api.mjs';
+import { api, categoryCode, mapWardrobeItem, settleInPairs, waitForReady } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -145,21 +145,22 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
     setIsExtracting(true);
 
     try {
-      const extracted = await Promise.all(
-        Array.from(files).map(async (file) => {
+      const results = await settleInPairs(
+        Array.from(files),
+        async (file) => {
           const uploaded = await api.uploadWardrobe(file);
           const ready = await waitForReady(() => api.wardrobeStatus(uploaded.id));
-          const confirmed = await api.confirmWardrobe(uploaded.id, {
+          await api.confirmWardrobe(uploaded.id, {
             ...(ready.attributes || {}),
             confirmed_by_user: true,
           });
-          return { ...mapWardrobeItem(confirmed), isNew: true } as OutfitItem;
-        }),
+        },
       );
-      setItems((current) => [...extracted, ...current]);
-      triggerToast(`✨ AI 已成功从 ${count} 张真实照片中提取、去背景并分类！`);
+      setItems(await api.wardrobe());
+      const succeeded = results.filter(({ status }) => status === 'fulfilled').length;
+      triggerToast(`批量处理完成：成功 ${succeeded} 张，失败 ${count - succeeded} 张`);
     } catch (error) {
-      triggerToast(error instanceof Error ? error.message : '批量识别失败');
+      triggerToast(error instanceof Error ? error.message : '衣橱刷新失败');
     } finally {
       setIsExtracting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

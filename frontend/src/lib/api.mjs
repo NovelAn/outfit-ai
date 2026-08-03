@@ -149,6 +149,24 @@ export async function waitForReady(getStatus, { delay = 800, maxAttempts = 375 }
   throw new Error("AI 处理时间较长，任务仍在后台继续，请勿重复上传");
 }
 
+export async function settleInPairs(items, worker) {
+  const results = Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      try {
+        results[index] = { status: "fulfilled", value: await worker(items[index]) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(2, items.length) }, run));
+  return results;
+}
+
 export const api = {
   wardrobe: async () => (await request("/api/wardrobe/items")).map(mapWardrobeItem),
   wardrobeStatus: (id) => request(`/api/wardrobe/${id}/status`),

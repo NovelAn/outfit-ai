@@ -8,6 +8,7 @@ import {
   mapStyleReference,
   mapWardrobeItem,
   seasonCode,
+  settleInPairs,
   waitForReady,
 } from "../src/lib/api.mjs";
 
@@ -139,4 +140,49 @@ test("stops polling when analysis fails", async () => {
     () => waitForReady(() => Promise.resolve({ status: "failed" }), { delay: 0 }),
     /识别失败/,
   );
+});
+
+test("processes at most two wardrobe uploads concurrently", async () => {
+  let active = 0;
+  let peak = 0;
+  const releases = [];
+  const worker = async (value) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => releases.push(resolve));
+    active -= 1;
+    return value;
+  };
+
+  const processing = settleInPairs([1, 2, 3], worker);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(peak, 2);
+  assert.equal(releases.length, 2);
+  releases.shift()();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(releases.length, 2);
+  releases.splice(0).forEach((release) => release());
+
+  assert.deepEqual(await processing, [
+    { status: "fulfilled", value: 1 },
+    { status: "fulfilled", value: 2 },
+    { status: "fulfilled", value: 3 },
+  ]);
+});
+
+test("settles failed wardrobe uploads without stopping the batch", async () => {
+  const visited = [];
+
+  const results = await settleInPairs([1, 2, 3], async (value) => {
+    visited.push(value);
+    if (value === 2) throw new Error("failed");
+    return value;
+  });
+
+  assert.deepEqual(visited.sort(), [1, 2, 3]);
+  assert.deepEqual(results.map(({ status }) => status), [
+    "fulfilled",
+    "rejected",
+    "fulfilled",
+  ]);
 });

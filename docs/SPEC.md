@@ -21,8 +21,8 @@
 - FastAPI、SQLAlchemy、SQLite、后台识图任务、MiniMax 服务、测试均已实现。
 - 前端已直接采用用户确认的 Stitch React ZIP，共五个页面；详见当前前端事实源。
 - 旧 Vue/uni-app 源码与旧 H5 smoke 脚本已删除，当前前端只有 React 运行链。
-- 本地运行数据写入 SQLite 与上传目录；v0 仍是单用户、无鉴权。
-- 当前自动化基线：后端 76 个测试、前端 9 个 API 测试及 Stitch 视觉契约检查，另有 TypeScript 与生产构建检查。
+- 本地运行数据默认写入 `~/.outfit-ai/outfit_ai.db` 与 `~/.outfit-ai/uploads`，跨 worktree 保持稳定；`DATABASE_URL`、`UPLOAD_DIR` 可覆盖且路径会展开为绝对路径。v0 仍是单用户、无鉴权。
+- 当前自动化基线包括后端测试、前端 API/视觉契约测试、TypeScript 与生产构建检查。
 
 ## 2. 已锁定决策（勿再争论，需改先问 novel）
 | 项 | 决策 |
@@ -35,6 +35,7 @@
 | 数据 | 5 张 SQLite 表：profile / wardrobe_items / style_references / outfit_history / feedback |
 | 前端 | 用户确认的 Stitch ZIP 原版 React 19 + Vite 6 + Tailwind CSS 4，v0 跑 `npm run dev` |
 | 用户模型 | **单用户 v0**，`USER_ID=local`，不做鉴权 |
+| 本地存储 | 默认 `~/.outfit-ai/`；支持 `DATABASE_URL`、`UPLOAD_DIR` 环境覆盖 |
 | 项目许可 | MIT（待 novel 终确） |
 
 ## 3. 边界

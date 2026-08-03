@@ -31,6 +31,8 @@ npm run dev                                    # http://localhost:5173
 
 要求 Node.js 20 及以上。前端开发服务器会把 `/api` 和 `/media` 代理到 `http://localhost:8000`。
 
+本地 SQLite 和上传图片默认保存在 `~/.outfit-ai/outfit_ai.db` 与 `~/.outfit-ai/uploads`，不会随 Git worktree 清理而丢失；可用 `DATABASE_URL`、`UPLOAD_DIR` 覆盖。衣橱批量导入固定同时处理 2 张，单张失败不影响同批其他图片，完成后统一刷新衣橱并显示成功/失败数量。
+
 首次上传真实衣物时，`rembg` 会下载约 176MB 的本地去背景模型到 `~/.u2net/`，可能需要 2–3 分钟；模型缓存后，后续衣物无需重复下载。
 
 ## 部署前准备
