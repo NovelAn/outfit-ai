@@ -3,6 +3,7 @@
 ## Delivered
 
 - Added the canonical 12-name Style DNA palette mapping and a neutral fallback for unknown names, with no position-based colour fallback.
+- Guarded the palette lookup against inherited object keys such as `constructor`.
 - Replaced the fabricated Profile score with evidence-based learning copy.
 - Split the Profile summary into capped core keywords (7) and recent style signals (3), with pinned tags first and hidden tags excluded.
 - Added the in-page tag-management overlay: up to three pins, hide/restore, exactly-two-tag merge with a non-empty canonical name, optimistic save, and rollback/error toast on failed persistence.
@@ -26,3 +27,8 @@ npm run build
 ## Concern
 
 The local Vite proxy returned HTTP 500 for `/api/profile`, `/api/wardrobe/items`, and `/api/history`; no profile data was changed to work around this. The palette and management behavior were validated through the focused contracts and the empty-state visual check, but live seeded-tag persistence needs a healthy local backend.
+
+## Follow-up fix
+
+- RED: `node --test scripts/api-contract.test.mjs` failed because `paletteHex("constructor")` returned the inherited `Object` constructor.
+- GREEN: `Object.hasOwn()` now limits palette values to the canonical map. The focused regression and the full frontend test, lint, and build checks pass.

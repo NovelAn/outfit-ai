@@ -17,6 +17,7 @@ test("maps canonical Style DNA palette names without positional fallback colors"
   assert.equal(profileApi.paletteHex("米黄色"), "#D8C49A");
   assert.equal(profileApi.paletteHex("浅蓝色"), "#A9C7DD");
   assert.equal(profileApi.paletteHex("不存在的颜色"), null);
+  assert.equal(profileApi.paletteHex("constructor"), null);
 });
 
 test("maps backend wardrobe records into the unchanged Stitch card model", () => {

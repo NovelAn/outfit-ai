@@ -14,7 +14,7 @@ export const PALETTE_HEX = {
 };
 
 export function paletteHex(name) {
-  return PALETTE_HEX[name] || null;
+  return Object.hasOwn(PALETTE_HEX, name) ? PALETTE_HEX[name] : null;
 }
 
 function apiUrl(path) {
