@@ -3,6 +3,7 @@ import test from "node:test";
 
 import * as profileApi from "../src/lib/api.mjs";
 import {
+  api,
   categoryCode,
   createSingleFlight,
   mapRecommendation,
@@ -46,6 +47,14 @@ test("maps backend wardrobe records into the unchanged Stitch card model", () =>
       name: "青年布衬衫",
       category: "shirt",
       image_url: "/media/shirt-1.nobg.png",
+      primary_color: null,
+      secondary_color: null,
+      material: null,
+      fit: null,
+      styles: [],
+      tags: [],
+      seasons: [],
+      occasions: [],
     }),
     {
       id: "shirt-1",
@@ -53,8 +62,73 @@ test("maps backend wardrobe records into the unchanged Stitch card model", () =>
       name: "青年布衬衫",
       category: "上装",
       imageUrl: "/media/shirt-1.nobg.png",
+      primaryColor: "",
+      secondaryColor: "",
+      material: "",
+      fit: "",
+      styles: [],
+      tags: [],
+      seasons: [],
+      occasions: [],
+      thickness: "",
     },
   );
+});
+
+test("maps editable wardrobe attributes and controlled thickness tags", () => {
+  const mapped = mapWardrobeItem({
+    id: "item-1",
+    category: "top",
+    image_url: "/media/item-1.nobg.png",
+    primary_color: "浅蓝色",
+    secondary_color: "白色",
+    material: "棉",
+    fit: "宽松",
+    styles: ["日系休闲"],
+    tags: ["轻薄", "条纹"],
+    seasons: ["春", "夏"],
+    occasions: ["日常"],
+  });
+
+  assert.deepEqual(mapped, {
+    id: "item-1",
+    brand: "",
+    name: "待确认单品",
+    category: "上装",
+    imageUrl: "/media/item-1.nobg.png",
+    primaryColor: "浅蓝色",
+    secondaryColor: "白色",
+    material: "棉",
+    fit: "宽松",
+    styles: ["日系休闲"],
+    tags: ["轻薄", "条纹"],
+    seasons: ["春", "夏"],
+    occasions: ["日常"],
+    thickness: "轻薄",
+  });
+});
+
+test("updates a wardrobe item through the PATCH endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  let captured;
+  globalThis.fetch = async (url, options) => {
+    captured = { url, options };
+    return new Response(JSON.stringify({ id: "item-1", name: "条纹衬衫" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const result = await api.updateWardrobe("item-1", { name: "条纹衬衫" });
+    assert.equal(result.name, "条纹衬衫");
+    assert.equal(captured.url, "/api/wardrobe/item-1");
+    assert.equal(captured.options.method, "PATCH");
+    assert.equal(captured.options.headers["Content-Type"], "application/json");
+    assert.deepEqual(JSON.parse(captured.options.body), { name: "条纹衬衫" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("groups wardrobe items into the five user-facing categories", () => {

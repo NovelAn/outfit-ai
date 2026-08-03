@@ -74,12 +74,23 @@ export function categoryCode(label) {
 }
 
 export function mapWardrobeItem(item) {
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const thickness = tags.find((tag) => ["轻薄", "适中", "厚实"].includes(tag)) || "";
   return {
     id: item.id,
     brand: item.brand || "",
     name: item.name || "待确认单品",
     category: categoryLabel(item.category),
     imageUrl: mediaUrl(item.image_url),
+    primaryColor: item.primary_color || "",
+    secondaryColor: item.secondary_color || "",
+    material: item.material || "",
+    fit: item.fit || "",
+    styles: Array.isArray(item.styles) ? item.styles : [],
+    tags,
+    seasons: Array.isArray(item.seasons) ? item.seasons : [],
+    occasions: Array.isArray(item.occasions) ? item.occasions : [],
+    thickness,
     ...(item.isNew ? { isNew: true } : {}),
   };
 }
@@ -188,6 +199,12 @@ export const api = {
   confirmWardrobe: (id, data) =>
     request(`/api/wardrobe/${id}/confirm`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updateWardrobe: (id, data) =>
+    request(`/api/wardrobe/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
