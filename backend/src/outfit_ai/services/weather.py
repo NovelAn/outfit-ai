@@ -100,6 +100,9 @@ def _reverse_city(client: httpx.Client, latitude: float, longitude: float) -> st
             ),
             None,
         )
+        state = geocoding.get("state")
+        if city and city.endswith(("区", "县")) and isinstance(state, str) and state.endswith("市"):
+            city = state
     except (AttributeError, httpx.HTTPError, IndexError, KeyError, TypeError, ValueError):
         pass
     _REVERSE_CITY_CACHE[key] = (datetime.now(), city)
@@ -191,7 +194,7 @@ def get_weather(
             is_daytime=bool(current["is_day"]),
             temp_max=daily["temperature_2m_max"][0],
             temp_min=daily["temperature_2m_min"][0],
-            city=reverse_city,
+            city=city.strip() if city else reverse_city,
             local_date=datetime.fromisoformat(current["time"]).date(),
             timezone=payload["timezone"],
             precipitation=current["precipitation"],

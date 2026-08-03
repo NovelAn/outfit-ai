@@ -1,7 +1,8 @@
 const CACHE_KEY = "OUTFIT_AI_LOCATION";
 const CITY_KEY = "OUTFIT_AI_CITY";
-const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const GEOLOCATION_TIMEOUT_MS = 8_000;
+const GEOLOCATION_MAX_AGE_MS = 5 * 60 * 1000;
 
 const roundCoordinate = (value) => Number(Number(value).toFixed(3));
 
@@ -27,13 +28,25 @@ const readCachedLocation = (storage, now) => {
   return null;
 };
 
-const currentCoordinates = (geolocation) =>
+const currentCoordinates = (geolocation, timeoutMs = GEOLOCATION_TIMEOUT_MS) =>
   new Promise((resolve, reject) => {
     if (!geolocation?.getCurrentPosition) return reject(new Error("geolocation unavailable"));
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      callback(value);
+    };
+    const timeoutId = setTimeout(() => finish(reject, new Error("geolocation timeout")), timeoutMs);
     geolocation.getCurrentPosition(
-      ({ coords }) => resolve({ latitude: roundCoordinate(coords.latitude), longitude: roundCoordinate(coords.longitude) }),
-      reject,
-      { timeout: GEOLOCATION_TIMEOUT_MS },
+      ({ coords }) => finish(resolve, { latitude: roundCoordinate(coords.latitude), longitude: roundCoordinate(coords.longitude) }),
+      (error) => finish(reject, error),
+      {
+        enableHighAccuracy: true,
+        maximumAge: GEOLOCATION_MAX_AGE_MS,
+        timeout: timeoutMs,
+      },
     );
   });
 
@@ -41,9 +54,10 @@ export async function resolveLocationContext({
   geolocation = globalThis.navigator?.geolocation,
   storage = globalThis.localStorage,
   now = () => new Date(),
+  geolocationTimeoutMs = GEOLOCATION_TIMEOUT_MS,
 } = {}) {
   try {
-    const coordinates = await currentCoordinates(geolocation);
+    const coordinates = await currentCoordinates(geolocation, geolocationTimeoutMs);
     if (validCoordinates(coordinates)) {
       try {
         storage?.setItem(CACHE_KEY, JSON.stringify({ ...coordinates, updatedAt: now().toISOString() }));

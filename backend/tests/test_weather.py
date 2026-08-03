@@ -122,6 +122,56 @@ def test_reverse_city_failure_does_not_fail_weather(monkeypatch) -> None:
     assert result.rain == 0.2
 
 
+def test_reverse_city_uses_municipality_name_for_district(monkeypatch) -> None:
+    reverse = {
+        "features": [{"properties": {"geocoding": {"city": "黄浦区", "state": "上海市"}}}]
+    }
+
+    assert weather._reverse_city(FakeClient({}, reverse), 31.231, 121.475) == "上海市"
+
+
+def test_manual_city_keeps_the_user_city_label(monkeypatch) -> None:
+    forecast = {
+        "timezone": "Asia/Shanghai",
+        "current": {
+            "time": "2026-07-31T08:00",
+            "temperature_2m": 27.1,
+            "apparent_temperature": 30.2,
+            "relative_humidity_2m": 81,
+            "weather_code": 61,
+            "wind_speed_10m": 8.0,
+            "is_day": 1,
+            "precipitation": 0.2,
+            "rain": 0.2,
+        },
+        "hourly": {"time": ["2026-07-31T08:00"], "precipitation_probability": [20]},
+        "daily": {
+            "time": ["2026-07-31"],
+            "temperature_2m_max": [31.0],
+            "temperature_2m_min": [25.0],
+            "precipitation_probability_max": [20],
+            "precipitation_sum": [0.0],
+        },
+    }
+    reverse = {
+        "features": [{"properties": {"geocoding": {"city": "黄浦区", "state": "上海市"}}}]
+    }
+
+    class CityClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse({"results": [{"latitude": 31.230, "longitude": 121.474}]})
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: CityClient(forecast, reverse),
+    )
+
+    assert weather.get_weather(city="上海").city == "上海"
+
+
 def test_weather_cache_uses_rounded_coordinate_key(monkeypatch) -> None:
     forecast = {
         "timezone": "Asia/Shanghai",
