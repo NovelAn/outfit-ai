@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import * as profileApi from "../src/lib/api.mjs";
 import {
   categoryCode,
   mapRecommendation,
@@ -9,6 +10,14 @@ import {
   seasonCode,
   waitForReady,
 } from "../src/lib/api.mjs";
+
+test("maps canonical Style DNA palette names without positional fallback colors", () => {
+  assert.equal(typeof profileApi.paletteHex, "function");
+  assert.equal(profileApi.paletteHex("深蓝色"), "#162839");
+  assert.equal(profileApi.paletteHex("米黄色"), "#D8C49A");
+  assert.equal(profileApi.paletteHex("浅蓝色"), "#A9C7DD");
+  assert.equal(profileApi.paletteHex("不存在的颜色"), null);
+});
 
 test("maps backend wardrobe records into the unchanged Stitch card model", () => {
   assert.deepEqual(

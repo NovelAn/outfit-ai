@@ -6,6 +6,17 @@ const TIER_META = {
   stretch: { title: "Look 03 / 突破 (STRETCH)", tag: "工装廓形" },
 };
 
+export const PALETTE_HEX = {
+  黑色: "#1B1C19", 白色: "#F7F5EF", 深蓝色: "#162839",
+  浅蓝色: "#A9C7DD", 灰色: "#8A8D91", 米白色: "#EEE8DA",
+  米黄色: "#D8C49A", 卡其色: "#B39B72", 棕色: "#7A5337",
+  绿色: "#647B5B", 红色: "#9A442A", 紫色: "#75627D",
+};
+
+export function paletteHex(name) {
+  return PALETTE_HEX[name] || null;
+}
+
 function apiUrl(path) {
   return `${API_BASE}${path}`;
 }

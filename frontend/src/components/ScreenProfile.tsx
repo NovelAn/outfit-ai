@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId, LookRating, FavoriteLook, HistoryLook } from '../types';
-import { api } from '../lib/api.mjs';
+import { api, paletteHex } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -55,28 +55,21 @@ const getLookImageUrl = (item: LookRating) => {
   return IMAGE_FALLBACKS[key] || IMAGE_FALLBACKS.safe;
 };
 
-const paletteColor = (name: string, index: number) => {
-  if (/^#[0-9a-f]{6}$/i.test(name)) return name;
-  const colors: Record<string, string> = {
-    深海蓝: '#162839',
-    海军蓝: '#162839',
-    燕麦色: '#8C7A6B',
-    陶土红: '#9a442a',
-    黑色: '#1b1c19',
-    白色: '#f5f3ee',
-    卡其色: '#b49a75',
-  };
-  return colors[name] || ['#162839', '#8C7A6B', '#9a442a'][index];
-};
+const EMPTY_TAG_PREFERENCES = { pinned: [], hidden: [], aliases: {} };
+
+const uniqueTags = (tags: string[]) => [...new Set(tags.filter(Boolean))];
 
 export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
   const [styleId, setStyleId] = useState('894-FX-21');
   const [isEditing, setIsEditing] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [keywords, setKeywords] = useState(['#极简主义', '#高冷通勤', '#质感面料', '#中性色调']);
   const [profile, setProfile] = useState<any>(null);
-  const [newKeyword, setNewKeyword] = useState('');
   const [modalType, setModalType] = useState<'history' | 'favorites' | 'ratings' | 'settings' | null>(null);
+  const [isManagingTags, setIsManagingTags] = useState(false);
+  const [isMergingTags, setIsMergingTags] = useState(false);
+  const [mergeTags, setMergeTags] = useState<string[]>([]);
+  const [mergeName, setMergeName] = useState('');
+  const [tagError, setTagError] = useState('');
 
   // Ratings, Favorites, and History
   const [ratings, setRatings] = useState<Record<string, LookRating>>({});
@@ -100,7 +93,6 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
         api.history(),
       ]);
       setProfile(loadedProfile);
-      setKeywords((loadedProfile.style_keywords || []).map((keyword: string) => keyword.startsWith('#') ? keyword : `#${keyword}`));
       const byId = new Map(wardrobe.map((item: any) => [item.id, item]));
       const mappedHistory: HistoryLook[] = history.map((row: any) => {
         const items = row.item_ids
@@ -180,21 +172,78 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
 
   const ratingList: LookRating[] = Object.values(ratings);
   const ratingCount = ratingList.length;
-  const matchScore = Math.min(98, 85 + ratingCount * 4);
+  const tagPreferences = profile?.style_tag_preferences || EMPTY_TAG_PREFERENCES;
+  const normalizeTag = (tag: string) => tagPreferences.aliases?.[tag] || tag;
+  const hiddenTags = new Set((tagPreferences.hidden || []).map(normalizeTag));
+  const pinnedTags = uniqueTags((tagPreferences.pinned || []).map(normalizeTag));
+  const visibleTags = (tags: string[], limit: number) => uniqueTags([
+    ...pinnedTags.filter((tag) => tags.map(normalizeTag).includes(tag)),
+    ...tags.map(normalizeTag),
+  ]).filter((tag) => !hiddenTags.has(tag)).slice(0, limit);
+  const coreTags = visibleTags(profile?.style_keywords || [], 7);
+  const recentSignals = visibleTags(profile?.recent_style_signals || [], 3);
+  const allTags = uniqueTags([...(profile?.style_keywords || []), ...(profile?.recent_style_signals || [])]);
 
-  const handleAddKeyword = () => {
-    if (!newKeyword) return;
-    const formatted = newKeyword.startsWith('#') ? newKeyword : `#${newKeyword}`;
-    const updated = [...keywords, formatted];
-    setKeywords(updated);
-    if (profile) void api.saveProfile({ ...profile, style_keywords: updated.map((keyword) => keyword.replace(/^#/, '')) });
-    setNewKeyword('');
+  const saveTagProfile = async (nextProfile: any) => {
+    const previousProfile = profile;
+    setProfile(nextProfile);
+    try {
+      setProfile(await api.saveProfile(nextProfile));
+      setTagError('');
+    } catch (error) {
+      setProfile(previousProfile);
+      setTagError(error instanceof Error ? `保存失败：${error.message}` : '保存失败，请重试');
+    }
   };
 
-  const handleRemoveKeyword = (kw: string) => {
-    const updated = keywords.filter(k => k !== kw);
-    setKeywords(updated);
-    if (profile) void api.saveProfile({ ...profile, style_keywords: updated.map((keyword) => keyword.replace(/^#/, '')) });
+  const updateTagPreferences = (nextPreferences: any) => {
+    if (!profile) return;
+    void saveTagProfile({ ...profile, style_tag_preferences: nextPreferences });
+  };
+
+  const togglePinnedTag = (tag: string) => {
+    const pinned = tagPreferences.pinned || [];
+    if (pinned.includes(tag)) {
+      updateTagPreferences({ ...tagPreferences, pinned: pinned.filter((value: string) => value !== tag) });
+      return;
+    }
+    if (pinned.length >= 3) {
+      setTagError('最多可置顶 3 个标签');
+      return;
+    }
+    updateTagPreferences({ ...tagPreferences, pinned: [...pinned, tag] });
+  };
+
+  const toggleHiddenTag = (tag: string) => {
+    const hidden = tagPreferences.hidden || [];
+    const isHidden = hidden.includes(tag);
+    updateTagPreferences({
+      ...tagPreferences,
+      pinned: isHidden ? tagPreferences.pinned || [] : (tagPreferences.pinned || []).filter((value: string) => value !== tag),
+      hidden: isHidden ? hidden.filter((value: string) => value !== tag) : [...hidden, tag],
+    });
+  };
+
+  const toggleMergeTag = (tag: string) => {
+    setMergeTags((selected) => selected.includes(tag)
+      ? selected.filter((value) => value !== tag)
+      : selected.length < 2 ? [...selected, tag] : selected);
+  };
+
+  const confirmMerge = () => {
+    const canonicalName = mergeName.trim();
+    if (mergeTags.length !== 2 || !canonicalName) {
+      setTagError('请选择恰好两个标签，并填写统一名称');
+      return;
+    }
+    updateTagPreferences({
+      ...tagPreferences,
+      aliases: { ...tagPreferences.aliases, ...Object.fromEntries(mergeTags.map((tag) => [tag, canonicalName])) },
+      hidden: (tagPreferences.hidden || []).filter((tag: string) => !mergeTags.includes(tag)),
+    });
+    setMergeTags([]);
+    setMergeName('');
+    setIsMergingTags(false);
   };
 
   return (
@@ -278,11 +327,12 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
           <div className="grid grid-cols-3 gap-2 text-center">
             {[0, 1, 2].map((index) => {
               const name = profile?.palette?.[index] || '等待沉淀';
+              const color = paletteHex(name);
               return (
                 <div key={`${name}-${index}`} className="bg-[#f8f6f0] p-2 rounded-lg border border-[#c4c6cd]/30 flex flex-col items-center">
                   <div
-                    className="w-8 h-8 rounded-full border border-black/10 shadow-2xs mb-1"
-                    style={{ backgroundColor: paletteColor(name, index) }}
+                    className="w-8 h-8 rounded-full border border-[#8a8d91] shadow-2xs mb-1 bg-[#f0eee9]"
+                    style={color ? { backgroundColor: color } : undefined}
                   ></div>
                   <p className="text-[10px] font-bold text-[#162839]">{name}</p>
                   <span className="text-[9px] text-[#74777d]">{name === '等待沉淀' ? '上传参考 Look' : 'Style DNA'}</span>
@@ -292,55 +342,45 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
           </div>
         </section>
 
-        {/* Keywords & AI Fit Progress */}
+        {/* Keywords & Learning Status */}
         <section className="bg-white p-3.5 rounded-xl border border-[#c4c6cd]/40 shadow-2xs space-y-3">
           <div className="flex justify-between items-center pb-2 border-b border-[#e4e2dd]/60">
             <span className="text-xs font-bold text-[#162839] flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm text-[#162839]">auto_awesome</span>
-              风格关键词与 AI 契合度
+              风格关键词与学习状态
             </span>
-            <span className="text-[10px] font-bold text-[#9a442a] bg-[#9a442a]/10 px-2 py-0.5 rounded-full font-mono">
-              {matchScore}% 匹配
-            </span>
+            <button
+              onClick={() => setIsManagingTags(true)}
+              className="text-[10px] font-bold text-[#9a442a] bg-[#9a442a]/10 px-2 py-0.5 rounded-full"
+            >
+              管理标签
+            </button>
           </div>
 
           <div>
             <div className="flex flex-wrap gap-1.5 mb-2">
-              {keywords.map((kw) => (
-                <span key={kw} className="bg-[#f0eee9] px-2 py-0.5 text-[11px] font-medium text-[#162839] rounded-md flex items-center gap-1">
-                  {kw}
-                  <button onClick={() => handleRemoveKeyword(kw)} className="text-[#9a442a] font-bold text-xs ml-0.5">×</button>
+              {coreTags.length ? coreTags.map((tag) => (
+                <span key={tag} className="bg-[#f0eee9] px-2 py-0.5 text-[11px] font-medium text-[#162839] rounded-md">
+                  {tag}
                 </span>
-              ))}
+              )) : <span className="text-[10px] text-[#74777d]">上传参考 Look 后会沉淀核心风格</span>}
             </div>
-            <div className="flex gap-1.5">
-              <input
-                type="text"
-                value={newKeyword}
-                onChange={(e) => setNewKeyword(e.target.value)}
-                placeholder="添加偏好标签..."
-                className="text-[11px] p-1.5 border border-[#c4c6cd] bg-[#fbf9f4] text-[#162839] flex-1 rounded-md"
-              />
-              <button
-                onClick={handleAddKeyword}
-                className="bg-[#162839] text-white text-[11px] font-bold px-3 py-1 rounded-md"
-              >
-                添加
-              </button>
-            </div>
+            {recentSignals.length > 0 && (
+              <div className="pt-2 border-t border-[#e4e2dd]/60">
+                <p className="text-[10px] text-[#74777d] mb-1">最近风格信号</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {recentSignals.map((tag) => (
+                    <span key={tag} className="border border-[#9a442a]/30 text-[#9a442a] px-2 py-0.5 text-[10px] font-medium rounded-md">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="pt-1">
-            <div className="flex justify-between text-[10px] text-[#43474c] font-medium mb-1">
-              <span>根据 {ratingCount} 次历史反馈训练</span>
-              <span className="font-bold text-[#162839]">{matchScore}% 精准度</span>
-            </div>
-            <div className="w-full bg-[#e4e2dd] h-2 rounded-full overflow-hidden">
-              <div
-                className="bg-[#162839] h-full transition-all duration-500"
-                style={{ width: `${matchScore}%` }}
-              ></div>
-            </div>
+          <div className="pt-1 text-[10px] text-[#43474c] font-medium">
+            {ratingCount === 0 ? "正在学习" : `已根据 ${ratingCount} 次反馈更新`}
           </div>
         </section>
 
@@ -830,6 +870,86 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
               关闭
             </button>
           </div>
+        </div>
+      )}
+
+      {isManagingTags && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-[#fbf9f4] p-4 max-w-xs w-full border border-[#162839] rounded-xl max-h-[80vh] flex flex-col shadow-xl">
+            <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#c4c6cd]/40">
+              <div>
+                <h3 className="text-xs font-bold text-[#162839]">管理标签</h3>
+                <p className="text-[9px] text-[#74777d]">置顶最多 3 个；隐藏仅影响摘要展示</p>
+              </div>
+              <button onClick={() => setIsManagingTags(false)} className="text-[#74777d] p-1" aria-label="关闭标签管理">
+                <span className="material-symbols-outlined text-base">close</span>
+              </button>
+            </div>
+
+            {isMergingTags ? (
+              <div className="space-y-2 overflow-y-auto">
+                <p className="text-[10px] text-[#43474c]">选择恰好两个标签，再填写一个统一名称。</p>
+                {allTags.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => toggleMergeTag(tag)}
+                    className={`w-full flex justify-between items-center p-2 rounded-lg border text-left text-[11px] ${mergeTags.includes(tag) ? 'border-[#9a442a] bg-[#9a442a]/10 text-[#9a442a]' : 'border-[#c4c6cd]/40 bg-white text-[#162839]'}`}
+                  >
+                    <span>{normalizeTag(tag)}</span>
+                    {mergeTags.includes(tag) && <span className="material-symbols-outlined text-sm">check</span>}
+                  </button>
+                ))}
+                <input
+                  value={mergeName}
+                  onChange={(event) => setMergeName(event.target.value)}
+                  placeholder="统一名称"
+                  className="w-full p-2 border border-[#c4c6cd] bg-white text-xs text-[#162839] rounded-lg"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setIsMergingTags(false); setMergeTags([]); setMergeName(''); }}
+                    className="flex-1 border border-[#162839]/30 text-[#162839] py-2 text-xs font-bold rounded-lg"
+                  >
+                    取消
+                  </button>
+                  <button onClick={confirmMerge} className="flex-1 bg-[#162839] text-white py-2 text-xs font-bold rounded-lg">
+                    确认合并
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2 overflow-y-auto">
+                {allTags.length ? allTags.map((tag) => {
+                  const isPinned = (tagPreferences.pinned || []).includes(tag);
+                  const isHidden = (tagPreferences.hidden || []).includes(tag);
+                  return (
+                    <div key={tag} className="bg-white p-2 rounded-lg border border-[#c4c6cd]/40 flex items-center gap-2">
+                      <span className="text-[11px] text-[#162839] font-medium flex-1 min-w-0 truncate">{normalizeTag(tag)}</span>
+                      <button onClick={() => togglePinnedTag(tag)} className="text-[10px] text-[#162839] border border-[#162839]/30 px-1.5 py-1 rounded">
+                        {isPinned ? '取消置顶' : '置顶'}
+                      </button>
+                      <button onClick={() => toggleHiddenTag(tag)} className="text-[10px] text-[#9a442a] border border-[#9a442a]/30 px-1.5 py-1 rounded">
+                        {isHidden ? '恢复' : '隐藏'}
+                      </button>
+                    </div>
+                  );
+                }) : <p className="text-xs text-[#74777d] text-center py-4">还没有可管理的风格标签</p>}
+                <button
+                  onClick={() => setIsMergingTags(true)}
+                  className="w-full border border-[#162839]/30 text-[#162839] py-2 text-xs font-bold rounded-lg"
+                >
+                  合并标签
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tagError && (
+        <div role="alert" className="fixed z-[60] bottom-24 inset-x-4 max-w-md mx-auto bg-[#162839] text-white px-3 py-2 rounded-lg shadow-lg text-[11px] flex justify-between gap-2">
+          <span>{tagError}</span>
+          <button onClick={() => setTagError('')} aria-label="关闭提示">×</button>
         </div>
       )}
 

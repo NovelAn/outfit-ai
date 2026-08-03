@@ -1,6 +1,6 @@
 # Outfit-AI 当前前端与后端集成
 
-> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-07-31。
+> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-08-03。
 
 ## 1. 前端基准
 
@@ -39,7 +39,7 @@ frontend/index.html
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
 | 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
-| 我的 | `ScreenProfile.tsx` | 查看和编辑风格关键词、色板、反馈历史、推荐历史和收藏 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history` |
+| 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；查看反馈、推荐历史和收藏 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history` |
 
 ## 4. 前端 API 接线
 
@@ -56,7 +56,7 @@ frontend/index.html
 | `uploadReference(file)` | `POST /api/style-references/upload` | 上传完整参考 Look，不去背景 |
 | `referenceStatus(id)` | `GET /api/style-references/{id}/status` | 轮询 VLM 分析与 Style DNA 合并状态 |
 | `deleteReference(id)` | `DELETE /api/style-references/{id}` | 删除参考 Look 和图片 |
-| `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存 Style DNA |
+| `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存完整 Profile；标签操作保留既有字段，并提交 `style_keywords`、`recent_style_signals` 和 `style_tag_preferences` |
 | `weather({city,latitude,longitude})` | `GET /api/weather` | 以同一位置上下文读取本地日期、城市、温度、天气和降雨数据 |
 | `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐 |
 | `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈 |
@@ -68,6 +68,10 @@ frontend/index.html
 识图状态默认每 800ms 轮询一次、最长等待 5 分钟，以覆盖 `rembg` 首次下载本地模型的准备时间；超过窗口时提示任务仍在后台处理并要求不要重复上传，不再把慢任务误报为识别失败。
 
 衣橱展示层把 `outerwear` 归入“上装”、`dress` 归入“下装”，并单列 `accessory` 为“配饰”；后端仍保留稳定英文类别码。VLM 返回的衣物名称、颜色、材质、版型、风格、标签、季节和场景使用简体中文，品牌名和内部 `category` 除外。
+
+我的页面的色板仅使用统一的名称映射：黑色 `#1B1C19`、白色 `#F7F5EF`、深蓝色 `#162839`、浅蓝色 `#A9C7DD`、灰色 `#8A8D91`、米白色 `#EEE8DA`、米黄色 `#D8C49A`、卡其色 `#B39B72`、棕色 `#7A5337`、绿色 `#647B5B`、红色 `#9A442A`、紫色 `#75627D`。未知颜色只显示文字和中性描边底色，绝不按数组位置猜测颜色。
+
+核心标签摘要最多显示 7 个，近期风格信号作为独立分组最多显示 3 个；置顶标签在各自分组中优先。隐藏标签只在“管理标签”浮层中显示。浮层支持最多置顶 3 个标签、隐藏/恢复，以及选择恰好两个标签并填入一个统一名称来合并。每次确认操作只发起一次完整 Profile 保存；失败时恢复前一份本地状态并显示错误提示。学习文案仅基于本地已记录的反馈次数：无反馈时显示“正在学习”，否则显示“已根据 N 次反馈更新”，不展示虚构百分比。
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
 
@@ -131,7 +135,7 @@ npm run lint
 npm run build
 ```
 
-`frontend/scripts/stitch-contract.mjs` 防止五页结构、四主导航和原版字体依赖被误改；`frontend/scripts/api-contract.test.mjs` 验证后端数据到 Stitch 页面模型的映射和轮询分支。
+`frontend/scripts/stitch-contract.mjs` 防止五页结构、四主导航、原版字体依赖、Profile 的显示上限、标签入口和基于证据的学习文案被误改；`frontend/scripts/api-contract.test.mjs` 验证后端数据到 Stitch 页面模型的映射、轮询分支和 Style DNA 的规范色板映射。
 
 当前视觉契约还固定以下已确认的移动端行为：灵感上传文件选择器支持多选；灵感存档在手机端使用三列 `3:4` 缩略图；放大图可再次点击关闭。
 

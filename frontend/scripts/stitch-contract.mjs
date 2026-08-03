@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-const [app, nav, html, pkg, inspiration, archive, wardrobe, today, drawer] = await Promise.all([
+const [app, nav, html, pkg, inspiration, archive, wardrobe, today, drawer, profile] = await Promise.all([
   read("src/App.tsx"),
   read("src/components/BottomNav.tsx"),
   read("index.html"),
@@ -13,6 +13,7 @@ const [app, nav, html, pkg, inspiration, archive, wardrobe, today, drawer] = awa
   read("src/components/ScreenWardrobe.tsx"),
   read("src/components/ScreenToday.tsx"),
   read("src/components/SideDrawer.tsx"),
+  read("src/components/ScreenProfile.tsx"),
 ]);
 
 for (const screen of ["ScreenToday", "ScreenWardrobe", "ScreenInspiration", "ScreenArchive", "ScreenProfile"]) {
@@ -43,5 +44,11 @@ assert.doesNotMatch(today, /TOKYO \/ 24°C/);
 assert.match(today, /resolveLocationContext/);
 assert.match(today, /precipitation_probability_max/);
 assert.match(drawer, /OpenStreetMap contributors/);
+assert.match(profile, /coreTags\s*=\s*visibleTags\(profile\?\.style_keywords\s*\|\|\s*\[\], 7\)/, "profile summary must cap core tags at seven");
+assert.match(profile, /recent_style_signals/, "profile must render recent style signals separately");
+assert.match(profile, /管理标签/, "profile must expose tag management");
+assert.match(profile, /正在学习/, "profile must use evidence-based cold-start learning copy");
+assert.match(profile, /已根据/, "profile must describe the feedback evidence used");
+assert.doesNotMatch(profile, /85\s*\+\s*ratingCount\s*\*\s*4/, "profile must not calculate a fake match percentage");
 
 console.log("Stitch visual contract passed: five screens and original design dependencies preserved");
