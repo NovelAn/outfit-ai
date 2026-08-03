@@ -40,6 +40,12 @@ assert.match(
 assert.match(wardrobe, /首次处理.*去背景模型/, "wardrobe must explain slow first-time setup");
 assert.match(wardrobe, /grid-cols-3/, "mobile wardrobe must show three compact columns");
 assert.match(wardrobe, /aspect-\[4\/5\]/, "wardrobe thumbnails must use a compact fixed ratio");
+assert.match(wardrobe, /编辑信息/, "wardrobe detail must expose an edit entry");
+assert.match(wardrobe, /删除单品/, "wardrobe detail must expose a delete entry");
+assert.match(wardrobe, /保存修改/, "wardrobe edit modal must expose a save action");
+assert.match(wardrobe, /确认删除/, "wardrobe delete must require in-modal confirmation");
+assert.match(wardrobe, /api\.updateWardrobe/, "wardrobe edit must call the PATCH API");
+assert.match(wardrobe, /api\.deleteWardrobe/, "wardrobe delete must call the DELETE API");
 assert.doesNotMatch(today, /TOKYO \/ 24°C/);
 assert.match(today, /resolveLocationContext/);
 assert.match(today, /precipitation_probability_max/);
