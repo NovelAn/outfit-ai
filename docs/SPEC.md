@@ -199,7 +199,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 ## 7. 模块规格（文件级，标 port/borrow 来源）
 - `services/minimax_images.py`：读取环境变量或 `~/.mmx/config.json`；调用 Coding Plan VLM 与 `image-01`，校验和解码响应。
 - `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；统一错误处理且不泄漏 Key。
-- `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 `category` 保持英文内部码，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
+- `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 prompt 使用短字段模板，`category` 仅允许 `top/bottom/outerwear/dress/shoes/accessory`，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；响应兼容纯 JSON、单个或多个 Markdown JSON 代码块，并取最后一个有效 JSON；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测
 - `services/stylist.py`：`propose(...) -> list[Look]`（M3 文本属性 + 参考分析，tool use）
@@ -213,7 +213,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。
 - `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。造型师收到的长期档案只包括应用 pin/hide/alias 后的有效关键词、最近风格信号和 `taste_memo`。来源：ai-closet 结构（适配 chat completions）
-- `workers/analysis.py`：真实衣物 BackgroundTask（pending→analyzing→rembg→VLM→ready/failed）。
+- `workers/analysis.py`：真实衣物 BackgroundTask（pending→analyzing→rembg→以 `.nobg.png` 调用 VLM→ready/failed）；类别确认会将常见模型别名归一化，例如 `hat`、`cap`、`baseball cap` 归入 `accessory`。
 - `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）；重试只复用有效非空分析，旧空缓存会重新调用 VLM。合并结果的核心关键词最多 7 个（仅可复用且有证据的风格概念，不含单件、场景或季节），最近信号最多 3 个，色板最多 5 个且仅可使用 `黑色、白色、深蓝色、浅蓝色、灰色、米白色、米黄色、卡其色、棕色、绿色、红色、紫色`；alias 先归一化标签，再应用 hidden，最后保留 pin（`pinned > hidden`）。
 - `routers/{wardrobe,profile,recommend,feedback,style_references,inspiration}.py`：见 §6
 - `main.py`：FastAPI app、CORS、lifespan `init_db()`、挂载 routers、静态托管 `/media`→upload_dir

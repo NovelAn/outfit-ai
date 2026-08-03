@@ -40,6 +40,30 @@ def test_extract_accepts_markdown_wrapped_vlm_json(monkeypatch, tmp_path) -> Non
     assert raw.startswith("```json")
 
 
+def test_extract_uses_last_json_block_when_vlm_echoes_schema(
+    monkeypatch, tmp_path
+) -> None:
+    image_path = tmp_path / "item.png"
+    Image.new("RGB", (2, 2), "white").save(image_path)
+    raw = (
+        "```json\n"
+        '{"properties":{"name":{"type":"string"}},"required":["name"]}'
+        "\n```\n"
+        "```json\n"
+        '{"name":"蓝色棒球帽","category":"hat","primary_color":"蓝色",'
+        '"styles":["休闲"],"tags":["棒球帽"],"seasons":["四季"],'
+        '"occasions":["日常"]}'
+        "\n```"
+    )
+    monkeypatch.setattr(minimax_images, "describe_image", lambda *_: raw)
+
+    attributes, returned_raw = extract(image_path)
+
+    assert attributes.name == "蓝色棒球帽"
+    assert attributes.category == "hat"
+    assert returned_raw == raw
+
+
 def test_extract_requests_simplified_chinese_display_fields(monkeypatch, tmp_path) -> None:
     image_path = tmp_path / "item.png"
     Image.new("RGB", (2, 2), "white").save(image_path)
@@ -57,6 +81,10 @@ def test_extract_requests_simplified_chinese_display_fields(monkeypatch, tmp_pat
     extract(image_path)
 
     assert "除 category 外，所有面向用户的字段必须使用简体中文" in prompts[0]
+    assert "model_json_schema" not in prompts[0]
+    assert "properties" not in prompts[0]
+    assert "top/bottom/outerwear/dress/shoes/accessory" in prompts[0]
+    assert "不要输出 JSON Schema 或 Markdown" in prompts[0]
 
 
 def test_reference_analysis_is_structured(monkeypatch, tmp_path) -> None:
