@@ -43,6 +43,8 @@ def extract(image_path: str | Path) -> tuple[ClothingAttributes, str]:
             "除 category 外，所有面向用户的字段必须使用简体中文；品牌名可保留原文。"
             "字段：name、category、primary_color、secondary_color、material、fit、"
             "formality、styles、tags、seasons、occasions、versatility。"
+            "versatility 必须是 0 到 1 的数字；styles、tags、seasons、occasions "
+            "必须是字符串数组；可空字段使用 null。"
         ),
     )
     try:

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal, TypeAlias
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 OutfitHistoryAction: TypeAlias = Literal[
     "shown", "saved", "skipped", "worn", "prepared"
@@ -21,6 +21,21 @@ class ClothingAttributes(BaseModel):
     seasons: list[str] = Field(default_factory=list)
     occasions: list[str] = Field(default_factory=list)
     versatility: float | None = Field(None, ge=0, le=1)
+
+    @field_validator("versatility", mode="before")
+    @classmethod
+    def normalize_semantic_versatility(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return {
+                "高": 0.85,
+                "high": 0.85,
+                "中": 0.5,
+                "medium": 0.5,
+                "低": 0.25,
+                "low": 0.25,
+            }.get(normalized, value)
+        return value
 
 
 class StyleReferenceAnalysis(BaseModel):

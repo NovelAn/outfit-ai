@@ -64,6 +64,24 @@ def test_extract_uses_last_json_block_when_vlm_echoes_schema(
     assert returned_raw == raw
 
 
+def test_extract_normalizes_common_semantic_versatility(monkeypatch, tmp_path) -> None:
+    image_path = tmp_path / "item.png"
+    Image.new("RGB", (2, 2), "white").save(image_path)
+    raw = (
+        '{"name":"条纹长袖衬衫","category":"top",'
+        '"primary_color":"浅蓝色","secondary_color":"白色",'
+        '"material":"棉质","fit":"宽松","formality":"休闲",'
+        '"styles":["休闲","简约"],"tags":["条纹","长袖"],'
+        '"seasons":["春季","秋季"],"occasions":["日常","通勤"],'
+        '"versatility":"高"}'
+    )
+    monkeypatch.setattr(minimax_images, "describe_image", lambda *_: raw)
+
+    attributes, _ = extract(image_path)
+
+    assert attributes.versatility == 0.85
+
+
 def test_extract_requests_simplified_chinese_display_fields(monkeypatch, tmp_path) -> None:
     image_path = tmp_path / "item.png"
     Image.new("RGB", (2, 2), "white").save(image_path)
@@ -85,6 +103,9 @@ def test_extract_requests_simplified_chinese_display_fields(monkeypatch, tmp_pat
     assert "properties" not in prompts[0]
     assert "top/bottom/outerwear/dress/shoes/accessory" in prompts[0]
     assert "不要输出 JSON Schema 或 Markdown" in prompts[0]
+    assert "versatility 必须是 0 到 1 的数字" in prompts[0]
+    assert "styles、tags、seasons、occasions 必须是字符串数组" in prompts[0]
+    assert "可空字段使用 null" in prompts[0]
 
 
 def test_reference_analysis_is_structured(monkeypatch, tmp_path) -> None:
