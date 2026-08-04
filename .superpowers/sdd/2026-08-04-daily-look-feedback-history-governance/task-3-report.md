@@ -34,3 +34,11 @@ npm run build PASS — Vite production build
 ## Scope and caveat
 
 No DB, credentials, backend files, `.playwright-cli/`, or `output/` files were changed. Validation is contract/type/build level; no logged-in browser or live backend/DB mutation was run.
+
+## Review fix round 1
+
+- Persistent favorite/rating actions now require a `historyId`. A Look without one shows `此 Look 尚未生成可反馈的推荐历史`; it does not update React state or `localStorage`. Profile’s legacy local entries likewise cannot be edited or unfavorited as if they had a server confirmation.
+- Restored the Stitch hero’s existing three-item overlapping composition. Only returned items four through six render as appended layer/accessory tiles.
+- Added tests for the missing-history rejection and the preserved hero-plus-optional-items structure.
+
+Revalidated with the bundled Node runtime: `npm test` (29 passing), `npm run lint`, and `npm run build` all pass.

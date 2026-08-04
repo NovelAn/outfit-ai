@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import * as profileApi from "../src/lib/api.mjs";
@@ -8,6 +9,7 @@ import {
   createSingleFlight,
   confirmFeedback,
   mapHistoryLook,
+  requireHistoryId,
   mapRecommendation,
   mapStyleReference,
   mapWardrobeItem,
@@ -273,6 +275,22 @@ test("commits feedback only after the server accepts it and rolls back on failur
     () => calls.push("rollback"),
   );
   assert.deepEqual(calls, ["rollback", "commit"]);
+});
+
+test("refuses persistent Look feedback without a server history identity", () => {
+  assert.equal(requireHistoryId("history-1"), "history-1");
+  assert.throws(() => requireHistoryId(), /尚未生成可反馈的推荐历史/);
+  const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
+  const profile = readFileSync(new URL("../src/components/ScreenProfile.tsx", import.meta.url), "utf8");
+  assert.match(today, /historyId = requireHistoryId/);
+  assert.match(profile, /historyId = requireHistoryId/);
+});
+
+test("keeps the Stitch three-item hero and appends optional Look items", () => {
+  const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
+  assert.match(today, /items\.slice\(0, 3\)/);
+  assert.match(today, /items\.slice\(3\)/);
+  assert.match(today, /vertical-stack-img/);
 });
 
 test("converts Stitch season labels to backend values", () => {

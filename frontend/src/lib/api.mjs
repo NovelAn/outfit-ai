@@ -178,6 +178,11 @@ export async function confirmFeedback(submit, data, onConfirmed, onRollback) {
   }
 }
 
+export function requireHistoryId(historyId) {
+  if (!historyId) throw new Error("此 Look 尚未生成可反馈的推荐历史");
+  return historyId;
+}
+
 export function mapRecommendation(result) {
   return {
     weather: result.weather,

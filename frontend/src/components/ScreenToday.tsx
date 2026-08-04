@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
-import { api, confirmFeedback } from '../lib/api.mjs';
+import { api, confirmFeedback, requireHistoryId } from '../lib/api.mjs';
 import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
@@ -157,20 +157,32 @@ const EMPTY_LOOKS: Record<'safe' | 'fresh' | 'stretch', any> = {
   stretch: { title: 'Look 03 / 突破 (STRETCH)', tag: '工装廓形', description: '等待从真实衣橱生成', imageUrl: '', items: EMPTY_ITEMS },
 };
 
-const LookItems = ({ items = [], onSelect }: { items: any[]; onSelect: (item: any) => void }) => (
-  <div className="grid w-full grid-cols-3 gap-2">
-    {items.map((item, index) => (
-      <button
-        key={item.id || `${item.name}-${index}`}
-        onClick={() => onSelect(item)}
-        className="aspect-square overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-1.5 hover:border-[#9a442a]/50 transition-colors"
-      >
-        <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
-        <span className="sr-only">{item.name}</span>
-      </button>
-    ))}
-  </div>
-);
+const LookItems = ({ items = [], tier, onSelect }: { items: any[]; tier: 'safe' | 'fresh' | 'stretch'; onSelect: (item: any) => void }) => {
+  const heroClasses = tier === 'stretch'
+    ? ['w-64 h-64 z-10', 'w-52 h-64 z-0 -mt-20', 'w-40 h-28 z-20 -mt-12']
+    : ['w-56 h-56 z-10', 'w-48 h-64 z-0 -mt-16', 'w-36 h-24 z-20 -mt-10'];
+  return <>
+    <div className="flex flex-col items-center w-full relative">
+      {items.slice(0, 3).map((item, index) => (
+        <img
+          key={item.id || `${item.name}-${index}`}
+          onClick={() => onSelect(item)}
+          className={`${heroClasses[index]} object-contain vertical-stack-img relative cursor-pointer hover:scale-105 transition-transform`}
+          src={item.img}
+          alt={item.name}
+        />
+      ))}
+    </div>
+    {items.length > 3 && <div className="grid w-full grid-cols-3 gap-2 mt-3">
+      {items.slice(3).map((item, index) => (
+        <button key={item.id || `${item.name}-${index + 3}`} onClick={() => onSelect(item)} className="aspect-square overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-1.5 hover:border-[#9a442a]/50 transition-colors">
+          <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
+          <span className="sr-only">{item.name}</span>
+        </button>
+      ))}
+    </div>}
+  </>;
+};
 
 export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
@@ -450,6 +462,13 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     }
     const isNowLiked = !liked[id];
     const look = liveLooks[id];
+    let historyId: string;
+    try {
+      historyId = requireHistoryId(look.historyId);
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : '无法保存此 Look');
+      return;
+    }
 
     try {
       const favsStr = localStorage.getItem('OUTFIT_AI_FAVORITES');
@@ -467,17 +486,13 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
         setLiked((prev) => ({ ...prev, [id]: isNowLiked }));
         localStorage.setItem('OUTFIT_AI_FAVORITES', JSON.stringify(favs));
       };
-      if (look.historyId) {
-        await confirmFeedback(api.feedback, {
-          history_id: look.historyId,
-          items_worn: look.items.map((item: any) => item.id),
-          action: isNowLiked ? 'saved' : 'shown',
-        }, commit, (error: unknown) => {
-          triggerToast(error instanceof Error ? error.message : '收藏状态同步失败');
-        });
-      } else {
-        commit();
-      }
+      await confirmFeedback(api.feedback, {
+        history_id: historyId,
+        items_worn: look.items.map((item: any) => item.id),
+        action: isNowLiked ? 'saved' : 'shown',
+      }, commit, (error: unknown) => {
+        triggerToast(error instanceof Error ? error.message : '收藏状态同步失败');
+      });
     } catch (err) {
       console.error(err);
     }
@@ -535,7 +550,14 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
 
     const tier = id.split('-')[0];
     const look = liveLooks?.[tier];
-    newRating.historyId = look?.historyId;
+    let historyId: string;
+    try {
+      historyId = requireHistoryId(look?.historyId);
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : '无法提交此 Look 的评分');
+      return;
+    }
+    newRating.historyId = historyId;
     newRating.lookItems = look?.items;
     const commit = () => {
       const updated = { ...ratings, [id]: newRating };
@@ -544,22 +566,18 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       setActiveRatingModal(null);
       triggerToast(`✨ AI 基因库已吸收你的评价！${aiAdjustment}`);
     };
-    if (look?.historyId) {
-      try {
-        await confirmFeedback(api.feedback, {
-        history_id: look.historyId,
+    try {
+      await confirmFeedback(api.feedback, {
+        history_id: historyId,
         items_worn: look.items.map((item: any) => item.id),
         rating: currentStars,
         sentiment: commentText || `${currentStars} 星`,
         compliments: selectedTags,
-        }, commit, (error: unknown) => {
+      }, commit, (error: unknown) => {
         triggerToast(error instanceof Error ? error.message : '反馈同步失败');
-        });
-      } catch {
-        return;
-      }
-    } else {
-      commit();
+      });
+    } catch {
+      return;
     }
   };
 
@@ -727,7 +745,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentSafe.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentSafe.items} tier="safe" onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
               <div className="mt-10 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -822,7 +840,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentFresh.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentFresh.items} tier="fresh" onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
               <div className="mt-10 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -917,7 +935,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentStretch.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentStretch.items} tier="stretch" onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
               <div className="mt-10 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">

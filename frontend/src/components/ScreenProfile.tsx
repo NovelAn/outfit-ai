@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId, LookRating, FavoriteLook, HistoryLook } from '../types';
-import { api, confirmFeedback, mapHistoryLook, paletteHex, visibleStyleTags } from '../lib/api.mjs';
+import { api, confirmFeedback, mapHistoryLook, paletteHex, requireHistoryId, visibleStyleTags } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -144,69 +144,47 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
   }, []);
 
   const saveUpdatedRating = async (updated: LookRating) => {
-    if (updated.historyId) {
-      try {
-        await confirmFeedback(api.feedback, {
-          history_id: updated.historyId,
-          items_worn: historyList.find((item) => item.historyId === updated.historyId)?.itemIds || [],
-          rating: updated.rating,
-          sentiment: updated.comment,
-          compliments: updated.tags,
-        }, () => { setEditingRating(null); void loadData(); }, (error: unknown) => {
-          setTagError(error instanceof Error ? error.message : '评分保存失败，请重试');
-        });
-      } catch {
-        return;
-      }
+    let historyId: string;
+    try {
+      historyId = requireHistoryId(updated.historyId);
+    } catch (error) {
+      setTagError(error instanceof Error ? error.message : '评分保存失败，请重试');
       return;
     }
-    const newRatings = { ...ratings, [updated.lookId]: updated };
-    setRatings(newRatings);
     try {
-      localStorage.setItem('OUTFIT_AI_LOOK_RATINGS', JSON.stringify(newRatings));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.error(e);
+      await confirmFeedback(api.feedback, {
+        history_id: historyId,
+        items_worn: historyList.find((item) => item.historyId === historyId)?.itemIds || [],
+        rating: updated.rating,
+        sentiment: updated.comment,
+        compliments: updated.tags,
+      }, () => { setEditingRating(null); void loadData(); }, (error: unknown) => {
+        setTagError(error instanceof Error ? error.message : '评分保存失败，请重试');
+      });
+    } catch {
+      return;
     }
-    setEditingRating(null);
-  };
-
-  const deleteRating = (lookId: string) => {
-    const newRatings = { ...ratings };
-    delete newRatings[lookId];
-    setRatings(newRatings);
-    try {
-      localStorage.setItem('OUTFIT_AI_LOOK_RATINGS', JSON.stringify(newRatings));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.error(e);
-    }
-    setEditingRating(null);
   };
 
   const removeFavorite = async (id: string) => {
     const history = historyList.find((item) => item.id === id);
-    if (history?.historyId) {
-      try {
-        await confirmFeedback(api.feedback, {
-          history_id: history.historyId,
-          items_worn: history.itemIds || [],
-          action: 'shown',
-        }, () => void loadData(), (error: unknown) => {
-          setTagError(error instanceof Error ? error.message : '收藏状态同步失败');
-        });
-      } catch {
-        return;
-      }
+    let historyId: string;
+    try {
+      historyId = requireHistoryId(history?.historyId);
+    } catch (error) {
+      setTagError(error instanceof Error ? error.message : '收藏状态同步失败');
       return;
     }
-    const updated = favoritesList.filter((f) => f.id !== id);
-    setFavoritesList(updated);
     try {
-      localStorage.setItem('OUTFIT_AI_FAVORITES', JSON.stringify(updated));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.error(e);
+      await confirmFeedback(api.feedback, {
+        history_id: historyId,
+        items_worn: history?.itemIds || [],
+        action: 'shown',
+      }, () => void loadData(), (error: unknown) => {
+        setTagError(error instanceof Error ? error.message : '收藏状态同步失败');
+      });
+    } catch {
+      return;
     }
   };
 
