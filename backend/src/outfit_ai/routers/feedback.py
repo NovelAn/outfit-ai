@@ -1,5 +1,5 @@
 import json
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -11,7 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..models import Feedback, OutfitHistory, Profile
 from ..schemas import FeedbackIn
-from ..services.history import get_recent_outfits
+from ..services.history import get_history_outfits, get_recent_outfits
 from ..services.taste_memo import FEEDBACK_BATCH_SIZE, refresh
 
 router = APIRouter(tags=["feedback"])
@@ -28,8 +28,14 @@ def feedback(
         history = db.get(OutfitHistory, payload.history_id)
         if not history or history.user_id != settings.user_id:
             raise HTTPException(404, "推荐历史不存在")
-        history.action = payload.action
-        history.wore_it = payload.action == "worn"
+        if payload.rating is not None:
+            history.user_rating = payload.rating
+        if payload.action == "worn":
+            history.wore_it = True
+            if history.action != "saved":
+                history.action = "worn"
+        elif payload.action is not None:
+            history.action = payload.action
     row = Feedback(
         id=uuid4().hex,
         user_id=settings.user_id,
@@ -60,8 +66,16 @@ def feedback(
 
 
 @router.get("/history")
-def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
-    rows = get_recent_outfits(db, settings.user_id, limit)
+def history(
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    scope: Literal["recent", "archive"] | None = None,
+):
+    rows = (
+        get_history_outfits(db, settings.user_id, scope=scope, limit=limit)
+        if scope
+        else get_recent_outfits(db, settings.user_id, limit)
+    )
     return [
         {
             "id": row.id,
@@ -74,6 +88,12 @@ def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
             "collage_path": row.collage_path,
             "action": row.action,
             "wore_it": row.wore_it,
+            "rating": row.user_rating,
+            "scope": (
+                "archive"
+                if row.action == "saved" or row.wore_it or (row.user_rating or 0) >= 4
+                else "recent"
+            ),
         }
         for row in rows
     ]

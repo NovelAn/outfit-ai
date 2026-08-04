@@ -1,8 +1,8 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 from uuid import uuid4
 
-from sqlalchemy import literal_column, select
+from sqlalchemy import delete, literal_column, or_, select
 from sqlalchemy.orm import Session
 
 from ..models import OutfitHistory, WardrobeItem
@@ -23,6 +23,104 @@ def get_recent_outfits(db: Session, user_id: str, limit: int = 7) -> list[Outfit
             .limit(limit)
         )
     )
+
+
+def _context(row: OutfitHistory) -> dict[str, object]:
+    try:
+        context = json.loads(row.context_json) if row.context_json else {}
+    except (TypeError, ValueError):
+        return {}
+    return context if isinstance(context, dict) else {}
+
+
+def _latest_complete_set(rows: list[OutfitHistory]) -> list[OutfitHistory]:
+    tiers = ("safe", "fresh", "stretch")
+    grouped: dict[str, dict[str, OutfitHistory]] = {}
+    group_order: dict[str, tuple[str, int]] = {}
+    legacy: dict[str, OutfitHistory] = {}
+    for index, row in enumerate(rows):
+        context = _context(row)
+        set_id = context.get("recommendation_set_id")
+        if isinstance(set_id, str) and set_id:
+            grouped.setdefault(set_id, {}).setdefault(row.pick_mode, row)
+            created_at = context.get("recommendation_set_created_at")
+            created = created_at if isinstance(created_at, str) else ""
+            group_order.setdefault(set_id, (created, -index))
+        else:
+            legacy.setdefault(row.pick_mode, row)
+    complete = [
+        set_id
+        for set_id, looks in grouped.items()
+        if all(tier in looks for tier in tiers)
+    ]
+    if complete:
+        latest = max(complete, key=lambda set_id: group_order[set_id])
+        return [grouped[latest][tier] for tier in tiers]
+    if all(tier in legacy for tier in tiers):
+        return [legacy[tier] for tier in tiers]
+    return []
+
+
+def get_latest_recommendation_set(
+    db: Session, user_id: str, local_date: date
+) -> list[OutfitHistory]:
+    return _latest_complete_set(
+        list(
+            db.scalars(
+                select(OutfitHistory)
+                .where(
+                    OutfitHistory.user_id == user_id,
+                    OutfitHistory.date == local_date,
+                    OutfitHistory.pick_mode.in_(("safe", "fresh", "stretch")),
+                )
+                .order_by(literal_column("outfit_history.rowid").desc())
+            )
+        )
+    )
+
+
+def get_history_outfits(
+    db: Session, user_id: str, *, scope: str = "recent", limit: int = 20
+) -> list[OutfitHistory]:
+    statement = select(OutfitHistory).where(OutfitHistory.user_id == user_id)
+    if scope == "archive":
+        statement = statement.where(
+            or_(
+                OutfitHistory.action == "saved",
+                OutfitHistory.wore_it.is_(True),
+                OutfitHistory.user_rating >= 4,
+            )
+        )
+    elif scope == "recent":
+        statement = statement.where(
+            OutfitHistory.action != "saved",
+            OutfitHistory.wore_it.is_(False),
+            or_(OutfitHistory.user_rating.is_(None), OutfitHistory.user_rating < 4),
+        )
+    else:
+        raise ValueError("history scope 必须是 recent 或 archive")
+    return list(
+        db.scalars(
+            statement.order_by(
+                OutfitHistory.date.desc(), literal_column("outfit_history.rowid").desc()
+            ).limit(limit)
+        )
+    )
+
+
+def prune_temporary_history(
+    db: Session, user_id: str, *, local_today: date | None = None
+) -> int:
+    cutoff = (local_today or date.today()) - timedelta(days=14)
+    return db.execute(
+        delete(OutfitHistory).where(
+            OutfitHistory.user_id == user_id,
+            OutfitHistory.date < cutoff,
+            OutfitHistory.action != "saved",
+            OutfitHistory.wore_it.is_(False),
+            or_(OutfitHistory.user_rating.is_(None), OutfitHistory.user_rating < 4),
+        )
+    ).rowcount or 0
 
 
 def get_recent_item_ids(
@@ -53,7 +151,7 @@ def get_prepared_outfits(
         )
         .order_by(literal_column("outfit_history.rowid").desc())
     )
-    latest_by_tier = {}
+    prepared = []
     for row in rows:
         try:
             context = json.loads(row.context_json) if row.context_json else {}
@@ -63,10 +161,8 @@ def get_prepared_outfits(
             continue
         if row.action != "prepared" and context.get("prepared") is not True:
             continue
-        latest_by_tier.setdefault(row.pick_mode, row)
-    if any(tier not in latest_by_tier for tier in tiers):
-        return []
-    return [latest_by_tier[tier] for tier in tiers]
+        prepared.append(row)
+    return _latest_complete_set(prepared)
 
 
 def record_outfit(
@@ -80,7 +176,13 @@ def record_outfit(
     temp: float,
     action: OutfitHistoryAction = "shown",
     context: dict[str, object] | None = None,
+    recommendation_set_id: str | None = None,
 ) -> OutfitHistory:
+    if recommendation_set_id:
+        context = {
+            **(context or {}),
+            "recommendation_set_id": recommendation_set_id,
+        }
     history = OutfitHistory(
         id=uuid4().hex,
         user_id=user_id,

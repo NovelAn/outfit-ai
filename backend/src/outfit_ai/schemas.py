@@ -80,10 +80,17 @@ class StyleDnaMerge(BaseModel):
 
 class ProposedLook(BaseModel):
     tier: Literal["safe", "fresh", "stretch"]
-    item_ids: list[str] = Field(min_length=1)
+    item_ids: list[str] = Field(min_length=3, max_length=6)
     reason: str
     weather_fit: str
     occasion_fit: str
+
+    @field_validator("item_ids")
+    @classmethod
+    def require_unique_items(cls, item_ids: list[str]) -> list[str]:
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("单套推荐不能包含重复单品")
+        return item_ids
 
 
 class WardrobePatch(BaseModel):
@@ -171,7 +178,8 @@ class StyleDnaDraftRequest(BaseModel):
 class FeedbackIn(BaseModel):
     history_id: str | None = None
     items_worn: list[str] = Field(default_factory=list)
-    action: Literal["shown", "saved", "skipped", "worn"]
+    action: Literal["shown", "saved", "skipped", "worn"] | None = None
+    rating: int | None = Field(None, ge=1, le=5)
     occasion: str | None = None
     occasion_type: str | None = None
     sentiment: str | None = None

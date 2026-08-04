@@ -99,7 +99,7 @@ def _same_day_set_rows(set_id: str, *, created_at: str) -> list[OutfitHistory]:
         OutfitHistory(
             id=f"{set_id}-{tier}",
             user_id="local",
-            date=date(2026, 7, 31),
+            date=date.today(),
             item_ids_json=json.dumps([f"top-{index}", f"bottom-{index}", f"shoes-{index}"]),
             pick_mode=tier,
             action="shown",

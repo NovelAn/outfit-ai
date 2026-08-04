@@ -1,6 +1,7 @@
 import json
 from datetime import date, datetime
 from math import asin, cos, radians, sin, sqrt
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,9 +13,11 @@ from .background import display_image_path
 from .categories import canonical_category
 from .guardrail import filter_candidates
 from .history import (
+    get_latest_recommendation_set,
     get_prepared_outfits,
     get_recent_item_ids,
     get_recent_outfits,
+    prune_temporary_history,
     record_outfit,
 )
 from .llm import require_api_key
@@ -133,6 +136,36 @@ def _card(history: object, items: dict[str, WardrobeItem]) -> dict | None:
     }
 
 
+def _reuse_same_day(
+    db: Session, items: dict[str, WardrobeItem], local_date: date
+) -> dict | None:
+    looks = get_latest_recommendation_set(db, settings.user_id, local_date)
+    if not looks or any(_context_is_prepared(history) for history in looks):
+        return None
+    cards = {history.pick_mode: _card(history, items) for history in looks}
+    weather = _history_weather(looks[0])
+    if weather is None or any(card is None for card in cards.values()):
+        return None
+    return {"weather": weather, **cards}
+
+
+def _history_weather(history: object) -> dict | None:
+    try:
+        context = json.loads(history.context_json or "{}")
+        weather = context.get("weather")
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return weather if isinstance(weather, dict) else None
+
+
+def _context_is_prepared(history: object) -> bool:
+    try:
+        context = json.loads(history.context_json or "{}")
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return isinstance(context, dict) and context.get("prepared") is True
+
+
 def _reuse_prepared(
     db: Session,
     latitude: float | None,
@@ -149,13 +182,23 @@ def _reuse_prepared(
     if any(card is None for card in cards.values()):
         return None
     for history in prepared:
-        history.action = "shown"
+        if history.action == "prepared":
+            history.action = "shown"
     return {"weather": weather.model_dump(), **cards}
 
 
 def recommend(
     db: Session, request: RecommendRequest, *, history_action: str = "shown"
 ) -> dict:
+    items = list(
+        db.scalars(select(WardrobeItem).where(WardrobeItem.user_id == settings.user_id))
+    )
+    if not request.force_refresh and history_action != "prepared":
+        reused = _reuse_same_day(
+            db, {item.id: item for item in items}, date.today()
+        )
+        if reused is not None:
+            return reused
     profile = db.get(Profile, settings.user_id)
     latitude, longitude = _effective_coordinates(profile, request)
     city = request.city or (profile.city if profile else None)
@@ -172,9 +215,6 @@ def recommend(
         city=getattr(weather, "city", None) or city,
         timezone=getattr(weather, "timezone", ""),
         updated_at=datetime.now().astimezone().isoformat(),
-    )
-    items = list(
-        db.scalars(select(WardrobeItem).where(WardrobeItem.user_id == settings.user_id))
     )
     if not request.force_refresh and history_action != "prepared":
         reused = _reuse_prepared(
@@ -235,7 +275,9 @@ def recommend(
         "local_date": getattr(weather, "local_date", date.today()).isoformat(),
         "prepared_at": datetime.now().astimezone().isoformat(),
         "prepared": history_action == "prepared",
+        "recommendation_set_created_at": datetime.now().astimezone().isoformat(),
     }
+    recommendation_set_id = uuid4().hex
     result = {"weather": weather.model_dump()}
     for look in looks:
         history = record_outfit(
@@ -252,6 +294,7 @@ def recommend(
                 "weather_fit": look.weather_fit,
                 "occasion_fit": look.occasion_fit,
             },
+            recommendation_set_id=recommendation_set_id,
         )
         history.date = getattr(weather, "local_date", date.today())
         result[look.tier] = {
@@ -271,6 +314,9 @@ def recommend(
             "occasion_fit": look.occasion_fit,
             "pick_mode": look.tier,
         }
+    prune_temporary_history(
+        db, settings.user_id, local_today=getattr(weather, "local_date", date.today())
+    )
     db.commit()
     return result
 

@@ -350,7 +350,7 @@ def test_record_outfit_stores_optional_context_without_ascii_escaping() -> None:
             "local",
             ProposedLook(
                 tier="safe",
-                item_ids=["shirt"],
+                item_ids=["shirt", "pants", "shoes"],
                 reason="舒适",
                 weather_fit="适合",
                 occasion_fit="日常",

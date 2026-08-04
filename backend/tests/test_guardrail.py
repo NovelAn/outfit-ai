@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from outfit_ai.schemas import ProposedLook
 from outfit_ai.services.guardrail import filter_candidates
 from outfit_ai.services.prompt_builder import stylist_system
@@ -153,22 +155,46 @@ def test_validator_rejects_looks_outside_three_to_six_items_or_with_duplicates()
         "watch": "accessory",
     }
 
-    def look(tier: str, item_ids: list[str]) -> ProposedLook:
-        return ProposedLook(
+    def look(tier: str, item_ids: list[str], *, unchecked: bool = False) -> ProposedLook:
+        values = dict(
             tier=tier,
             item_ids=item_ids,
             reason="测试",
             weather_fit="适合",
             occasion_fit="日常",
         )
+        return ProposedLook.model_construct(**values) if unchecked else ProposedLook(**values)
 
     valid_fresh = look("fresh", ["top", "bottom", "shoes", "outerwear"])
     valid_stretch = look("stretch", ["top", "bottom", "shoes", "outerwear", "scarf", "bag"])
     invalid_safe_looks = [
-        look("safe", ["top", "bottom"]),
-        look("safe", ["top", "bottom", "shoes", "outerwear", "scarf", "bag", "watch"]),
-        look("safe", ["top", "bottom", "shoes", "shoes"]),
+        look("safe", ["top", "bottom"], unchecked=True),
+        look(
+            "safe",
+            ["top", "bottom", "shoes", "outerwear", "scarf", "bag", "watch"],
+            unchecked=True,
+        ),
+        look("safe", ["top", "bottom", "shoes", "shoes"], unchecked=True),
     ]
 
     for invalid_safe in invalid_safe_looks:
         assert validate_looks([invalid_safe, valid_fresh, valid_stretch], categories)[0] is False
+
+
+@pytest.mark.parametrize(
+    "item_ids",
+    [
+        ["top", "bottom"],
+        ["top", "bottom", "shoes", "outerwear", "scarf", "bag", "watch"],
+        ["top", "bottom", "shoes", "shoes"],
+    ],
+)
+def test_proposed_look_requires_three_to_six_unique_items(item_ids: list[str]) -> None:
+    with pytest.raises(ValueError):
+        ProposedLook(
+            tier="safe",
+            item_ids=item_ids,
+            reason="测试",
+            weather_fit="适合",
+            occasion_fit="日常",
+        )

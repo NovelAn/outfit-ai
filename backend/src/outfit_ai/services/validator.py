@@ -16,6 +16,8 @@ def validate_looks(
         return False, "必须恰好包含 safe、fresh、stretch 各一套"
     combinations: set[tuple[str, ...]] = set()
     for look in looks:
+        if not 3 <= len(look.item_ids) <= 6:
+            return False, f"{look.tier} 必须包含 3–6 件单品"
         unknown = set(look.item_ids) - candidate_categories.keys()
         if unknown:
             return False, f"{look.tier} 使用了未知 item_id: {', '.join(sorted(unknown))}"
