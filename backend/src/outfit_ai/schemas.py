@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -153,6 +153,7 @@ class RecommendRequest(BaseModel):
     city: str | None = None
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
+    local_date: date | None = None
     locked_item_ids: list[str] = Field(default_factory=list)
     force_refresh: bool = False
 

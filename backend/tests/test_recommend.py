@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -94,12 +94,14 @@ def _recommendation_items() -> list[WardrobeItem]:
     ]
 
 
-def _same_day_set_rows(set_id: str, *, created_at: str) -> list[OutfitHistory]:
+def _same_day_set_rows(
+    set_id: str, *, created_at: str, local_date: date | None = None
+) -> list[OutfitHistory]:
     return [
         OutfitHistory(
             id=f"{set_id}-{tier}",
             user_id="local",
-            date=date.today(),
+            date=local_date or date.today(),
             item_ids_json=json.dumps([f"top-{index}", f"bottom-{index}", f"shoes-{index}"]),
             pick_mode=tier,
             action="shown",
@@ -181,6 +183,67 @@ def test_force_refresh_creates_a_new_recommendation_set(monkeypatch) -> None:
 
         assert refreshed_set_ids.isdisjoint({"old-set"})
         assert len(refreshed_set_ids) == 1
+
+
+def test_same_day_reuse_skips_latest_prepared_group_before_weather(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(
+        recommend_service,
+        "get_weather",
+        lambda *args, **kwargs: pytest.fail("ordinary same-day reuse must precede weather"),
+    )
+    monkeypatch.setattr(
+        recommend_service,
+        "require_api_key",
+        lambda: pytest.fail("ordinary same-day reuse must precede API-key validation"),
+    )
+    with Session(engine) as db:
+        ordinary = _same_day_set_rows("ordinary", created_at="2026-07-31T06:30:00+08:00")
+        prepared = _same_day_set_rows("prepared", created_at="2026-07-31T08:30:00+08:00")
+        for row in prepared:
+            row.action = "prepared"
+            row.context_json = json.dumps({**json.loads(row.context_json), "prepared": True})
+        db.add_all(_recommendation_items() + ordinary + prepared)
+        db.commit()
+
+        result = recommend_service.recommend(db, RecommendRequest(city="上海"))
+
+        assert [result[tier]["history_id"] for tier in ("safe", "fresh", "stretch")] == [
+            "ordinary-safe",
+            "ordinary-fresh",
+            "ordinary-stretch",
+        ]
+
+
+def test_same_day_reuse_prefers_request_local_date_before_weather(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    local_date = date.today() - timedelta(days=1)
+    monkeypatch.setattr(
+        recommend_service,
+        "get_weather",
+        lambda *args, **kwargs: pytest.fail("request local date must be used before weather"),
+    )
+    monkeypatch.setattr(
+        recommend_service,
+        "require_api_key",
+        lambda: pytest.fail("request local date must be used before API-key validation"),
+    )
+    with Session(engine) as db:
+        db.add_all(
+            _recommendation_items()
+            + _same_day_set_rows(
+                "request-local", created_at="2026-07-31T06:30:00+08:00", local_date=local_date
+            )
+        )
+        db.commit()
+
+        result = recommend_service.recommend(
+            db, RecommendRequest(city="上海", local_date=local_date)
+        )
+
+        assert result["safe"]["history_id"] == "request-local-safe"
 
 
 def test_recommend_reuses_matching_prepared_looks_without_stylist(monkeypatch) -> None:

@@ -159,7 +159,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
 | GET | `/api/weather?city=` | 输入经纬度先四舍五入至三位再用于 Open-Meteo、Nominatim、缓存和下游上下文；反向地理编码在市辖区/县场景优先显示上级直辖市名称，手动城市保留用户输入；天气内存缓存 30min，反查城市缓存 24h，反查失败不影响天气 | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
-| POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,locked_item_ids?[],force_refresh?:false}`；每套 Look 为 3–6 件，含 top/bottom/shoes，叠穿和配饰按需加入、不凑数；先复用本地当天最新完整普通三档组，再按 prepared 的坐标、温度带和降雨阈值判断复用，否则 guardrail→stylist→validator | 200 `{weather,safe,fresh,stretch}` |
+| POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,local_date?,locked_item_ids?[],force_refresh?:false}`；每套 Look 为 3–6 件，含 top/bottom/shoes，叠穿和配饰按需加入、不凑数；先复用本地当天最新完整普通三档组，再按 prepared 的坐标、温度带和降雨阈值判断复用，否则 guardrail→stylist→validator | 200 `{weather,safe,fresh,stretch}` |
 
 `recommend` 卡片结构（**无 base_score**）：
 ```json
@@ -168,7 +168,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
  "pick_mode":"safe|fresh|stretch"}
 ```
 
-每次新生成推荐会把粗略经纬度、返回城市、时区和更新时间写入 Profile 的 `last_location`，并为三档写入同一个 recommendation set id。普通请求会在天气、坐标和 MiniMax Key 校验前复用当地日期最新完整的非 prepared 三档组；因此页面导航或重复打开不会重复生成。`force_refresh=true` 和预生成调用都明确跳过这一路径。prepared 三档仍须满足：距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25`、当天降水概率未跨越 50%；命中后按卡片结构重建返回，不调用 MiniMax。预生成调用使用 `history_action="prepared"`。
+每次新生成推荐会把粗略经纬度、返回城市、时区和更新时间写入 Profile 的 `last_location`，并为三档写入同一个 recommendation set id。普通请求会在天气、坐标和 MiniMax Key 校验前复用当地日期最新完整的非 prepared 三档组；`local_date` 由请求提供时优先使用，否则用已保存定位的时区计算本地日期。prepared 组不会遮蔽较早的普通完整组；因此页面导航或重复打开不会重复生成。`force_refresh=true` 和预生成调用都明确跳过这一路径。prepared 三档仍须满足：距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25`、当天降水概率未跨越 50%；命中后按卡片结构重建返回，不调用 MiniMax。预生成调用使用 `history_action="prepared"`。
 
 MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因此未配置 Key 但存在有效 prepared 时仍返回 200，未命中 prepared 时返回 503。
 

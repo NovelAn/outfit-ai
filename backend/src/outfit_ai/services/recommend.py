@@ -2,6 +2,7 @@ import json
 from datetime import date, datetime
 from math import asin, cos, radians, sin, sqrt
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -139,8 +140,10 @@ def _card(history: object, items: dict[str, WardrobeItem]) -> dict | None:
 def _reuse_same_day(
     db: Session, items: dict[str, WardrobeItem], local_date: date
 ) -> dict | None:
-    looks = get_latest_recommendation_set(db, settings.user_id, local_date)
-    if not looks or any(_context_is_prepared(history) for history in looks):
+    looks = get_latest_recommendation_set(
+        db, settings.user_id, local_date, prepared=False
+    )
+    if not looks:
         return None
     cards = {history.pick_mode: _card(history, items) for history in looks}
     weather = _history_weather(looks[0])
@@ -158,12 +161,17 @@ def _history_weather(history: object) -> dict | None:
     return weather if isinstance(weather, dict) else None
 
 
-def _context_is_prepared(history: object) -> bool:
-    try:
-        context = json.loads(history.context_json or "{}")
-    except (AttributeError, TypeError, ValueError):
-        return False
-    return isinstance(context, dict) and context.get("prepared") is True
+def _request_local_date(profile: Profile | None, request: RecommendRequest) -> date:
+    if request.local_date is not None:
+        return request.local_date
+    state = decode_profile_state(profile.learned_from_feedback_json) if profile else {}
+    timezone = (state.get("last_location") or {}).get("timezone")
+    if isinstance(timezone, str):
+        try:
+            return datetime.now(ZoneInfo(timezone)).date()
+        except ZoneInfoNotFoundError:
+            pass
+    return date.today()
 
 
 def _reuse_prepared(
@@ -190,16 +198,16 @@ def _reuse_prepared(
 def recommend(
     db: Session, request: RecommendRequest, *, history_action: str = "shown"
 ) -> dict:
+    profile = db.get(Profile, settings.user_id)
     items = list(
         db.scalars(select(WardrobeItem).where(WardrobeItem.user_id == settings.user_id))
     )
     if not request.force_refresh and history_action != "prepared":
         reused = _reuse_same_day(
-            db, {item.id: item for item in items}, date.today()
+            db, {item.id: item for item in items}, _request_local_date(profile, request)
         )
         if reused is not None:
             return reused
-    profile = db.get(Profile, settings.user_id)
     latitude, longitude = _effective_coordinates(profile, request)
     city = request.city or (profile.city if profile else None)
     weather = get_weather(

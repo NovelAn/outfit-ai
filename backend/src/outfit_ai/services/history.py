@@ -33,6 +33,10 @@ def _context(row: OutfitHistory) -> dict[str, object]:
     return context if isinstance(context, dict) else {}
 
 
+def _is_prepared(row: OutfitHistory) -> bool:
+    return row.action == "prepared" or _context(row).get("prepared") is True
+
+
 def _latest_complete_set(rows: list[OutfitHistory]) -> list[OutfitHistory]:
     tiers = ("safe", "fresh", "stretch")
     grouped: dict[str, dict[str, OutfitHistory]] = {}
@@ -62,21 +66,22 @@ def _latest_complete_set(rows: list[OutfitHistory]) -> list[OutfitHistory]:
 
 
 def get_latest_recommendation_set(
-    db: Session, user_id: str, local_date: date
+    db: Session, user_id: str, local_date: date, *, prepared: bool | None = None
 ) -> list[OutfitHistory]:
-    return _latest_complete_set(
-        list(
-            db.scalars(
-                select(OutfitHistory)
-                .where(
-                    OutfitHistory.user_id == user_id,
-                    OutfitHistory.date == local_date,
-                    OutfitHistory.pick_mode.in_(("safe", "fresh", "stretch")),
-                )
-                .order_by(literal_column("outfit_history.rowid").desc())
+    rows = list(
+        db.scalars(
+            select(OutfitHistory)
+            .where(
+                OutfitHistory.user_id == user_id,
+                OutfitHistory.date == local_date,
+                OutfitHistory.pick_mode.in_(("safe", "fresh", "stretch")),
             )
+            .order_by(literal_column("outfit_history.rowid").desc())
         )
     )
+    if prepared is not None:
+        rows = [row for row in rows if _is_prepared(row) is prepared]
+    return _latest_complete_set(rows)
 
 
 def get_history_outfits(
@@ -159,7 +164,7 @@ def get_prepared_outfits(
             continue
         if not isinstance(context, dict):
             continue
-        if row.action != "prepared" and context.get("prepared") is not True:
+        if not _is_prepared(row):
             continue
         prepared.append(row)
     return _latest_complete_set(prepared)
