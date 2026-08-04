@@ -72,3 +72,10 @@
 - [ ] No step contains an unresolved placeholder, unspecified file, or unbounded schema change.
 - [ ] API types, backend schemas, frontend mappings, and documentation use the same field names and semantics.
 - [ ] The plan does not require deleting current user data or adding a new database migration.
+
+## Task 6: Polish the daily Look visual composition
+
+- [ ] Replace the current tall vertical item stack with a compact editorial collage that keeps three visually important items grouped, uses a readable 2-column mobile composition, and places remaining layers/accessories in a restrained thumbnail rail; when a meaningful accessory such as a hat is present, it may become the first visual anchor without changing the API item order.
+- [ ] Preserve the approved Stitch palette, typography, labels, compare/favorite controls, item click behavior, and responsive bottom navigation; change only the Look item composition and spacing needed to remove excessive whitespace and visual fragmentation.
+- [ ] Add/update a focused frontend assertion for the compact composition and run `npm test`, `npm run lint`, `npm run build`, plus a mobile viewport Playwright screenshot/interaction check.
+- [ ] Update `docs/frontend/CURRENT_FRONTEND_INTEGRATION.md` if the Look composition or responsive interaction contract changes, then run `git diff --check` and review the screenshot before handoff.
