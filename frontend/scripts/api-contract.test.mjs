@@ -286,11 +286,14 @@ test("refuses persistent Look feedback without a server history identity", () =>
   assert.match(profile, /historyId = requireHistoryId/);
 });
 
-test("keeps the Stitch three-item hero and appends optional Look items", () => {
+test("uses a compact two-column Look collage without mutating API item order", () => {
   const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
-  assert.match(today, /items\.slice\(0, 3\)/);
-  assert.match(today, /items\.slice\(3\)/);
-  assert.match(today, /vertical-stack-img/);
+  assert.match(today, /compact-look-collage/);
+  assert.match(today, /grid-cols-2/);
+  assert.match(today, /look-item-rail/);
+  assert.match(today, /const visualItems = \[\.\.\.items\]/);
+  assert.match(today, /item\.category === '配饰'/);
+  assert.doesNotMatch(today, /vertical-stack-img/);
 });
 
 test("converts Stitch season labels to backend values", () => {

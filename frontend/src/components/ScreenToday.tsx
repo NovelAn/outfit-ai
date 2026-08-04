@@ -157,25 +157,27 @@ const EMPTY_LOOKS: Record<'safe' | 'fresh' | 'stretch', any> = {
   stretch: { title: 'Look 03 / 突破 (STRETCH)', tag: '工装廓形', description: '等待从真实衣橱生成', imageUrl: '', items: EMPTY_ITEMS },
 };
 
-const LookItems = ({ items = [], tier, onSelect }: { items: any[]; tier: 'safe' | 'fresh' | 'stretch'; onSelect: (item: any) => void }) => {
-  const heroClasses = tier === 'stretch'
-    ? ['w-64 h-64 z-10', 'w-52 h-64 z-0 -mt-20', 'w-40 h-28 z-20 -mt-12']
-    : ['w-56 h-56 z-10', 'w-48 h-64 z-0 -mt-16', 'w-36 h-24 z-20 -mt-10'];
+const LookItems = ({ items = [], onSelect }: { items: any[]; onSelect: (item: any) => void }) => {
+  const visualItems = [...items];
+  const accessoryAnchor = visualItems.findIndex((item) => item.category === '配饰' && /帽|hat|cap/i.test(item.name));
+  if (accessoryAnchor > 0) visualItems.unshift(visualItems.splice(accessoryAnchor, 1)[0]);
+
   return <>
-    <div className="flex flex-col items-center w-full relative">
-      {items.slice(0, 3).map((item, index) => (
-        <img
+    <div className="compact-look-collage grid w-full max-w-[290px] grid-cols-2 auto-rows-[92px] gap-2">
+      {visualItems.slice(0, 3).map((item, index) => (
+        <button
           key={item.id || `${item.name}-${index}`}
           onClick={() => onSelect(item)}
-          className={`${heroClasses[index]} object-contain vertical-stack-img relative cursor-pointer hover:scale-105 transition-transform`}
-          src={item.img}
-          alt={item.name}
-        />
+          className={`${index === 0 ? 'row-span-2' : ''} overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-2 text-left transition-colors hover:border-[#9a442a]/50`}
+        >
+          <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
+          <span className="sr-only">{item.name}</span>
+        </button>
       ))}
     </div>
-    {items.length > 3 && <div className="grid w-full grid-cols-3 gap-2 mt-3">
-      {items.slice(3).map((item, index) => (
-        <button key={item.id || `${item.name}-${index + 3}`} onClick={() => onSelect(item)} className="aspect-square overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-1.5 hover:border-[#9a442a]/50 transition-colors">
+    {visualItems.length > 3 && <div className="look-item-rail flex w-full max-w-[290px] gap-2 overflow-x-auto pb-1 pt-2">
+      {visualItems.slice(3).map((item, index) => (
+        <button key={item.id || `${item.name}-${index + 3}`} onClick={() => onSelect(item)} className="size-16 shrink-0 overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-1.5 hover:border-[#9a442a]/50 transition-colors">
           <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
           <span className="sr-only">{item.name}</span>
         </button>
@@ -726,7 +728,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </button>
               </div>
 
-              <div className="relative w-full mb-10 flex flex-col items-center">
+              <div className="relative w-full mb-6 flex flex-col items-center">
                 <div className="text-center z-10">
                   <h2 className="font-serif-display text-3xl text-[#162839] font-semibold">稳妥</h2>
                   <div className="mt-2 flex items-center justify-center gap-2">
@@ -745,9 +747,9 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentSafe.items} tier="safe" onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentSafe.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
-              <div className="mt-10 text-center max-w-[280px]">
+              <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
                   {currentSafe.description}
                 </p>
@@ -821,7 +823,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </button>
               </div>
 
-              <div className="relative w-full mb-10 flex flex-col items-center">
+              <div className="relative w-full mb-6 flex flex-col items-center">
                 <div className="text-center z-10">
                   <h2 className="font-serif-display text-3xl text-[#162839] font-semibold">新鲜</h2>
                   <div className="mt-2 flex items-center justify-center gap-2">
@@ -840,9 +842,9 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentFresh.items} tier="fresh" onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentFresh.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
-              <div className="mt-10 text-center max-w-[280px]">
+              <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
                   {currentFresh.description}
                 </p>
@@ -916,7 +918,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </button>
               </div>
 
-              <div className="relative w-full mb-10 flex flex-col items-center">
+              <div className="relative w-full mb-6 flex flex-col items-center">
                 <div className="text-center z-10">
                   <h2 className="font-serif-display text-3xl text-[#162839] font-semibold">突破</h2>
                   <div className="mt-2 flex items-center justify-center gap-2">
@@ -935,9 +937,9 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentStretch.items} tier="stretch" onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentStretch.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
-              <div className="mt-10 text-center max-w-[280px]">
+              <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
                   {currentStretch.description}
                 </p>
