@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api, confirmFeedback, requireHistoryId } from '../lib/api.mjs';
 import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
+import { compactLookItems } from '../lib/look-layout.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -158,13 +159,11 @@ const EMPTY_LOOKS: Record<'safe' | 'fresh' | 'stretch', any> = {
 };
 
 const LookItems = ({ items = [], onSelect }: { items: any[]; onSelect: (item: any) => void }) => {
-  const visualItems = [...items];
-  const accessoryAnchor = visualItems.findIndex((item) => item.category === '配饰' && /帽|hat|cap/i.test(item.name));
-  if (accessoryAnchor > 0) visualItems.unshift(visualItems.splice(accessoryAnchor, 1)[0]);
+  const { primaryItems, railItems } = compactLookItems(items);
 
   return <>
     <div className="compact-look-collage grid w-full max-w-[290px] grid-cols-2 auto-rows-[92px] gap-2">
-      {visualItems.slice(0, 3).map((item, index) => (
+      {primaryItems.map((item, index) => (
         <button
           key={item.id || `${item.name}-${index}`}
           onClick={() => onSelect(item)}
@@ -175,8 +174,8 @@ const LookItems = ({ items = [], onSelect }: { items: any[]; onSelect: (item: an
         </button>
       ))}
     </div>
-    {visualItems.length > 3 && <div className="look-item-rail flex w-full max-w-[290px] gap-2 overflow-x-auto pb-1 pt-2">
-      {visualItems.slice(3).map((item, index) => (
+    {railItems.length > 0 && <div className="look-item-rail flex w-full max-w-[290px] gap-2 overflow-x-auto pb-1 pt-2">
+      {railItems.map((item, index) => (
         <button key={item.id || `${item.name}-${index + 3}`} onClick={() => onSelect(item)} className="size-16 shrink-0 overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-1.5 hover:border-[#9a442a]/50 transition-colors">
           <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
           <span className="sr-only">{item.name}</span>

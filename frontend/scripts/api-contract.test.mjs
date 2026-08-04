@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import * as profileApi from "../src/lib/api.mjs";
+import { compactLookItems } from "../src/lib/look-layout.mjs";
 import {
   api,
   categoryCode,
@@ -286,14 +287,37 @@ test("refuses persistent Look feedback without a server history identity", () =>
   assert.match(profile, /historyId = requireHistoryId/);
 });
 
-test("uses a compact two-column Look collage without mutating API item order", () => {
+test("uses a compact two-column Look collage", () => {
   const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
   assert.match(today, /compact-look-collage/);
   assert.match(today, /grid-cols-2/);
   assert.match(today, /look-item-rail/);
-  assert.match(today, /const visualItems = \[\.\.\.items\]/);
-  assert.match(today, /item\.category === '配饰'/);
   assert.doesNotMatch(today, /vertical-stack-img/);
+});
+
+test("keeps feedback order while promoting a hat and railing remaining Look items", () => {
+  const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
+  assert.match(today, /items_worn: look\.items\.map\(\(item: any\) => item\.id\)/);
+
+  for (const count of [4, 5, 6]) {
+    const items = [
+      { id: "top", category: "上装", name: "T恤" },
+      { id: "bottom", category: "下装", name: "长裤" },
+      { id: "shoes", category: "鞋履", name: "跑鞋" },
+      { id: "hat", category: "配饰", name: "渔夫帽" },
+      { id: "layer", category: "上装", name: "工装背心" },
+      { id: "bag", category: "配饰", name: "托特包" },
+    ].slice(0, count);
+    const apiOrder = items.map((item) => item.id);
+
+    const { primaryItems, railItems } = compactLookItems(items);
+
+    assert.equal(primaryItems[0].id, "hat");
+    const feedbackHistoryIds = items.map((item) => item.id);
+    assert.deepEqual(items.map((item) => item.id), apiOrder);
+    assert.deepEqual(feedbackHistoryIds, apiOrder, "feedback/history IDs retain API order");
+    assert.deepEqual(railItems.map((item) => item.id), ["shoes", "layer", "bag"].slice(0, count - 3));
+  }
 });
 
 test("converts Stitch season labels to backend values", () => {
