@@ -64,6 +64,23 @@ def test_transition_season_accepts_spring_and_autumn_items() -> None:
     assert {item.id for item in result} == {"spring-top", "autumn-bottom"}
 
 
+def test_normalizes_chinese_season_labels_from_vision() -> None:
+    items = [
+        _item("summer-top", "top", '["夏季"]'),
+        _item("autumn-bottom", "bottom", '["初秋"]'),
+        _item("all-shoes", "shoes", '["四季"]'),
+    ]
+
+    result = filter_candidates(
+        items,
+        season="summer",
+        locked_ids=set(),
+        recent_item_ids=set(),
+    )
+
+    assert {item.id for item in result} == {"summer-top", "all-shoes"}
+
+
 def test_candidate_cap_keeps_required_categories_when_available() -> None:
     items = [
         *[_item(f"top-{index}", "top", '["summer"]') for index in range(4)],

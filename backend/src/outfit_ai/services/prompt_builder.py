@@ -91,4 +91,5 @@ def stylist_context(
             "recent_looks": recent_looks,
         },
         ensure_ascii=False,
+        default=str,
     )

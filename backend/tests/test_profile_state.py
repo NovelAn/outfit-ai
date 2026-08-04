@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from types import SimpleNamespace
 
 from outfit_ai.services.profile_state import (
@@ -56,3 +57,11 @@ def test_pinned_keyword_wins_over_hidden_after_alias_normalization() -> None:
 
     assert result == ["日系松弛", "商务会议"]
     assert context["style_dna"]["keywords"] == ["日系松弛", "商务会议"]
+
+
+def test_stylist_context_serializes_weather_date() -> None:
+    context = json.loads(
+        stylist_context([], None, {"local_date": date(2026, 8, 4)}, "日常", None, [])
+    )
+
+    assert context["weather"]["local_date"] == "2026-08-04"
