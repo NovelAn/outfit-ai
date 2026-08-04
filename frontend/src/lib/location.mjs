@@ -1,5 +1,6 @@
 const CACHE_KEY = "OUTFIT_AI_LOCATION";
 const CITY_KEY = "OUTFIT_AI_CITY";
+const LOCATION_MODE_KEY = "OUTFIT_AI_LOCATION_MODE";
 const CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const GEOLOCATION_TIMEOUT_MS = 8_000;
 const GEOLOCATION_MAX_AGE_MS = 5 * 60 * 1000;
@@ -56,6 +57,14 @@ export async function resolveLocationContext({
   now = () => new Date(),
   geolocationTimeoutMs = GEOLOCATION_TIMEOUT_MS,
 } = {}) {
+  try {
+    const mode = storage?.getItem(LOCATION_MODE_KEY);
+    const city = storage?.getItem(CITY_KEY)?.trim();
+    if (mode === "manual" && city) return { city, source: "manual" };
+  } catch {
+    // Invalid local storage must not prevent automatic location lookup.
+  }
+
   try {
     const coordinates = await currentCoordinates(geolocation, geolocationTimeoutMs);
     if (validCoordinates(coordinates)) {

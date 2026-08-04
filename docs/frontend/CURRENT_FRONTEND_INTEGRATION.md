@@ -27,7 +27,7 @@ frontend/index.html
 
 当前导航由 React 本地状态管理，不使用 URL Router；刷新页面回到“今日”。
 
-今日页优先使用浏览器原生 Geolocation 获取当前位置：请求启用高精度、最多复用 5 分钟浏览器位置，坐标按三位小数缓存到 `OUTFIT_AI_LOCATION`，缓存有效期 2 小时；应用自身也会在 8 秒无回调时结束定位等待。定位成功后调用天气接口。定位被拒绝、超时或不可用时，依次回退到有效坐标缓存、`OUTFIT_AI_CITY` 中的手动城市，最后才显示“需要定位或选择城市”。手动城市是定位不可用时的后备项，不会覆盖当前定位。
+今日页优先使用浏览器原生 Geolocation 获取当前位置：请求启用高精度、最多复用 5 分钟浏览器位置，坐标按三位小数缓存到 `OUTFIT_AI_LOCATION`，缓存有效期 2 小时；应用自身也会在 8 秒无回调时结束定位等待。侧边栏可选择中国城市快捷项或输入任意中国城市，并将 `OUTFIT_AI_CITY` 与 `OUTFIT_AI_LOCATION_MODE=manual` 保存为手动覆盖；手动模式会优先于浏览器定位。点击“自动定位”会清除手动模式，恢复浏览器定位，定位被拒绝、超时或不可用时再依次回退到有效坐标缓存、已保存城市，最后显示“需要定位或选择城市”。
 
 最近一次推荐、收藏显示和评分表单分别使用 `OUTFIT_AI_LATEST_RECOMMENDATION`、`OUTFIT_AI_FAVORITES`、`OUTFIT_AI_LOOK_RATINGS` 的 `localStorage` 作为当前设备的加载中/请求失败界面后备；有对应推荐历史的收藏与评分仍通过 `POST /api/feedback` 写入后端学习链。`localStorage` 不是业务事实源，也不会阻止今日页向后端校验当日上下文。
 

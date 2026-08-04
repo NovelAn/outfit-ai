@@ -37,6 +37,17 @@ test("uses rounded current coordinates when permission succeeds", async () => {
   assert.equal(receivedOptions.maximumAge, 5 * 60 * 1000);
 });
 
+test("uses an explicit manual city override before browser location", async () => {
+  const context = await resolveLocationContext({
+    geolocation: {
+      getCurrentPosition: (success) => success({ coords: { latitude: 39.9042, longitude: 116.4074 } }),
+    },
+    storage: memoryStorage({ OUTFIT_AI_CITY: "杭州", OUTFIT_AI_LOCATION_MODE: "manual" }),
+  });
+
+  assert.deepEqual(context, { city: "杭州", source: "manual" });
+});
+
 test("falls back when the browser never resolves the location callback", async () => {
   const context = await Promise.race([
     resolveLocationContext({

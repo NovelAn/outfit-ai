@@ -10,7 +10,7 @@ interface SideDrawerProps {
 }
 
 const CITIES = [
-  '东京', '上海', '北京', '巴黎', '纽约'
+  '上海', '北京', '广州', '深圳', '杭州', '成都', '西安', '武汉'
 ];
 
 export const SideDrawer: React.FC<SideDrawerProps> = ({
@@ -21,13 +21,17 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   locationLabel,
 }) => {
   const [selectedCity, setSelectedCity] = useState('');
+  const [manualCity, setManualCity] = useState('');
   const [favoritesCount, setFavoritesCount] = useState(0);
   const [ratingsCount, setRatingsCount] = useState(0);
 
   useEffect(() => {
     try {
       const city = localStorage.getItem('OUTFIT_AI_CITY');
-      if (city) setSelectedCity(city);
+      if (city) {
+        setSelectedCity(city);
+        setManualCity(city);
+      }
 
       const favs = localStorage.getItem('OUTFIT_AI_FAVORITES');
       if (favs) {
@@ -47,9 +51,29 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 
   const handleCityChange = (cityName: string) => {
     setSelectedCity(cityName);
+    setManualCity(cityName);
     try {
       localStorage.setItem('OUTFIT_AI_CITY', cityName);
+      localStorage.setItem('OUTFIT_AI_LOCATION_MODE', 'manual');
       // Dispatch storage event so ScreenToday updates immediately
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleManualCitySubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const cityName = manualCity.trim();
+    if (cityName) handleCityChange(cityName);
+  };
+
+  const handleUseCurrentLocation = () => {
+    setSelectedCity('');
+    setManualCity('');
+    try {
+      localStorage.removeItem('OUTFIT_AI_CITY');
+      localStorage.removeItem('OUTFIT_AI_LOCATION_MODE');
       window.dispatchEvent(new Event('storage'));
     } catch (e) {
       console.error(e);
@@ -102,7 +126,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
               📍 定位与城市 / Location & City
             </label>
             <p className="text-[10px] text-[#43474c] mb-2">{locationLabel || `手动城市：${selectedCity || '未设置'}`}</p>
-            <p className="text-[10px] text-[#74777d] mb-2">手动城市仅在定位不可用时使用</p>
+            <p className="text-[10px] text-[#74777d] mb-2">手动城市会覆盖自动定位；点击“自动定位”恢复</p>
             <div className="grid grid-cols-2 gap-1.5">
               {CITIES.map((city) => (
                 <button
@@ -118,6 +142,28 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 </button>
               ))}
             </div>
+            <form onSubmit={handleManualCitySubmit} className="mt-2 flex gap-1.5">
+              <input
+                value={manualCity}
+                onChange={(event) => setManualCity(event.target.value)}
+                placeholder="手动输入城市"
+                aria-label="手动输入城市"
+                className="min-w-0 flex-1 rounded border border-[#c4c6cd]/40 bg-white px-2 py-2 text-[11px] text-[#162839] outline-none focus:border-[#162839]"
+              />
+              <button
+                type="submit"
+                className="rounded border border-[#162839] px-2 text-[10px] font-bold text-[#162839] hover:bg-[#162839] hover:text-white"
+              >
+                使用
+              </button>
+            </form>
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              className="mt-2 w-full rounded border border-[#c4c6cd]/40 bg-white px-2 py-2 text-left text-[10px] font-bold text-[#43474c] hover:border-[#162839]"
+            >
+              自动定位
+            </button>
             <a
               href="https://www.openstreetmap.org/copyright"
               target="_blank"
