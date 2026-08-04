@@ -1,6 +1,6 @@
 # Outfit-AI 当前前端与后端集成
 
-> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-08-03。
+> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-08-04。
 
 ## 1. 前端基准
 
@@ -39,7 +39,7 @@ frontend/index.html
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开详情，可编辑识别字段或二次确认删除单品及图片 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
 | 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
-| 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；按 `recent`/`archive` 读取推荐历史，展示完整 Total Look 缩略图（旧记录回退拼图），并可收藏、评分或标记穿过 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history?scope=`、`POST /api/feedback` |
+| 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；分别读取 `recent` 和 `archive` 推荐历史。历史、收藏和评分的 AI 品味备忘录均展示该 Look 的全部单品缩略图（3–6 件）；旧记录无法解析单品时回退其单张拼图，并可收藏、评分或标记穿过 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history?scope=`、`POST /api/feedback` |
 
 ## 4. 前端 API 接线
 
@@ -59,9 +59,9 @@ frontend/index.html
 | `deleteReference(id)` | `DELETE /api/style-references/{id}` | 删除参考 Look 和图片 |
 | `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存完整 Profile；标签操作保留既有字段，并提交 `style_keywords`、`recent_style_signals` 和 `style_tag_preferences` |
 | `weather({city,latitude,longitude})` | `GET /api/weather` | 以同一位置上下文读取本地日期、城市、温度、天气和降雨数据 |
-| `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；可传本地 `local_date` 使当天复用不依赖服务器时区 |
-| `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈；`action` 可省略以仅提交 `rating: 1..5` |
-| `history({scope})` | `GET /api/history?scope=recent|archive` | 读取临时近期记录或收藏、穿过、高评分存档；每项含 `scope`、`rating` |
+| `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；可传本地 `local_date` 使当天复用不依赖服务器时区。除 `force_refresh:true` 外，同一本地日期返回同一完整 recommendation set |
+| `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈；`action` 可省略以仅提交 `rating: 1..5`。已有 Look 的持久反馈必须含服务端 `history_id`，成功后才更新 UI |
+| `history({scope})` | `GET /api/history?scope=recent|archive` | `recent` 读取临时记录，`archive` 读取收藏、穿过或高评分存档；每项含 `scope`、`rating` |
 | `generateInspiration(data)` | `POST /api/inspiration/generate` | 一次返回三张独立灵感图 |
 
 灵感参考图批量上传复用现有单文件接口：前端对每张图片分别调用 `uploadReference()` 和 `referenceStatus()`，使用独立结算保证单张失败不影响同批其他图片，完成后只刷新一次灵感库。
@@ -80,7 +80,29 @@ frontend/index.html
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
 
-今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；上下文就绪后自动请求一次不带 `force_refresh` 的每日推荐，优先消费 06:30 prepared。并发刷新会合并为一个进行中的请求，过期响应不会覆盖更新结果；只有用户点击“AI 换一换”才传 `force_refresh: true`。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”，推荐加载或失败时保留本机缓存作为后备。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
+今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；上下文就绪后自动请求一次不带 `force_refresh` 的每日推荐，优先消费 06:30 prepared。普通请求由后端按本地日期复用最近完整 Safe/Fresh/Stretch recommendation set，因此重新打开、导航或天气刷新不会重新生成；只有用户点击“AI 换一换”才传 `force_refresh: true` 并强制生成新组。并发刷新会合并为一个进行中的请求，过期响应不会覆盖更新结果。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”，推荐加载或失败时保留本机缓存作为后备。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
+
+今日卡片不假定固定三件：逐项渲染后端 `items` 数组中的全部 3–6 件，必含上装、下装、鞋履；外搭和配饰只在服务端提供时显示。每张返回卡片均带 `history_id`，收藏/取消收藏、评分和“穿过”通过该 id 提交。请求失败时不乐观更新收藏、评分或穿过状态，保留服务端已确认状态并显示统一错误。
+
+受影响请求与响应如下（字段名与 `api.mjs` 一致）：
+
+```json
+POST /api/recommend
+{"occasion":"日常","city":"上海","latitude":31.23,"longitude":121.47,"local_date":"2026-08-04","force_refresh":true}
+
+200
+{"weather":{},"safe":{"history_id":"...","items":[{}],"reason":"...","weather_fit":"...","occasion_fit":"...","pick_mode":"safe"},"fresh":{},"stretch":{}}
+
+POST /api/feedback
+{"history_id":"...","items_worn":["item-1","item-2","item-3"],"action":"saved"}
+// 或仅评分：{"history_id":"...","items_worn":[],"rating":5}
+
+GET /api/history?scope=recent
+GET /api/history?scope=archive
+200 [{"id":"...","item_ids":["item-1"],"action":"shown","wore_it":false,"rating":null,"scope":"recent"}]
+```
+
+“我的”页在加载时分别调用 `history({scope:"archive"})` 与 `history({scope:"recent"})`，合并为历史入口；收藏、评分和“标记穿过”沿用相同 server-confirmed `feedback()` 路径。`recent` 是临时记录，`archive` 是已收藏、已穿过或评分至少 4 的记录；仅后端在成功写入新推荐后清理超过 14 本地日的临时记录，前端不做数据清理。
 
 ## 5. 两条核心数据流
 

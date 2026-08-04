@@ -1,6 +1,6 @@
 # Outfit-AI · 当前后端与 API 规格
 
-> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-07-31。
+> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-08-04。
 > 配套：[`CLAUDE.md`](../CLAUDE.md)=项目规范（必读）；[`README.md`](../README.md)=概览；[`CURRENT_FRONTEND_INTEGRATION.md`](./frontend/CURRENT_FRONTEND_INTEGRATION.md)=当前前端事实源。
 > 文档不重复——架构/数据/API 只在此处定义，CLAUDE.md 与 README 仅引用。
 
@@ -121,7 +121,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 （**已删 `base_score`**——规则评分产物，新架构无此数）
 索引：`(user_id,date)`、`(user_id,action)`
 
-`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`prepared`、`recommendation_set_id`、`recommendation_set_created_at`、`weather_fit`、`occasion_fit`。同一轮 Safe/Fresh/Stretch 使用同一个 set id；读取时只复用同一本地日期中最新的完整三档组，旧行没有 set id 时按每档最新记录兼容回退。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作。`init_db()` 不迁移、不改写或清理既有用户数据。
+`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`prepared`、`recommendation_set_id`、`recommendation_set_created_at`、`weather_fit`、`occasion_fit`。一次成功生成的 Safe/Fresh/Stretch 三档共享一个 `recommendation_set_id`；同一天的普通请求只复用最新**完整**三档组，旧行没有 set id 时才按每档最新记录兼容回退。`force_refresh=true` 必定另建一组；任何不完整或生成失败的组均不可复用。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作。应用启动不因本功能迁移、改写或清理既有用户数据；运行期保留清理只在成功写入新推荐后执行，且仅作用于 §6.6 定义的临时记录。
 
 ### 5.5 `feedback`
 `id`(PK) · `user_id` · `date` · `items_worn_json` · `occasion`? · `occasion_type`? · `sentiment`? · `compliments_json` · `didnt_work`? · `learnings`?
@@ -163,7 +163,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 
 `recommend` 卡片结构（**无 base_score**）：
 ```json
-{"items":[{"id","name","category","image_url","primary_color"}],
+{"history_id":"...","items":[{"id","name","category","image_url","primary_color"}],
  "reason":"...","weather_fit":"...","occasion_fit":"...",
  "pick_mode":"safe|fresh|stretch"}
 ```
@@ -191,10 +191,12 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 ### 6.6 feedback / history
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| POST | `/api/feedback` | body `{history_id?,items_worn[],action?:shown/saved/skipped/worn,rating?:1..5,...}`；rating 可独立提交并落到对应 history；`worn` 只置 `wore_it=true`，不会覆盖既有 `saved`，后续收藏、取消或评分也不会清除穿着标记；写 feedback 与 history 在同一事务提交，随后 `feedback_since_refresh++`，到 8 触发 memo 刷新 | 200 `{ok:true}` |
-| GET | `/api/history?limit=20&scope=recent|archive` | 不传 scope 保持最近记录兼容；`recent` 为临时记录，`archive` 为收藏、穿过或评分至少 4 的记录；每项返回 `scope` 和 `rating` | 200 `[OutfitHistory]` |
+| POST | `/api/feedback` | body `{history_id?,items_worn:[],action?:shown/saved/skipped/worn,rating?:1..5,occasion?,occasion_type?,sentiment?,compliments?:[],didnt_work?,learnings?}`；可仅提交 rating；有 `history_id` 时 rating/action 与 feedback 同一事务提交。`worn` 只置 `wore_it=true`，不会覆盖既有 `saved`，后续收藏、取消或评分也不会清除穿着标记 | 200 `{ok:true}` |
+| GET | `/api/history?limit=20&scope=recent|archive` | 不传 scope 保持旧版最近记录兼容；`recent` 为临时记录，`archive` 为收藏、穿过或评分至少 4 的记录；每项返回 `scope` 和 `rating` | 200 `[OutfitHistory]` |
 
-每次成功生成新推荐时，仅清理早于本地 14 天、未收藏、未穿过且未评分或评分低于 4 的临时 history；失败的 LLM 生成不会写入新组或触发清理。
+页面上对既有 Look 的收藏、取消收藏、穿过和评分必须带该 Look 的 `history_id`；客户端只能在上表返回 200 后更新显示状态。没有 `history_id` 的本地后备卡不可提交持久反馈。每个成功提交仍会令 `feedback_since_refresh` 增加，到 8 后异步刷新 taste memo。
+
+`recent` 精确定义为非 `saved`、未穿过，且未评分或评分低于 4；`archive` 精确定义为 `saved`、已穿过或评分至少 4。每次成功生成新推荐时，仅清理早于本地 14 天的 `recent` 临时 history；收藏、穿过和高评分的存档永不因这项运行期清理删除。失败的 LLM 生成不会写入新组或触发清理。
 
 ---
 
