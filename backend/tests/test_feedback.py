@@ -44,6 +44,7 @@ def test_feedback_is_not_deducted_before_background_task_starts() -> None:
 
 
 def test_feedback_accepts_an_actionless_rating_from_one_to_five() -> None:
+    assert FeedbackIn(history_id="history-1", rating=1).rating == 1
     rating = FeedbackIn(history_id="history-1", rating=5)
 
     assert rating.action is None

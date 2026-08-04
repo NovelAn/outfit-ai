@@ -94,7 +94,7 @@ def _recommendation_items() -> list[WardrobeItem]:
     ]
 
 
-def _same_day_set_rows(set_id: str) -> list[OutfitHistory]:
+def _same_day_set_rows(set_id: str, *, created_at: str) -> list[OutfitHistory]:
     return [
         OutfitHistory(
             id=f"{set_id}-{tier}",
@@ -103,7 +103,16 @@ def _same_day_set_rows(set_id: str) -> list[OutfitHistory]:
             item_ids_json=json.dumps([f"top-{index}", f"bottom-{index}", f"shoes-{index}"]),
             pick_mode=tier,
             action="shown",
-            context_json=json.dumps({"recommendation_set_id": set_id}),
+            context_json=json.dumps(
+                {
+                    "recommendation_set_id": set_id,
+                    "recommendation_set_created_at": created_at,
+                    "weather": _weather().model_dump(),
+                    "weather_fit": "适合",
+                    "occasion_fit": "日常",
+                },
+                default=str,
+            ),
         )
         for index, tier in enumerate(("safe", "fresh", "stretch"), 1)
     ]
@@ -116,16 +125,27 @@ def test_haversine_shanghai_to_suzhou_exceeds_prepared_reuse_radius() -> None:
 def test_normal_request_reuses_latest_complete_same_day_set_for_manual_city(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
-    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
-    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
-    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service,
+        "get_weather",
+        lambda *args, **kwargs: pytest.fail("same-day reuse must precede weather matching"),
+    )
+    monkeypatch.setattr(
+        recommend_service,
+        "require_api_key",
+        lambda: pytest.fail("same-day reuse must precede API-key validation"),
+    )
     monkeypatch.setattr(
         recommend_service,
         "propose",
         lambda *args, **kwargs: pytest.fail("same-day set should be reused"),
     )
     with Session(engine) as db:
-        db.add_all(_recommendation_items() + _same_day_set_rows("latest-set"))
+        db.add_all(
+            _recommendation_items()
+            + _same_day_set_rows("older-set", created_at="2026-07-31T06:30:00+08:00")
+            + _same_day_set_rows("latest-set", created_at="2026-07-31T08:30:00+08:00")
+        )
         db.commit()
 
         result = recommend_service.recommend(db, RecommendRequest(city="上海"))
@@ -145,7 +165,10 @@ def test_force_refresh_creates_a_new_recommendation_set(monkeypatch) -> None:
     monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
     monkeypatch.setattr(recommend_service, "propose", lambda *args, **kwargs: _looks())
     with Session(engine) as db:
-        db.add_all(_recommendation_items() + _same_day_set_rows("old-set"))
+        db.add_all(
+            _recommendation_items()
+            + _same_day_set_rows("old-set", created_at="2026-07-31T06:30:00+08:00")
+        )
         db.commit()
 
         result = recommend_service.recommend(db, RecommendRequest(city="上海", force_refresh=True))

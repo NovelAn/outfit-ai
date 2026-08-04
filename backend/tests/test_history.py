@@ -77,7 +77,11 @@ def test_history_groups_the_latest_complete_recommendation_set() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
-        sets = (("complete", ("safe", "fresh", "stretch")), ("incomplete", ("safe",)))
+        sets = (
+            ("older", "2026-07-31T06:30:00+08:00", ("safe", "fresh", "stretch")),
+            ("latest", "2026-07-31T08:30:00+08:00", ("safe", "fresh", "stretch")),
+            ("incomplete", "2026-07-31T09:30:00+08:00", ("safe",)),
+        )
         db.add_all(
             OutfitHistory(
                 id=f"set-{set_id}-{tier}",
@@ -85,9 +89,14 @@ def test_history_groups_the_latest_complete_recommendation_set() -> None:
                 date=date(2026, 7, 31),
                 item_ids_json="[]",
                 pick_mode=tier,
-                context_json=json.dumps({"recommendation_set_id": set_id}),
+                context_json=json.dumps(
+                    {
+                        "recommendation_set_id": set_id,
+                        "recommendation_set_created_at": created_at,
+                    }
+                ),
             )
-            for set_id, tiers in sets
+            for set_id, created_at, tiers in sets
             for tier in tiers
         )
         db.commit()
@@ -95,9 +104,9 @@ def test_history_groups_the_latest_complete_recommendation_set() -> None:
         rows = history_service.get_latest_recommendation_set(db, "local", date(2026, 7, 31))
 
         assert [row.id for row in rows] == [
-            "set-complete-safe",
-            "set-complete-fresh",
-            "set-complete-stretch",
+            "set-latest-safe",
+            "set-latest-fresh",
+            "set-latest-stretch",
         ]
 
 

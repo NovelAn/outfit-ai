@@ -140,3 +140,35 @@ def test_validator_allows_three_to_six_items_and_prompt_describes_optional_piece
     assert "3–6" in prompt
     assert "叠穿" in prompt
     assert "配饰" in prompt
+
+
+def test_validator_rejects_looks_outside_three_to_six_items_or_with_duplicates() -> None:
+    categories = {
+        "top": "top",
+        "bottom": "bottom",
+        "shoes": "shoes",
+        "outerwear": "outerwear",
+        "scarf": "accessory",
+        "bag": "accessory",
+        "watch": "accessory",
+    }
+
+    def look(tier: str, item_ids: list[str]) -> ProposedLook:
+        return ProposedLook(
+            tier=tier,
+            item_ids=item_ids,
+            reason="测试",
+            weather_fit="适合",
+            occasion_fit="日常",
+        )
+
+    valid_fresh = look("fresh", ["top", "bottom", "shoes", "outerwear"])
+    valid_stretch = look("stretch", ["top", "bottom", "shoes", "outerwear", "scarf", "bag"])
+    invalid_safe_looks = [
+        look("safe", ["top", "bottom"]),
+        look("safe", ["top", "bottom", "shoes", "outerwear", "scarf", "bag", "watch"]),
+        look("safe", ["top", "bottom", "shoes", "shoes"]),
+    ]
+
+    for invalid_safe in invalid_safe_looks:
+        assert validate_looks([invalid_safe, valid_fresh, valid_stretch], categories)[0] is False
