@@ -53,6 +53,7 @@ export interface GeneratedLook {
 
 export interface FavoriteLook {
   id: string;
+  historyId?: string;
   title: string;
   tag: string;
   imageUrl: string;
@@ -60,21 +61,32 @@ export interface FavoriteLook {
   type: 'look' | 'inspiration';
   description?: string;
   lookItems?: { name: string; category: string; img: string }[];
+  itemIds?: string[];
+  rating?: number;
+  woreIt?: boolean;
+  scope?: 'recent' | 'archive';
 }
 
 export interface HistoryLook {
   id: string;
+  historyId?: string;
   title: string;
   date: string;
   tag: string;
   imageUrl: string;
   description: string;
   items: { name: string; category: string; img: string }[];
+  lookItems?: { name: string; category: string; img: string }[];
+  itemIds?: string[];
   action?: string;
+  rating?: number;
+  woreIt?: boolean;
+  scope?: 'recent' | 'archive';
 }
 
 export interface LookRating {
   lookId: string;
+  historyId?: string;
   lookTitle: string;
   rating: number; // 1 to 5
   tags: string[];
@@ -82,6 +94,7 @@ export interface LookRating {
   timestamp: string;
   aiAdjustment: string;
   lookImage?: string;
+  lookItems?: { name: string; category: string; img: string }[];
 }
 
 export interface AITasteProfile {

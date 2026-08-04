@@ -35,7 +35,12 @@ function apiUrl(path) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(apiUrl(path), options);
+  let response;
+  try {
+    response = await fetch(apiUrl(path), options);
+  } catch (error) {
+    throw new Error("网络连接失败，请检查网络后重试", { cause: error });
+  }
   if (response.ok) {
     return response.status === 204 ? null : response.json();
   }
@@ -134,7 +139,43 @@ function mapLook(tier, look) {
     occasionFit: look.occasion_fit || "",
     imageUrl: items[0]?.img || "",
     items,
+    lookItems: items,
   };
+}
+
+export function mapHistoryLook(row, wardrobeById = new Map()) {
+  const items = (row.item_ids || [])
+    .map((id) => wardrobeById.get(id))
+    .filter(Boolean)
+    .map((item) => ({ name: item.name, category: item.category, img: item.imageUrl }));
+  const tier = row.pick_mode === "safe" ? "稳妥" : row.pick_mode === "fresh" ? "新鲜" : "突破";
+  return {
+    id: row.id,
+    historyId: row.id,
+    title: `${tier} / ${row.occasion || "日常"}`,
+    date: row.date,
+    tag: String(row.pick_mode || "").toUpperCase(),
+    imageUrl: items[0]?.img || mediaUrl(row.collage_path),
+    description: row.reason || "",
+    items,
+    lookItems: items,
+    itemIds: row.item_ids || [],
+    action: row.action,
+    rating: row.rating,
+    woreIt: Boolean(row.wore_it),
+    scope: row.scope,
+  };
+}
+
+export async function confirmFeedback(submit, data, onConfirmed, onRollback) {
+  try {
+    const result = await submit(data);
+    onConfirmed?.(result);
+    return result;
+  } catch (error) {
+    onRollback?.(error);
+    throw error;
+  }
 }
 
 export function mapRecommendation(result) {
@@ -220,7 +261,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(profile),
     }),
-  history: () => request("/api/history"),
+  history: ({ scope, limit } = {}) => {
+    const params = new URLSearchParams();
+    if (scope) params.set("scope", scope);
+    if (limit) params.set("limit", String(limit));
+    const query = params.toString();
+    return request(`/api/history${query ? `?${query}` : ""}`);
+  },
   weather: ({ city, latitude, longitude } = {}) => {
     const params = new URLSearchParams();
     if (city) params.set("city", city);

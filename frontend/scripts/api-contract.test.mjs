@@ -6,6 +6,8 @@ import {
   api,
   categoryCode,
   createSingleFlight,
+  confirmFeedback,
+  mapHistoryLook,
   mapRecommendation,
   mapStyleReference,
   mapWardrobeItem,
@@ -186,6 +188,91 @@ test("maps three real wardrobe recommendations into Safe Fresh Stretch cards", (
   assert.equal(mapped.safe.description, "白衬衫 + 藏青西裤 + 乐福鞋");
   assert.equal(mapped.fresh.title, "Look 02 / 新鲜 (FRESH)");
   assert.equal(mapped.stretch.title, "Look 03 / 突破 (STRETCH)");
+});
+
+test("maps every 3–6 item Look, including optional layers and accessories", () => {
+  const mapped = mapRecommendation({
+    safe: {
+      history_id: "history-full-look",
+      items: [
+        { id: "coat", name: "风衣", category: "outerwear", image_url: "/media/coat.png" },
+        { id: "shirt", name: "衬衫", category: "top", image_url: "/media/shirt.png" },
+        { id: "pants", name: "长裤", category: "bottom", image_url: "/media/pants.png" },
+        { id: "shoes", name: "乐福鞋", category: "shoes", image_url: "/media/shoes.png" },
+        { id: "watch", name: "腕表", category: "accessory", image_url: "/media/watch.png" },
+      ],
+    },
+  });
+
+  assert.equal(mapped.safe.lookItems.length, 5);
+  assert.equal(mapped.safe.lookItems[0].category, "上装");
+  assert.equal(mapped.safe.lookItems[4].category, "配饰");
+});
+
+test("maps scoped history into a full-Look memo model with legacy image fallback", () => {
+  const mapped = mapHistoryLook(
+    {
+      id: "history-1",
+      date: "2026-08-04",
+      pick_mode: "fresh",
+      action: "saved",
+      rating: 5,
+      scope: "archive",
+      reason: "适合通勤",
+      item_ids: ["shirt", "pants", "shoes", "watch"],
+      collage_path: "/media/legacy-collage.png",
+    },
+    new Map([
+      ["shirt", { name: "衬衫", category: "上装", imageUrl: "/media/shirt.png" }],
+      ["pants", { name: "长裤", category: "下装", imageUrl: "/media/pants.png" }],
+      ["shoes", { name: "乐福鞋", category: "鞋履", imageUrl: "/media/shoes.png" }],
+      ["watch", { name: "腕表", category: "配饰", imageUrl: "/media/watch.png" }],
+    ]),
+  );
+
+  assert.equal(mapped.historyId, "history-1");
+  assert.equal(mapped.rating, 5);
+  assert.equal(mapped.scope, "archive");
+  assert.equal(mapped.lookItems.length, 4);
+  assert.equal(mapped.imageUrl, "/media/shirt.png");
+  assert.equal(mapHistoryLook({ id: "legacy", item_ids: [], collage_path: "/media/legacy.png" }, new Map()).imageUrl, "/media/legacy.png");
+});
+
+test("translates network failures and sends a requested history scope", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl;
+  globalThis.fetch = async (url) => {
+    requestedUrl = url;
+    throw new TypeError("Failed to fetch");
+  };
+  try {
+    await assert.rejects(() => api.history({ scope: "archive" }), /网络连接失败，请检查网络后重试/);
+    assert.equal(requestedUrl, "/api/history?scope=archive");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("commits feedback only after the server accepts it and rolls back on failure", async () => {
+  const calls = [];
+  await assert.rejects(
+    () => confirmFeedback(
+      async () => { throw new Error("推荐历史不存在"); },
+      { history_id: "missing", items_worn: [], action: "saved" },
+      () => calls.push("commit"),
+      () => calls.push("rollback"),
+    ),
+    /推荐历史不存在/,
+  );
+  assert.deepEqual(calls, ["rollback"]);
+
+  await confirmFeedback(
+    async () => ({ ok: true }),
+    { history_id: "history-1", items_worn: [], rating: 5 },
+    () => calls.push("commit"),
+    () => calls.push("rollback"),
+  );
+  assert.deepEqual(calls, ["rollback", "commit"]);
 });
 
 test("converts Stitch season labels to backend values", () => {

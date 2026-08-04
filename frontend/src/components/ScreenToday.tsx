@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
-import { api } from '../lib/api.mjs';
+import { api, confirmFeedback } from '../lib/api.mjs';
 import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
@@ -156,6 +156,21 @@ const EMPTY_LOOKS: Record<'safe' | 'fresh' | 'stretch', any> = {
   fresh: { title: 'Look 02 / 新鲜 (FRESH)', tag: '松弛休假', description: '等待从真实衣橱生成', imageUrl: '', items: EMPTY_ITEMS },
   stretch: { title: 'Look 03 / 突破 (STRETCH)', tag: '工装廓形', description: '等待从真实衣橱生成', imageUrl: '', items: EMPTY_ITEMS },
 };
+
+const LookItems = ({ items = [], onSelect }: { items: any[]; onSelect: (item: any) => void }) => (
+  <div className="grid w-full grid-cols-3 gap-2">
+    {items.map((item, index) => (
+      <button
+        key={item.id || `${item.name}-${index}`}
+        onClick={() => onSelect(item)}
+        className="aspect-square overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-1.5 hover:border-[#9a442a]/50 transition-colors"
+      >
+        <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
+        <span className="sr-only">{item.name}</span>
+      </button>
+    ))}
+  </div>
+);
 
 export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
@@ -427,40 +442,41 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       ? `降雨概率 ${weather.precipitation_probability_max ?? 0}%${weather.precipitation_sum ? ` · ${weather.precipitation_sum} mm` : ''}`
       : '';
 
-  const toggleLike = (id: string, e: React.MouseEvent) => {
+  const toggleLike = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!liveLooks?.[id]) {
       triggerToast('请先用真实衣橱生成搭配');
       return;
     }
     const isNowLiked = !liked[id];
-    setLiked((prev) => ({ ...prev, [id]: isNowLiked }));
+    const look = liveLooks[id];
 
     try {
       const favsStr = localStorage.getItem('OUTFIT_AI_FAVORITES');
       let favs: FavoriteLook[] = favsStr ? JSON.parse(favsStr) : [];
 
-      if (isNowLiked) {
-        const detail = LOOK_DETAILS[id];
-        if (detail && !favs.some((f) => f.id === id)) {
-          favs.unshift(detail);
+      const commit = () => {
+        if (isNowLiked) {
+          const detail = { ...LOOK_DETAILS[id], id: look.historyId || id, historyId: look.historyId, lookItems: look.items };
+          if (detail && !favs.some((f) => f.id === detail.id)) favs.unshift(detail);
+          triggerToast('❤️ 已成功保存至【我的收藏】！');
+        } else {
+          favs = favs.filter((f) => f.id !== (look.historyId || id));
+          triggerToast('已从【我的收藏】中移除');
         }
-        triggerToast('❤️ 已成功保存至【我的收藏】！');
-      } else {
-        favs = favs.filter((f) => f.id !== id);
-        triggerToast('已从【我的收藏】中移除');
-      }
-
-      localStorage.setItem('OUTFIT_AI_FAVORITES', JSON.stringify(favs));
-      const look = liveLooks?.[id];
-      if (look?.historyId) {
-        void api.feedback({
+        setLiked((prev) => ({ ...prev, [id]: isNowLiked }));
+        localStorage.setItem('OUTFIT_AI_FAVORITES', JSON.stringify(favs));
+      };
+      if (look.historyId) {
+        await confirmFeedback(api.feedback, {
           history_id: look.historyId,
           items_worn: look.items.map((item: any) => item.id),
           action: isNowLiked ? 'saved' : 'shown',
-        }).catch((error: unknown) => {
+        }, commit, (error: unknown) => {
           triggerToast(error instanceof Error ? error.message : '收藏状态同步失败');
         });
+      } else {
+        commit();
       }
     } catch (err) {
       console.error(err);
@@ -489,7 +505,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     }
   };
 
-  const submitRating = () => {
+  const submitRating = async () => {
     if (!activeRatingModal) return;
 
     const id = activeRatingModal.id;
@@ -517,29 +533,34 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       lookImage: activeRatingModal.imageUrl
     };
 
-    const updated = { ...ratings, [id]: newRating };
-    setRatings(updated);
-    try {
-      localStorage.setItem('OUTFIT_AI_LOOK_RATINGS', JSON.stringify(updated));
-    } catch (e) {
-      console.error(e);
-    }
     const tier = id.split('-')[0];
     const look = liveLooks?.[tier];
+    newRating.historyId = look?.historyId;
+    newRating.lookItems = look?.items;
+    const commit = () => {
+      const updated = { ...ratings, [id]: newRating };
+      setRatings(updated);
+      localStorage.setItem('OUTFIT_AI_LOOK_RATINGS', JSON.stringify(updated));
+      setActiveRatingModal(null);
+      triggerToast(`✨ AI 基因库已吸收你的评价！${aiAdjustment}`);
+    };
     if (look?.historyId) {
-      void api.feedback({
+      try {
+        await confirmFeedback(api.feedback, {
         history_id: look.historyId,
         items_worn: look.items.map((item: any) => item.id),
-        action: currentStars >= 4 ? 'saved' : 'skipped',
+        rating: currentStars,
         sentiment: commentText || `${currentStars} 星`,
         compliments: selectedTags,
-      }).catch((error: unknown) => {
+        }, commit, (error: unknown) => {
         triggerToast(error instanceof Error ? error.message : '反馈同步失败');
-      });
+        });
+      } catch {
+        return;
+      }
+    } else {
+      commit();
     }
-
-    setActiveRatingModal(null);
-    triggerToast(`✨ AI 基因库已吸收你的评价！${aiAdjustment}`);
   };
 
   return (
@@ -706,27 +727,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              {/* 3-Item Overlapping Layered Stack */}
-              <div className="flex flex-col items-center w-full relative">
-                <img
-                  onClick={() => setActiveModalItem({ title: currentSafe.items[0].name, desc: currentSafe.items[0].desc })}
-                  className="w-56 h-56 object-contain vertical-stack-img z-10 relative cursor-pointer hover:scale-105 transition-transform"
-                  src={currentSafe.items[0].img}
-                  alt={currentSafe.items[0].name}
-                />
-                <img
-                  onClick={() => setActiveModalItem({ title: currentSafe.items[1].name, desc: currentSafe.items[1].desc })}
-                  className="w-48 h-64 object-contain vertical-stack-img z-0 relative -mt-16 cursor-pointer hover:scale-105 transition-transform"
-                  src={currentSafe.items[1].img}
-                  alt={currentSafe.items[1].name}
-                />
-                <img
-                  onClick={() => setActiveModalItem({ title: currentSafe.items[2].name, desc: currentSafe.items[2].desc })}
-                  className="w-36 h-24 object-contain vertical-stack-img z-20 relative -mt-10 cursor-pointer hover:scale-105 transition-transform"
-                  src={currentSafe.items[2].img}
-                  alt={currentSafe.items[2].name}
-                />
-              </div>
+              <LookItems items={currentSafe.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
               <div className="mt-10 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -821,27 +822,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              {/* 3-Item Overlapping Layered Stack */}
-              <div className="flex flex-col items-center w-full relative">
-                <img
-                  onClick={() => setActiveModalItem({ title: currentFresh.items[0].name, desc: currentFresh.items[0].desc })}
-                  className="w-56 h-56 object-contain vertical-stack-img z-10 relative cursor-pointer hover:scale-105 transition-transform"
-                  src={currentFresh.items[0].img}
-                  alt={currentFresh.items[0].name}
-                />
-                <img
-                  onClick={() => setActiveModalItem({ title: currentFresh.items[1].name, desc: currentFresh.items[1].desc })}
-                  className="w-48 h-64 object-contain vertical-stack-img z-0 relative -mt-16 cursor-pointer hover:scale-105 transition-transform"
-                  src={currentFresh.items[1].img}
-                  alt={currentFresh.items[1].name}
-                />
-                <img
-                  onClick={() => setActiveModalItem({ title: currentFresh.items[2].name, desc: currentFresh.items[2].desc })}
-                  className="w-36 h-24 object-contain vertical-stack-img z-20 relative -mt-10 cursor-pointer hover:scale-105 transition-transform"
-                  src={currentFresh.items[2].img}
-                  alt={currentFresh.items[2].name}
-                />
-              </div>
+              <LookItems items={currentFresh.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
               <div className="mt-10 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -936,27 +917,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              {/* 3-Item Overlapping Layered Stack */}
-              <div className="flex flex-col items-center w-full relative">
-                <img
-                  onClick={() => setActiveModalItem({ title: currentStretch.items[0].name, desc: currentStretch.items[0].desc })}
-                  className="w-64 h-64 object-contain vertical-stack-img z-10 relative cursor-pointer hover:scale-105 transition-transform"
-                  src={currentStretch.items[0].img}
-                  alt={currentStretch.items[0].name}
-                />
-                <img
-                  onClick={() => setActiveModalItem({ title: currentStretch.items[1].name, desc: currentStretch.items[1].desc })}
-                  className="w-52 h-64 object-contain vertical-stack-img z-0 relative -mt-20 cursor-pointer hover:scale-105 transition-transform"
-                  src={currentStretch.items[1].img}
-                  alt={currentStretch.items[1].name}
-                />
-                <img
-                  onClick={() => setActiveModalItem({ title: currentStretch.items[2].name, desc: currentStretch.items[2].desc })}
-                  className="w-40 h-28 object-contain vertical-stack-img z-20 relative -mt-12 cursor-pointer hover:scale-105 transition-transform"
-                  src={currentStretch.items[2].img}
-                  alt={currentStretch.items[2].name}
-                />
-              </div>
+              <LookItems items={currentStretch.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
 
               <div className="mt-10 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">

@@ -29,17 +29,17 @@ frontend/index.html
 
 今日页优先使用浏览器原生 Geolocation 获取当前位置：请求启用高精度、最多复用 5 分钟浏览器位置，坐标按三位小数缓存到 `OUTFIT_AI_LOCATION`，缓存有效期 2 小时；应用自身也会在 8 秒无回调时结束定位等待。侧边栏提供上海、北京快捷项，也可输入任意中国城市，并将 `OUTFIT_AI_CITY` 与 `OUTFIT_AI_LOCATION_MODE=manual` 保存为手动覆盖；手动模式会优先于浏览器定位。点击“自动定位”会立即请求浏览器定位并清除手动模式，界面显示成功、缓存回退或权限失败状态；定位被拒绝、超时或不可用时再依次回退到有效坐标缓存、已保存城市，最后显示“需要定位或选择城市”。
 
-最近一次推荐、收藏显示和评分表单分别使用 `OUTFIT_AI_LATEST_RECOMMENDATION`、`OUTFIT_AI_FAVORITES`、`OUTFIT_AI_LOOK_RATINGS` 的 `localStorage` 作为当前设备的加载中/请求失败界面后备；有对应推荐历史的收藏与评分仍通过 `POST /api/feedback` 写入后端学习链。`localStorage` 不是业务事实源，也不会阻止今日页向后端校验当日上下文。
+最近一次推荐、收藏显示和评分表单分别使用 `OUTFIT_AI_LATEST_RECOMMENDATION`、`OUTFIT_AI_FAVORITES`、`OUTFIT_AI_LOOK_RATINGS` 的 `localStorage` 作为当前设备的加载中/请求失败界面后备；有对应推荐历史的收藏、评分与“穿过”均先由 `POST /api/feedback` 确认成功才更新页面，失败保留原服务端状态并显示统一网络/服务端错误。`localStorage` 不是业务事实源，也不会阻止今日页向后端校验当日上下文。
 
 ## 3. 五个页面
 
 | 页面 | 源文件 | 用户功能 | 主要后端接口 |
 |---|---|---|---|
-| 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；收藏、打分和反馈 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
+| 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；每套按后端返回的 3–6 件完整展示（含外搭与配饰）；收藏、打分和反馈 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开详情，可编辑识别字段或二次确认删除单品及图片 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
 | 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
-| 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；查看反馈、推荐历史和收藏 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history` |
+| 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；按 `recent`/`archive` 读取推荐历史，展示完整 Total Look 缩略图（旧记录回退拼图），并可收藏、评分或标记穿过 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history?scope=`、`POST /api/feedback` |
 
 ## 4. 前端 API 接线
 

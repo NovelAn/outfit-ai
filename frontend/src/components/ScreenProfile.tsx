@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId, LookRating, FavoriteLook, HistoryLook } from '../types';
-import { api, paletteHex, visibleStyleTags } from '../lib/api.mjs';
+import { api, confirmFeedback, mapHistoryLook, paletteHex, visibleStyleTags } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -59,6 +59,14 @@ const EMPTY_TAG_PREFERENCES = { pinned: [], hidden: [], aliases: {} };
 
 const uniqueTags = (tags: string[]) => [...new Set(tags.filter(Boolean))];
 
+const TotalLookThumbnails = ({ items, fallback, alt }: { items?: { name: string; img: string }[]; fallback: string; alt: string }) => (
+  items?.length ? (
+    <div className="grid w-14 shrink-0 grid-cols-3 gap-0.5 rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] p-0.5">
+      {items.map((item, index) => <img key={`${item.name}-${index}`} src={item.img} alt={item.name} className="aspect-square w-full rounded-sm object-cover" />)}
+    </div>
+  ) : <img src={fallback} alt={alt} className="w-14 h-18 object-cover rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0" />
+);
+
 export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
   const [styleId, setStyleId] = useState('894-FX-21');
   const [isEditing, setIsEditing] = useState(false);
@@ -87,33 +95,31 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
       } else {
         setRatings({});
       }
-      const [loadedProfile, wardrobe, history] = await Promise.all([
+      const [loadedProfile, wardrobe, archive, recent] = await Promise.all([
         api.profile(),
         api.wardrobe(),
-        api.history(),
+        api.history({ scope: 'archive' }),
+        api.history({ scope: 'recent' }),
       ]);
       setProfile(loadedProfile);
       const byId = new Map(wardrobe.map((item: any) => [item.id, item]));
-      const mappedHistory: HistoryLook[] = history.map((row: any) => {
-        const items = row.item_ids
-          .map((id: string) => byId.get(id))
-          .filter(Boolean)
-          .map((item: any) => ({ name: item.name, category: item.category, img: item.imageUrl }));
-        const tier = row.pick_mode === 'safe' ? '稳妥' : row.pick_mode === 'fresh' ? '新鲜' : '突破';
-        return {
-          id: row.id,
-          title: `${tier} / ${row.occasion || '日常'}`,
-          date: row.date,
-          tag: String(row.pick_mode || '').toUpperCase(),
-          imageUrl: items[0]?.img || '',
-          description: row.reason || '',
-          items,
-          action: row.action,
-        };
-      });
+      const mappedHistory: HistoryLook[] = [...archive, ...recent].map((row: any) => mapHistoryLook(row, byId));
       setHistoryList(mappedHistory);
+      const serverRatings = Object.fromEntries(mappedHistory.filter((item) => item.rating).map((item) => [item.id, {
+        lookId: item.id,
+        historyId: item.historyId,
+        lookTitle: item.title,
+        rating: item.rating!,
+        tags: [],
+        timestamp: item.date,
+        aiAdjustment: '已同步到 AI 品味备忘录',
+        lookImage: item.imageUrl,
+        lookItems: item.lookItems,
+      }]));
+      if (Object.keys(serverRatings).length) setRatings(serverRatings);
       setFavoritesList(mappedHistory.filter((item: any) => item.action === 'saved').map((item) => ({
         id: item.id,
+        historyId: item.historyId,
         title: item.title,
         tag: item.tag,
         imageUrl: item.imageUrl,
@@ -121,6 +127,9 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
         type: 'look' as const,
         description: item.description,
         lookItems: item.items,
+        rating: item.rating,
+        woreIt: item.woreIt,
+        scope: item.scope,
       })));
     } catch (e) {
       console.error(e);
@@ -134,7 +143,23 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const saveUpdatedRating = (updated: LookRating) => {
+  const saveUpdatedRating = async (updated: LookRating) => {
+    if (updated.historyId) {
+      try {
+        await confirmFeedback(api.feedback, {
+          history_id: updated.historyId,
+          items_worn: historyList.find((item) => item.historyId === updated.historyId)?.itemIds || [],
+          rating: updated.rating,
+          sentiment: updated.comment,
+          compliments: updated.tags,
+        }, () => { setEditingRating(null); void loadData(); }, (error: unknown) => {
+          setTagError(error instanceof Error ? error.message : '评分保存失败，请重试');
+        });
+      } catch {
+        return;
+      }
+      return;
+    }
     const newRatings = { ...ratings, [updated.lookId]: updated };
     setRatings(newRatings);
     try {
@@ -159,7 +184,22 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
     setEditingRating(null);
   };
 
-  const removeFavorite = (id: string) => {
+  const removeFavorite = async (id: string) => {
+    const history = historyList.find((item) => item.id === id);
+    if (history?.historyId) {
+      try {
+        await confirmFeedback(api.feedback, {
+          history_id: history.historyId,
+          items_worn: history.itemIds || [],
+          action: 'shown',
+        }, () => void loadData(), (error: unknown) => {
+          setTagError(error instanceof Error ? error.message : '收藏状态同步失败');
+        });
+      } catch {
+        return;
+      }
+      return;
+    }
     const updated = favoritesList.filter((f) => f.id !== id);
     setFavoritesList(updated);
     try {
@@ -167,6 +207,22 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
       window.dispatchEvent(new Event('storage'));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const updateHistoryAction = async (history: HistoryLook, action?: 'shown' | 'saved' | 'worn', rating?: number) => {
+    if (!history.historyId) return;
+    try {
+      await confirmFeedback(api.feedback, {
+        history_id: history.historyId,
+        items_worn: history.itemIds || [],
+        ...(action ? { action } : {}),
+        ...(rating ? { rating } : {}),
+      }, () => void loadData(), (error: unknown) => {
+        setTagError(error instanceof Error ? error.message : '操作同步失败');
+      });
+    } catch {
+      // The displayed server-confirmed state remains unchanged.
     }
   };
 
@@ -410,18 +466,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
                     onClick={() => setEditingRating(item)}
                     className="bg-[#f8f6f0] p-2.5 rounded-lg border border-[#c4c6cd]/40 hover:border-[#9a442a]/50 cursor-pointer transition-all flex gap-2.5 items-start shadow-2xs group"
                   >
-                    {/* Look Image Thumbnail */}
-                    <div className="w-14 h-18 rounded-md overflow-hidden border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0 relative">
-                      <img
-                        src={imgUrl}
-                        alt={item.lookTitle}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.src = IMAGE_FALLBACKS.safe;
-                        }}
-                      />
-                    </div>
+                    <TotalLookThumbnails items={item.lookItems} fallback={imgUrl} alt={item.lookTitle} />
 
                     {/* Right Content */}
                     <div className="min-w-0 flex-1 space-y-1">
@@ -650,11 +695,8 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
             </div>
 
             <div className="flex gap-2 pt-2 border-t border-[#c4c6cd]/40">
-              <button
-                onClick={() => deleteRating(editingRating.lookId)}
-                className="bg-red-100 text-red-700 text-xs font-bold py-2 px-3 rounded-lg hover:bg-red-200 transition-colors"
-              >
-                删除
+              <button onClick={() => setEditingRating(null)} className="border border-[#162839]/30 text-[#162839] text-xs font-bold py-2 px-3 rounded-lg">
+                取消
               </button>
               <button
                 onClick={() => saveUpdatedRating(editingRating)}
@@ -838,6 +880,24 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
                         ))}
                       </div>
                       <p className="text-[9px] text-[#43474c]">{hist.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <span className="text-[9px] text-[#74777d] border border-[#c4c6cd]/40 px-1.5 py-0.5 rounded">{hist.scope === 'archive' ? '存档' : '近期'}</span>
+                        <button onClick={() => void updateHistoryAction(hist, hist.action === 'saved' ? 'shown' : 'saved')} className="text-[9px] text-[#9a442a] border border-[#9a442a]/30 px-1.5 py-0.5 rounded">
+                          {hist.action === 'saved' ? '取消收藏' : '收藏'}
+                        </button>
+                        <button onClick={() => setEditingRating({
+                          lookId: hist.id,
+                          historyId: hist.historyId,
+                          lookTitle: hist.title,
+                          rating: hist.rating || 5,
+                          tags: [],
+                          timestamp: hist.date,
+                          aiAdjustment: '已同步到 AI 品味备忘录',
+                          lookImage: hist.imageUrl,
+                          lookItems: hist.lookItems,
+                        })} className="text-[9px] text-[#162839] border border-[#162839]/30 px-1.5 py-0.5 rounded">{hist.rating ? `${hist.rating}★` : '评分'}</button>
+                        <button onClick={() => void updateHistoryAction(hist, 'worn')} className="text-[9px] text-[#162839] border border-[#162839]/30 px-1.5 py-0.5 rounded">{hist.woreIt ? '已穿着' : '标记穿过'}</button>
+                      </div>
                     </div>
                   ))
                 ) : (
