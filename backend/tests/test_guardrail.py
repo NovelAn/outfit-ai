@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
+from outfit_ai.schemas import ProposedLook
 from outfit_ai.services.guardrail import filter_candidates
+from outfit_ai.services.prompt_builder import stylist_system
+from outfit_ai.services.validator import validate_looks
 
 
 def _item(item_id: str, category: str, seasons: str, *, locked: bool = False):
@@ -97,3 +100,43 @@ def test_candidate_cap_keeps_required_categories_when_available() -> None:
     )
 
     assert {item.category for item in result} == {"top", "skirt", "boots"}
+
+
+def test_validator_allows_three_to_six_items_and_prompt_describes_optional_pieces() -> None:
+    categories = {
+        "top": "top",
+        "bottom": "bottom",
+        "shoes": "shoes",
+        "outerwear": "outerwear",
+        "scarf": "accessory",
+        "bag": "accessory",
+    }
+    looks = [
+        ProposedLook(
+            tier="safe",
+            item_ids=["top", "bottom", "shoes"],
+            reason="基础完整",
+            weather_fit="适合",
+            occasion_fit="日常",
+        ),
+        ProposedLook(
+            tier="fresh",
+            item_ids=["top", "bottom", "shoes", "outerwear"],
+            reason="可选叠穿",
+            weather_fit="适合",
+            occasion_fit="日常",
+        ),
+        ProposedLook(
+            tier="stretch",
+            item_ids=["top", "bottom", "shoes", "outerwear", "scarf", "bag"],
+            reason="可选配饰",
+            weather_fit="适合",
+            occasion_fit="日常",
+        ),
+    ]
+
+    assert validate_looks(looks, categories) == (True, "")
+    prompt = stylist_system(set())
+    assert "3–6" in prompt
+    assert "叠穿" in prompt
+    assert "配饰" in prompt

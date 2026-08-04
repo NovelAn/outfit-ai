@@ -94,8 +94,70 @@ def _recommendation_items() -> list[WardrobeItem]:
     ]
 
 
+def _same_day_set_rows(set_id: str) -> list[OutfitHistory]:
+    return [
+        OutfitHistory(
+            id=f"{set_id}-{tier}",
+            user_id="local",
+            date=date(2026, 7, 31),
+            item_ids_json=json.dumps([f"top-{index}", f"bottom-{index}", f"shoes-{index}"]),
+            pick_mode=tier,
+            action="shown",
+            context_json=json.dumps({"recommendation_set_id": set_id}),
+        )
+        for index, tier in enumerate(("safe", "fresh", "stretch"), 1)
+    ]
+
+
 def test_haversine_shanghai_to_suzhou_exceeds_prepared_reuse_radius() -> None:
     assert recommend_service._haversine_km(31.230, 121.474, 31.299, 120.585) > 20
+
+
+def test_normal_request_reuses_latest_complete_same_day_set_for_manual_city(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: pytest.fail("same-day set should be reused"),
+    )
+    with Session(engine) as db:
+        db.add_all(_recommendation_items() + _same_day_set_rows("latest-set"))
+        db.commit()
+
+        result = recommend_service.recommend(db, RecommendRequest(city="上海"))
+
+        assert [result[tier]["history_id"] for tier in ("safe", "fresh", "stretch")] == [
+            "latest-set-safe",
+            "latest-set-fresh",
+            "latest-set-stretch",
+        ]
+
+
+def test_force_refresh_creates_a_new_recommendation_set(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(recommend_service, "propose", lambda *args, **kwargs: _looks())
+    with Session(engine) as db:
+        db.add_all(_recommendation_items() + _same_day_set_rows("old-set"))
+        db.commit()
+
+        result = recommend_service.recommend(db, RecommendRequest(city="上海", force_refresh=True))
+        refreshed_set_ids = {
+            json.loads(db.get(OutfitHistory, result[tier]["history_id"]).context_json)[
+                "recommendation_set_id"
+            ]
+            for tier in ("safe", "fresh", "stretch")
+        }
+
+        assert refreshed_set_ids.isdisjoint({"old-set"})
+        assert len(refreshed_set_ids) == 1
 
 
 def test_recommend_reuses_matching_prepared_looks_without_stylist(monkeypatch) -> None:
@@ -201,9 +263,7 @@ def test_recommend_regenerates_for_malformed_prepared_weather_context(monkeypatc
         db.add_all(_recommendation_items() + prepared)
         db.commit()
 
-        recommend_service.recommend(
-            db, RecommendRequest(latitude=31.230, longitude=121.474)
-        )
+        recommend_service.recommend(db, RecommendRequest(latitude=31.230, longitude=121.474))
 
         assert calls == [1]
 
@@ -406,9 +466,7 @@ def test_recommend_http_reuses_prepared_without_minimax_key(monkeypatch, tmp_pat
     monkeypatch.setattr(
         llm,
         "resolve_minimax_access",
-        lambda: (_ for _ in ()).throw(
-            MiniMaxUnavailableError("未配置 MiniMax API Key")
-        ),
+        lambda: (_ for _ in ()).throw(MiniMaxUnavailableError("未配置 MiniMax API Key")),
     )
     monkeypatch.setattr(
         recommend_service,
@@ -448,9 +506,7 @@ def test_recommend_http_requires_minimax_key_without_prepared(monkeypatch, tmp_p
     monkeypatch.setattr(
         llm,
         "resolve_minimax_access",
-        lambda: (_ for _ in ()).throw(
-            MiniMaxUnavailableError("未配置 MiniMax API Key")
-        ),
+        lambda: (_ for _ in ()).throw(MiniMaxUnavailableError("未配置 MiniMax API Key")),
     )
     monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
     app.dependency_overrides[get_db] = override_db
@@ -529,8 +585,6 @@ def test_recommend_feedback_history_http_loop(monkeypatch, tmp_path) -> None:
 
     assert recommended.status_code == 200
     assert feedback.json() == {"ok": True}
-    safe_history = next(
-        row for row in history.json() if row["id"] == safe["history_id"]
-    )
+    safe_history = next(row for row in history.json() if row["id"] == safe["history_id"])
     assert safe_history["action"] == "worn"
     assert safe_history["wore_it"] is True
