@@ -9,3 +9,9 @@ Status: complete.
 Checks: `git diff --check` passed; stale-claim search found no fixed-three-item, single-image taste-memo, required-feedback, or refresh-regeneration claims.
 
 Concern: none. The repository's existing untracked `.playwright-cli/`, `output/`, and plan file remain unstaged.
+
+## Review fix round 1
+
+- Corrected the recommendation contract: ordinary same-day sets reuse unconditionally; prepared sets require the documented location and weather thresholds, and a normal request can generate when no reuse path matches.
+- Documented `history({scope,limit})` forwarding and made the partial Total Look rendering/fallback boundary exact.
+- Rechecked with `git diff --check`.
