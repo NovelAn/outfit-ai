@@ -15,3 +15,9 @@ Concern: none. The repository's existing untracked `.playwright-cli/`, `output/`
 - Corrected the recommendation contract: ordinary same-day sets reuse unconditionally; prepared sets require the documented location and weather thresholds, and a normal request can generate when no reuse path matches.
 - Documented `history({scope,limit})` forwarding and made the partial Total Look rendering/fallback boundary exact.
 - Rechecked with `git diff --check`.
+
+## Review fix round 2
+
+- Made the reuse order explicit: ordinary same-day groups precede 06:30 prepared candidates; `force_refresh` bypasses both.
+- Corrected history limit forwarding: truthy values are sent, the backend accepts 1–100, and omitted or `0` uses the backend default.
+- Rechecked with `git diff --check`.

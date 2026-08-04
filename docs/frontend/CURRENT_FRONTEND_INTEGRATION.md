@@ -61,7 +61,7 @@ frontend/index.html
 | `weather({city,latitude,longitude})` | `GET /api/weather` | 以同一位置上下文读取本地日期、城市、温度、天气和降雨数据 |
 | `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；可传本地 `local_date` 使普通 recommendation set 复用不依赖服务器时区。普通非 prepared 完整组按同一天无条件复用；prepared 组另受位置、温度带和降雨阈值校验，未命中时仍可在不传 `force_refresh` 的情况下新生成 |
 | `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈；`action` 可省略以仅提交 `rating: 1..5`。已有 Look 的持久反馈必须含服务端 `history_id`，成功后才更新 UI |
-| `history({scope,limit})` | `GET /api/history?scope=recent|archive&limit=` | 传入时将 `limit` 原样转发为查询参数；`recent` 读取临时记录，`archive` 读取收藏、穿过或高评分存档；每项含 `scope`、`rating` |
+| `history({scope,limit} = {})` | `GET /api/history?scope=recent|archive&limit=` | truthy 的 `limit` 会转发，后端接受范围为 1–100；省略或传 `0` 时不带该参数，使用后端默认 `20`。`recent` 读取临时记录，`archive` 读取收藏、穿过或高评分存档；每项含 `scope`、`rating` |
 | `generateInspiration(data)` | `POST /api/inspiration/generate` | 一次返回三张独立灵感图 |
 
 灵感参考图批量上传复用现有单文件接口：前端对每张图片分别调用 `uploadReference()` 和 `referenceStatus()`，使用独立结算保证单张失败不影响同批其他图片，完成后只刷新一次灵感库。
@@ -80,7 +80,7 @@ frontend/index.html
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
 
-今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；上下文就绪后自动请求一次不带 `force_refresh` 的每日推荐，优先消费 06:30 prepared。后端先按本地日期无条件复用最近完整的普通 Safe/Fresh/Stretch recommendation set，因此重新打开、导航或天气刷新不会重新生成。没有这类普通组时，prepared 组还须同时满足距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25` 三档、降雨概率同处 50% 阈值的一侧；不命中时即使不传 `force_refresh` 也会新生成。只有用户点击“AI 换一换”才传 `force_refresh: true`，跳过两条复用路径并强制生成新组。并发刷新会合并为一个进行中的请求，过期响应不会覆盖更新结果。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”，推荐加载或失败时保留本机缓存作为后备。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
+今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；上下文就绪后自动请求一次不带 `force_refresh` 的每日推荐。后端先按本地日期无条件复用最近完整的普通 Safe/Fresh/Stretch recommendation set，因此重新打开、导航或天气刷新不会重新生成。每日 06:30 预生成的 prepared 组只是后备候选：仅在不存在普通组时才考虑，且须同时满足距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25` 三档、降雨概率同处 50% 阈值的一侧；不命中时即使不传 `force_refresh` 也会新生成。只有用户点击“AI 换一换”才传 `force_refresh: true`，跳过两条复用路径并强制生成新组。并发刷新会合并为一个进行中的请求，过期响应不会覆盖更新结果。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”，推荐加载或失败时保留本机缓存作为后备。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
 
 今日卡片不假定固定三件：逐项渲染后端 `items` 数组中的全部 3–6 件，必含上装、下装、鞋履；外搭和配饰只在服务端提供时显示。每张返回卡片均带 `history_id`，收藏/取消收藏、评分和“穿过”通过该 id 提交。请求失败时不乐观更新收藏、评分或穿过状态，保留服务端已确认状态并显示统一错误。
 
@@ -102,7 +102,7 @@ GET /api/history?scope=archive
 200 [{"id":"...","item_ids":["item-1"],"action":"shown","wore_it":false,"rating":null,"scope":"recent"}]
 ```
 
-“我的”页在加载时分别调用 `history({scope:"archive"})` 与 `history({scope:"recent"})`，合并为历史入口；其他调用可传 `history({scope,limit})`，例如 `history({scope:"archive",limit:20})` 会请求 `/api/history?scope=archive&limit=20`。收藏、评分和“标记穿过”沿用相同 server-confirmed `feedback()` 路径。`recent` 是临时记录，`archive` 是已收藏、已穿过或评分至少 4 的记录；仅后端在成功写入新推荐后清理超过 14 本地日的临时记录，前端不做数据清理。
+“我的”页在加载时分别调用 `history({scope:"archive"})` 与 `history({scope:"recent"})`，合并为历史入口；其他调用可传 `history({scope,limit})`，例如 `history({scope:"archive",limit:20})` 会请求 `/api/history?scope=archive&limit=20`。truthy 的 `limit` 会传入，后端接受范围为 1–100；省略或传 `0` 都使用后端默认 `20`。收藏、评分和“标记穿过”沿用相同 server-confirmed `feedback()` 路径。`recent` 是临时记录，`archive` 是已收藏、已穿过或评分至少 4 的记录；仅后端在成功写入新推荐后清理超过 14 本地日的临时记录，前端不做数据清理。
 
 ## 5. 两条核心数据流
 
