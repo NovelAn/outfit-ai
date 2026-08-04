@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId } from '../types';
+import { resolveLocationContext } from '../lib/location.mjs';
 
 interface SideDrawerProps {
   isOpen: boolean;
@@ -10,7 +11,7 @@ interface SideDrawerProps {
 }
 
 const CITIES = [
-  '上海', '北京', '广州', '深圳', '杭州', '成都', '西安', '武汉'
+  '上海', '北京'
 ];
 
 export const SideDrawer: React.FC<SideDrawerProps> = ({
@@ -22,6 +23,8 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 }) => {
   const [selectedCity, setSelectedCity] = useState('');
   const [manualCity, setManualCity] = useState('');
+  const [locationStatus, setLocationStatus] = useState('');
+  const [isLocating, setIsLocating] = useState(false);
   const [favoritesCount, setFavoritesCount] = useState(0);
   const [ratingsCount, setRatingsCount] = useState(0);
 
@@ -68,22 +71,36 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     if (cityName) handleCityChange(cityName);
   };
 
-  const handleUseCurrentLocation = () => {
+  const handleUseCurrentLocation = async () => {
+    if (isLocating) return;
     setSelectedCity('');
     setManualCity('');
+    setLocationStatus('正在获取当前位置…');
+    setIsLocating(true);
     try {
       localStorage.removeItem('OUTFIT_AI_CITY');
       localStorage.removeItem('OUTFIT_AI_LOCATION_MODE');
+      const context = await resolveLocationContext({ storage: localStorage });
+      setLocationStatus(
+        context.source === 'current'
+          ? '已获取当前位置'
+          : context.source === 'cached'
+            ? '定位不可用，已使用上次位置'
+            : '定位失败，请检查浏览器权限或手动输入城市',
+      );
       window.dispatchEvent(new Event('storage'));
     } catch (e) {
       console.error(e);
+      setLocationStatus('定位失败，请检查浏览器权限或手动输入城市');
+    } finally {
+      setIsLocating(false);
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex animate-fade-in isolate">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
@@ -91,7 +108,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
       />
 
       {/* Drawer Panel */}
-      <div className="relative w-80 max-w-[85vw] bg-[#fbf9f4] text-[#162839] h-full shadow-2xl flex flex-col justify-between p-6 z-10 border-r border-[#162839]/20 overflow-y-auto">
+      <div className="relative w-80 max-w-[85vw] bg-[#fbf9f4] text-[#162839] h-full shadow-2xl flex flex-col justify-between p-6 z-[101] border-r border-[#162839]/20 overflow-y-auto">
         <div>
           {/* Header & Close */}
           <div className="flex justify-between items-center mb-6 pb-4 border-b border-[#c4c6cd]/40">
@@ -160,10 +177,12 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
             <button
               type="button"
               onClick={handleUseCurrentLocation}
-              className="mt-2 w-full rounded border border-[#c4c6cd]/40 bg-white px-2 py-2 text-left text-[10px] font-bold text-[#43474c] hover:border-[#162839]"
+              disabled={isLocating}
+              className="mt-2 w-full rounded border border-[#c4c6cd]/40 bg-white px-2 py-2 text-left text-[10px] font-bold text-[#43474c] hover:border-[#162839] disabled:cursor-wait disabled:opacity-60"
             >
-              自动定位
+              {isLocating ? '正在定位…' : '自动定位'}
             </button>
+            {locationStatus && <p className="mt-1 text-[10px] text-[#74777d]">{locationStatus}</p>}
             <a
               href="https://www.openstreetmap.org/copyright"
               target="_blank"
