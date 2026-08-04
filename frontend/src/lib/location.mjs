@@ -104,6 +104,7 @@ export async function loadDailyRecommendation({
     city: weather?.city || context.city,
     latitude: context.latitude,
     longitude: context.longitude,
+    ...(weather?.local_date ? { local_date: weather.local_date } : {}),
     ...(forceRefresh ? { force_refresh: true } : {}),
     reference_ids: references
       .filter((item) => item.status === "ready")

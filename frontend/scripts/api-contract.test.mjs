@@ -4,6 +4,7 @@ import test from "node:test";
 
 import * as profileApi from "../src/lib/api.mjs";
 import { compactLookItems } from "../src/lib/look-layout.mjs";
+import { displayWeatherForRecommendation, lookFeedbackKey } from "../src/lib/today-state.mjs";
 import {
   api,
   categoryCode,
@@ -241,6 +242,17 @@ test("maps scoped history into a full-Look memo model with legacy image fallback
   assert.equal(mapHistoryLook({ id: "legacy", item_ids: [], collage_path: "/media/legacy.png" }, new Map()).imageUrl, "/media/legacy.png");
 });
 
+test("uses a collage only when no history items resolve", () => {
+  const wardrobe = new Map([["shirt", { name: "衬衫", category: "上装", imageUrl: "/media/shirt.png" }]]);
+  const zero = mapHistoryLook({ id: "zero", item_ids: ["missing"], collage_path: "/media/collage.png" }, wardrobe);
+  const partial = mapHistoryLook({ id: "partial", item_ids: ["shirt", "missing"], collage_path: "/media/collage.png" }, wardrobe);
+
+  assert.deepEqual(zero.lookItems, []);
+  assert.equal(zero.imageUrl, "/media/collage.png");
+  assert.deepEqual(partial.lookItems.map((item) => item.name), ["衬衫"]);
+  assert.equal(partial.imageUrl, "/media/shirt.png");
+});
+
 test("translates network failures and sends a requested history scope", async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl;
@@ -318,6 +330,30 @@ test("keeps feedback order while promoting a hat and railing remaining Look item
     assert.deepEqual(feedbackHistoryIds, apiOrder, "feedback/history IDs retain API order");
     assert.deepEqual(railItems.map((item) => item.id), ["shoes", "layer", "bag"].slice(0, count - 3));
   }
+});
+
+test("keys Today feedback by history identity and preserves freshly fetched weather", () => {
+  const liveWeather = { city: "上海", temp: 31, local_date: "2026-08-04" };
+  const reusedRecommendation = { weather: { city: "上海", temp: 22, local_date: "2026-08-03" } };
+  const oldLook = { historyId: "history-old" };
+  const newLook = { historyId: "history-new" };
+  const liked = { [lookFeedbackKey(oldLook)]: true };
+  const ratings = { [lookFeedbackKey(oldLook)]: { rating: 5 } };
+
+  assert.equal(displayWeatherForRecommendation(liveWeather, reusedRecommendation), liveWeather);
+  assert.equal(lookFeedbackKey(newLook), "history-new");
+  assert.equal(liked[lookFeedbackKey(newLook)], undefined);
+  assert.equal(ratings[lookFeedbackKey(newLook)], undefined);
+
+  const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
+  assert.match(today, /applyRecommendation\(recommendation, latestWeather\)/);
+  assert.match(today, /items_worn: look\.items\.map\(\(item: any\) => item\.id\)/);
+});
+
+test("reuses Total Look thumbnails throughout profile history surfaces without fabricated garments", () => {
+  const profile = readFileSync(new URL("../src/components/ScreenProfile.tsx", import.meta.url), "utf8");
+  assert.ok((profile.match(/<TotalLookThumbnails/g) || []).length >= 5);
+  assert.doesNotMatch(profile, /images\.unsplash\.com/);
 });
 
 test("converts Stitch season labels to backend values", () => {

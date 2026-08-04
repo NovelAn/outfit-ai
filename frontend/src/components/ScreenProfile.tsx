@@ -8,63 +8,18 @@ interface ScreenProfileProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
-const IMAGE_FALLBACKS: Record<string, string> = {
-  safe: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDFEJapTzg7M2pWwwrAPXMMImbFzrYpkWckOASqNeyP-hx0RuVCZMR_hOAczTSsxi88EKn-yAhj3v12qBClhH3X2JUBtmX-3No4Q3tHG7M_qgxJU3BpZ9Z7ux-iGduVDAShKM_VfHmG1WLA5irrPRU_a5ZMddYMH0sZvcH_Y93s-JrfJ-IU6IenJUxj29G4AEK2wyyihIgAnNwgsCmoYkHhoyU3q7kvlRPI7CA1as9nTSGeCo8728tJ',
-  fresh: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCHxxA9TF55gxJT7Guqb18Wfu94ote5YoOVoiOJhoRQYcplRQBhb7aUmcHkl5_sbSbZvBGRN5Hmlnk6N7L7A58H7jb5ASvriWyvc9Gp9efDZ8M05YMdF2GQ079oj50pyhGPIRg_EJrSbJJhs3EWLJOz9lfvlXZbQMe2f0ZPiXX_vN5aKJ7OIx97fZSLYjGUTMPxPoGvl7eDUBAEVv_-nGfiOMENaf_v-D13cDyTxvI3ifa8oe0SxF8F',
-  stretch: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB9zc4UnQuZ3eYOMp1SlgcMTx5GDWw5FJK10oRRxpGWCuwq3FiKm2waRVfrM-0uant5SbFTO2YG7DRog2z_J7sR2yWBKiMZftRXOfEeG_8PKjtVe6sP_Mbupoui5qF0lLguKCsQVKAgR-UiqSTBbMFTVB3loUSKfVC_SAoH_eTx4AeOm7Yn7u-KLIfadj16dH8E9rkPP2uXl60Hc51AOCUSyNN2SENNUrp_E0-1_Hk7a4fYzg4cWR1H'
-};
-
-const DEFAULT_RATINGS: Record<string, LookRating> = {
-  'safe-0': {
-    lookId: 'safe-0',
-    lookTitle: 'Look 01 / 稳妥 (日杂经典)',
-    rating: 5,
-    tags: ['🎨 色彩搭配好', '✂️ 廓形很满意'],
-    comment: '精纺衬衫搭配藏青西裤非常干净利落，符合通勤预期！',
-    timestamp: '07-30 09:15',
-    aiAdjustment: '已将【深海蓝与白衬衫】沉淀至核心品味 DNA',
-    lookImage: IMAGE_FALLBACKS.safe
-  },
-  'fresh-0': {
-    lookId: 'fresh-0',
-    lookTitle: 'Look 02 / 新鲜 (松弛休假)',
-    rating: 4,
-    tags: ['👔 过于正式', '👟 鞋子不太搭'],
-    comment: '衬衫希望能更有松弛感，鞋子想换成小白鞋。',
-    timestamp: '07-29 14:30',
-    aiAdjustment: '已调高【松弛休假风】权重 +15%，减少工整正装推荐',
-    lookImage: IMAGE_FALLBACKS.fresh
-  },
-  'stretch-0': {
-    lookId: 'stretch-0',
-    lookTitle: 'Look 03 / 突破 (工装廓形)',
-    rating: 5,
-    tags: ['🧵 面料很高级', '轻熟干练'],
-    comment: '橄榄绿无结构西装很有个性，试着穿去参加设计展！',
-    timestamp: '07-28 18:20',
-    aiAdjustment: '已新增【无结构廓形外套】推荐算法规则',
-    lookImage: IMAGE_FALLBACKS.stretch
-  }
-};
-
 const RATING_TAG_OPTIONS = ['🎨 色彩搭配好', '👔 过于正式', '👟 鞋子不太搭', '✂️ 廓形很满意', '🧵 面料很高级', '轻熟干练', '缺乏特色'];
-
-const getLookImageUrl = (item: LookRating) => {
-  if (item.lookImage) return item.lookImage;
-  const key = item.lookId.split('-')[0];
-  return IMAGE_FALLBACKS[key] || IMAGE_FALLBACKS.safe;
-};
 
 const EMPTY_TAG_PREFERENCES = { pinned: [], hidden: [], aliases: {} };
 
 const uniqueTags = (tags: string[]) => [...new Set(tags.filter(Boolean))];
 
-const TotalLookThumbnails = ({ items, fallback, alt }: { items?: { name: string; img: string }[]; fallback: string; alt: string }) => (
+const TotalLookThumbnails = ({ items, fallback, alt }: { items?: { name: string; img: string }[]; fallback?: string; alt: string }) => (
   items?.length ? (
     <div className="grid w-14 shrink-0 grid-cols-3 gap-0.5 rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] p-0.5">
       {items.map((item, index) => <img key={`${item.name}-${index}`} src={item.img} alt={item.name} className="aspect-square w-full rounded-sm object-cover" />)}
     </div>
-  ) : <img src={fallback} alt={alt} className="w-14 h-18 object-cover rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0" />
+  ) : fallback ? <img src={fallback} alt={alt} className="w-14 h-18 object-cover rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0" /> : <div aria-label={alt} className="w-14 h-18 rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0" />
 );
 
 export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
@@ -437,14 +392,13 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
           <div className="space-y-2.5">
             {ratingList.length > 0 ? (
               ratingList.map((item) => {
-                const imgUrl = getLookImageUrl(item);
                 return (
                   <div
                     key={item.lookId}
                     onClick={() => setEditingRating(item)}
                     className="bg-[#f8f6f0] p-2.5 rounded-lg border border-[#c4c6cd]/40 hover:border-[#9a442a]/50 cursor-pointer transition-all flex gap-2.5 items-start shadow-2xs group"
                   >
-                    <TotalLookThumbnails items={item.lookItems} fallback={imgUrl} alt={item.lookTitle} />
+                    <TotalLookThumbnails items={item.lookItems} fallback={item.lookImage} alt={item.lookTitle} />
 
                     {/* Right Content */}
                     <div className="min-w-0 flex-1 space-y-1">
@@ -607,11 +561,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
 
             <div className="overflow-y-auto space-y-3 my-2 flex-1 pr-1">
               <div className="flex items-center gap-2.5 bg-white p-2 rounded-lg border border-[#c4c6cd]/40">
-                <img
-                  src={getLookImageUrl(editingRating)}
-                  alt={editingRating.lookTitle}
-                  className="w-12 h-16 object-cover rounded border border-[#c4c6cd]/30 shrink-0"
-                />
+                <TotalLookThumbnails items={editingRating.lookItems} fallback={editingRating.lookImage} alt={editingRating.lookTitle} />
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-[#162839] leading-snug">{editingRating.lookTitle}</p>
                   <p className="text-[10px] text-[#74777d] font-mono mt-0.5">{editingRating.timestamp}</p>
@@ -707,17 +657,9 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
               <div className="overflow-y-auto my-2 space-y-2.5 flex-1 pr-1">
                 {ratingList.length > 0 ? (
                   ratingList.map((item) => {
-                    const imgUrl = getLookImageUrl(item);
                     return (
                       <div key={item.lookId} className="bg-[#f5f3ee] p-2.5 rounded-lg border border-[#c4c6cd]/40 flex gap-2.5 items-start">
-                        <img
-                          src={imgUrl}
-                          alt={item.lookTitle}
-                          className="w-13 h-16 object-cover rounded-md border border-[#c4c6cd]/40 bg-white shrink-0"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = IMAGE_FALLBACKS.safe;
-                          }}
-                        />
+                        <TotalLookThumbnails items={item.lookItems} fallback={item.lookImage} alt={item.lookTitle} />
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex justify-between items-start">
                             <h4 className="font-bold text-xs text-[#162839] truncate">{item.lookTitle}</h4>
@@ -765,12 +707,6 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
               <div className="overflow-y-auto my-2 space-y-2.5 flex-1 pr-1">
                 {favoritesList.length > 0 ? (
                   favoritesList.map((item) => {
-                    const items = item.lookItems || [
-                      { name: item.description?.split('+')[0]?.trim() || '主要上装', category: '上装', img: item.imageUrl },
-                      { name: item.description?.split('+')[1]?.trim() || '搭配下装', category: '下装', img: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=300&auto=format&fit=crop&q=80' },
-                      { name: item.description?.split('+')[2]?.trim() || '精选鞋履', category: '鞋履', img: 'https://images.unsplash.com/photo-1549298916-b41d501d3772?w=300&auto=format&fit=crop&q=80' }
-                    ];
-
                     return (
                       <div key={item.id} className="bg-[#f5f3ee] p-2.5 rounded-lg border border-[#c4c6cd]/40">
                         <div className="flex justify-between items-start mb-1.5">
@@ -792,27 +728,8 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
                           </button>
                         </div>
 
-                        <div className="bg-white p-1.5 rounded-md border border-[#c4c6cd]/30 mb-1">
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {items.map((sub, idx) => (
-                              <div key={idx} className="flex flex-col items-center text-center">
-                                <div className="w-full aspect-square overflow-hidden rounded bg-[#fbf9f4] border border-[#c4c6cd]/40 relative">
-                                  <img
-                                    src={sub.img}
-                                    alt={sub.name}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      target.src = 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=300&auto=format&fit=crop&q=80';
-                                    }}
-                                  />
-                                </div>
-                                <p className="text-[9px] text-[#162839] font-medium mt-0.5 line-clamp-1 w-full">
-                                  {sub.name}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
+                        <div className="mb-1 flex bg-white p-1.5 rounded-md border border-[#c4c6cd]/30">
+                          <TotalLookThumbnails items={item.lookItems} fallback={item.imageUrl} alt={item.title} />
                         </div>
 
                         {item.description && (
@@ -845,17 +762,8 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
                       </div>
                       <h4 className="text-xs font-bold text-[#162839] mb-1">{hist.title}</h4>
 
-                      <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-md border border-[#c4c6cd]/30 mb-1">
-                        {hist.items.map((sub, i) => (
-                          <div key={i} className="text-center">
-                            <img
-                              src={sub.img}
-                              alt={sub.name}
-                              className="w-full h-10 object-cover rounded border border-[#c4c6cd]/30 bg-[#fbf9f4]"
-                            />
-                            <span className="text-[8px] text-[#43474c] block truncate mt-0.5">{sub.name}</span>
-                          </div>
-                        ))}
+                      <div className="flex bg-white p-1 rounded-md border border-[#c4c6cd]/30 mb-1">
+                        <TotalLookThumbnails items={hist.lookItems} fallback={hist.imageUrl} alt={hist.title} />
                       </div>
                       <p className="text-[9px] text-[#43474c]">{hist.description}</p>
                       <div className="mt-2 flex flex-wrap gap-1">

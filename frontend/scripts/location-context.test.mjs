@@ -114,7 +114,7 @@ test("loads the daily prepared recommendation without forcing regeneration", asy
       },
     },
     context: { latitude: 31.23, longitude: 121.474, source: "current" },
-    weather: { city: "上海" },
+    weather: { city: "上海", local_date: "2026-08-04" },
   });
 
   assert.deepEqual(result, { safe: {} });
@@ -124,6 +124,7 @@ test("loads the daily prepared recommendation without forcing regeneration", asy
     city: "上海",
     latitude: 31.23,
     longitude: 121.474,
+    local_date: "2026-08-04",
     reference_ids: ["ready"],
     locked_item_ids: [],
   }]);

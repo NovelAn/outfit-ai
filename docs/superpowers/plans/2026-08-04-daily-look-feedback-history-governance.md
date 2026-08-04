@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the existing SQLite schema and React/ FastAPI boundaries. Encode recommendation-set identity in `outfit_history.context_json`, reuse the latest complete same-day set unless `force_refresh=true`, and use the existing feedback endpoint for favorite, rating, and wear actions. Keep long-term records and feedback facts; prune only old temporary history during normal recommendation writes.
 
-**Tech Stack:** Python 3.12, FastAPI, SQLAlchemy, Pydantic, pytest, Ruff; React 19, TypeScript, Vite, Vitest, ESLint; existing SQLite database and MiniMax integrations.
+**Tech Stack:** Python 3.11, FastAPI, SQLAlchemy, Pydantic, pytest, Ruff; React 19, TypeScript, Vite, Tailwind CSS, Node built-in test runner, `tsc --noEmit`; existing SQLite database and MiniMax integrations.
 
 ## Global Constraints
 

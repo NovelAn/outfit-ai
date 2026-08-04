@@ -3,6 +3,7 @@ import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api, confirmFeedback, requireHistoryId } from '../lib/api.mjs';
 import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
 import { compactLookItems } from '../lib/look-layout.mjs';
+import { displayWeatherForRecommendation, lookFeedbackKey } from '../lib/today-state.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -208,11 +209,6 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
 
   // Rating & Swap states per look
   const [ratings, setRatings] = useState<Record<string, LookRating>>({});
-  const [variantsIdx, setVariantsIdx] = useState<Record<string, number>>({
-    safe: 0,
-    fresh: 0,
-    stretch: 0
-  });
   const [swappingTier, setSwappingTier] = useState<string | null>(null);
 
   // Comparison Mode states
@@ -305,18 +301,19 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     };
   };
 
-  const [activeRatingModal, setActiveRatingModal] = useState<{ id: string; title: string; imageUrl?: string } | null>(null);
+  const [activeRatingModal, setActiveRatingModal] = useState<{ id: string; title: string; imageUrl?: string; items: any[] } | null>(null);
   const [currentStars, setCurrentStars] = useState<number>(5);
   const [selectedTags, setSelectedTags] = useState<string[]>(['🎨 色彩搭配好']);
   const [commentText, setCommentText] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const applyRecommendation = (recommendation: any) => {
+  const applyRecommendation = (recommendation: any, currentWeather = weatherRef.current) => {
     setLiveLooks(recommendation);
     localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(recommendation));
-    if (recommendation.weather) {
-      setWeather(recommendation.weather);
-      weatherRef.current = recommendation.weather;
+    const displayWeather = displayWeatherForRecommendation(currentWeather, recommendation);
+    if (displayWeather) {
+      setWeather(displayWeather);
+      weatherRef.current = displayWeather;
     }
     setWeatherIsStale(false);
     (['safe', 'fresh', 'stretch'] as const).forEach((key) => {
@@ -360,7 +357,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
           context,
           weather: latestWeather,
         });
-        if (requestId === recommendationRequestRef.current) applyRecommendation(recommendation);
+        if (requestId === recommendationRequestRef.current) applyRecommendation(recommendation, latestWeather);
       } catch (error) {
         if (requestId === recommendationRequestRef.current && !liveLooks) {
           triggerToast(error instanceof Error ? error.message : '每日推荐加载失败');
@@ -409,7 +406,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
         const favs: FavoriteLook[] = JSON.parse(favsStr);
         const likedMap: Record<string, boolean> = {};
         favs.forEach((f) => {
-          likedMap[f.id] = true;
+          likedMap[f.historyId || f.id] = true;
         });
         setLiked(likedMap);
       }
@@ -461,7 +458,6 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       triggerToast('请先用真实衣橱生成搭配');
       return;
     }
-    const isNowLiked = !liked[id];
     const look = liveLooks[id];
     let historyId: string;
     try {
@@ -470,6 +466,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       triggerToast(error instanceof Error ? error.message : '无法保存此 Look');
       return;
     }
+    const feedbackKey = lookFeedbackKey(look);
+    const isNowLiked = !liked[feedbackKey];
 
     try {
       const favsStr = localStorage.getItem('OUTFIT_AI_FAVORITES');
@@ -484,7 +482,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
           favs = favs.filter((f) => f.id !== (look.historyId || id));
           triggerToast('已从【我的收藏】中移除');
         }
-        setLiked((prev) => ({ ...prev, [id]: isNowLiked }));
+        setLiked((prev) => ({ ...prev, [feedbackKey]: isNowLiked }));
         localStorage.setItem('OUTFIT_AI_FAVORITES', JSON.stringify(favs));
       };
       await confirmFeedback(api.feedback, {
@@ -499,7 +497,12 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     }
   };
 
-  const openRatingModal = (id: string, title: string, imageUrl?: string) => {
+  const openRatingModal = (look: any, title: string, imageUrl?: string) => {
+    const id = lookFeedbackKey(look);
+    if (!id) {
+      triggerToast('尚未生成可反馈的推荐历史');
+      return;
+    }
     const existing = ratings[id];
     if (existing) {
       setCurrentStars(existing.rating);
@@ -510,7 +513,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       setSelectedTags(['🎨 色彩搭配好']);
       setCommentText('');
     }
-    setActiveRatingModal({ id, title, imageUrl });
+    setActiveRatingModal({ id, title, imageUrl, items: look.items || [] });
   };
 
   const handleTagToggle = (tag: string) => {
@@ -549,17 +552,15 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       lookImage: activeRatingModal.imageUrl
     };
 
-    const tier = id.split('-')[0];
-    const look = liveLooks?.[tier];
     let historyId: string;
     try {
-      historyId = requireHistoryId(look?.historyId);
+      historyId = requireHistoryId(id);
     } catch (error) {
       triggerToast(error instanceof Error ? error.message : '无法提交此 Look 的评分');
       return;
     }
     newRating.historyId = historyId;
-    newRating.lookItems = look?.items;
+    newRating.lookItems = activeRatingModal.items;
     const commit = () => {
       const updated = { ...ratings, [id]: newRating };
       setRatings(updated);
@@ -570,7 +571,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     try {
       await confirmFeedback(api.feedback, {
         history_id: historyId,
-        items_worn: look.items.map((item: any) => item.id),
+        items_worn: activeRatingModal.items.map((item: any) => item.id),
         rating: currentStars,
         sentiment: commentText || `${currentStars} 星`,
         compliments: selectedTags,
@@ -692,9 +693,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       <main className="max-w-md mx-auto">
         {/* Safe Category */}
         {(() => {
-          const varIdx = variantsIdx.safe || 0;
           const currentSafe = liveLooks?.safe || EMPTY_LOOKS.safe;
-          const ratingKey = `safe-${varIdx}`;
+          const ratingKey = lookFeedbackKey(currentSafe);
           const currentRating = ratings[ratingKey];
 
           return (
@@ -719,10 +719,10 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 <button
                   onClick={(e) => toggleLike('safe', e)}
                   className="p-1.5 rounded-full hover:bg-black/5 transition-colors bg-white/60 border border-[#c4c6cd]/30"
-                  title={liked['safe'] ? '取消收藏' : '收藏此 Look'}
+                  title={liked[ratingKey] ? '取消收藏' : '收藏此 Look'}
                 >
-                  <span className={`material-symbols-outlined text-lg ${liked['safe'] ? 'text-[#9a442a]' : 'text-[#74777d]'}`}>
-                    {liked['safe'] ? 'favorite' : 'favorite_border'}
+                  <span className={`material-symbols-outlined text-lg ${liked[ratingKey] ? 'text-[#9a442a]' : 'text-[#74777d]'}`}>
+                    {liked[ratingKey] ? 'favorite' : 'favorite_border'}
                   </span>
                 </button>
               </div>
@@ -773,7 +773,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 {/* Look Rating & AI Feedback trigger */}
                 <div className="mt-3 pt-3 border-t border-[#c4c6cd]/30 w-full flex flex-col items-center">
                   <button
-                    onClick={() => openRatingModal(ratingKey, `Look 01 / 稳妥 (${currentSafe.title})`, currentSafe.imageUrl)}
+                    onClick={() => openRatingModal(currentSafe, `Look 01 / 稳妥 (${currentSafe.title})`, currentSafe.imageUrl)}
                     className="text-[11px] font-semibold tracking-wider text-[#162839] border border-[#162839]/40 hover:bg-[#162839] hover:text-white transition-all px-4 py-1.5 rounded-full flex items-center gap-1.5 shadow-xs bg-white/50"
                   >
                     <span className="material-symbols-outlined text-sm text-[#9a442a]">auto_awesome</span>
@@ -787,9 +787,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
 
         {/* Fresh Category */}
         {(() => {
-          const varIdx = variantsIdx.fresh || 0;
           const currentFresh = liveLooks?.fresh || EMPTY_LOOKS.fresh;
-          const ratingKey = `fresh-${varIdx}`;
+          const ratingKey = lookFeedbackKey(currentFresh);
           const currentRating = ratings[ratingKey];
 
           return (
@@ -814,10 +813,10 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 <button
                   onClick={(e) => toggleLike('fresh', e)}
                   className="p-1.5 rounded-full hover:bg-black/5 transition-colors bg-white/60 border border-[#c4c6cd]/30"
-                  title={liked['fresh'] ? '取消收藏' : '收藏此 Look'}
+                  title={liked[ratingKey] ? '取消收藏' : '收藏此 Look'}
                 >
-                  <span className={`material-symbols-outlined text-lg ${liked['fresh'] ? 'text-[#9a442a]' : 'text-[#74777d]'}`}>
-                    {liked['fresh'] ? 'favorite' : 'favorite_border'}
+                  <span className={`material-symbols-outlined text-lg ${liked[ratingKey] ? 'text-[#9a442a]' : 'text-[#74777d]'}`}>
+                    {liked[ratingKey] ? 'favorite' : 'favorite_border'}
                   </span>
                 </button>
               </div>
@@ -868,7 +867,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 {/* Look Rating & AI Feedback trigger */}
                 <div className="mt-3 pt-3 border-t border-[#c4c6cd]/30 w-full flex flex-col items-center">
                   <button
-                    onClick={() => openRatingModal(ratingKey, `Look 02 / 新鲜 (${currentFresh.title})`, currentFresh.imageUrl)}
+                    onClick={() => openRatingModal(currentFresh, `Look 02 / 新鲜 (${currentFresh.title})`, currentFresh.imageUrl)}
                     className="text-[11px] font-semibold tracking-wider text-[#162839] border border-[#162839]/40 hover:bg-[#162839] hover:text-white transition-all px-4 py-1.5 rounded-full flex items-center gap-1.5 shadow-xs bg-white/50"
                   >
                     <span className="material-symbols-outlined text-sm text-[#9a442a]">auto_awesome</span>
@@ -882,9 +881,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
 
         {/* Stretch Category */}
         {(() => {
-          const varIdx = variantsIdx.stretch || 0;
           const currentStretch = liveLooks?.stretch || EMPTY_LOOKS.stretch;
-          const ratingKey = `stretch-${varIdx}`;
+          const ratingKey = lookFeedbackKey(currentStretch);
           const currentRating = ratings[ratingKey];
 
           return (
@@ -909,10 +907,10 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 <button
                   onClick={(e) => toggleLike('stretch', e)}
                   className="p-1.5 rounded-full hover:bg-black/5 transition-colors bg-white/60 border border-[#c4c6cd]/30"
-                  title={liked['stretch'] ? '取消收藏' : '收藏此 Look'}
+                  title={liked[ratingKey] ? '取消收藏' : '收藏此 Look'}
                 >
-                  <span className={`material-symbols-outlined text-lg ${liked['stretch'] ? 'text-[#9a442a]' : 'text-[#74777d]'}`}>
-                    {liked['stretch'] ? 'favorite' : 'favorite_border'}
+                  <span className={`material-symbols-outlined text-lg ${liked[ratingKey] ? 'text-[#9a442a]' : 'text-[#74777d]'}`}>
+                    {liked[ratingKey] ? 'favorite' : 'favorite_border'}
                   </span>
                 </button>
               </div>
@@ -963,7 +961,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 {/* Look Rating & AI Feedback trigger */}
                 <div className="mt-3 pt-3 border-t border-[#c4c6cd]/30 w-full flex flex-col items-center">
                   <button
-                    onClick={() => openRatingModal(ratingKey, `Look 03 / 突破 (${currentStretch.title})`, currentStretch.imageUrl)}
+                    onClick={() => openRatingModal(currentStretch, `Look 03 / 突破 (${currentStretch.title})`, currentStretch.imageUrl)}
                     className="text-[11px] font-semibold tracking-wider text-[#162839] border border-[#162839]/40 hover:bg-[#162839] hover:text-white transition-all px-4 py-1.5 rounded-full flex items-center gap-1.5 shadow-xs bg-white/50"
                   >
                     <span className="material-symbols-outlined text-sm text-[#9a442a]">auto_awesome</span>

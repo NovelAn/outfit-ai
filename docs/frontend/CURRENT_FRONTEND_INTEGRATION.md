@@ -59,7 +59,7 @@ frontend/index.html
 | `deleteReference(id)` | `DELETE /api/style-references/{id}` | 删除参考 Look 和图片 |
 | `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存完整 Profile；标签操作保留既有字段，并提交 `style_keywords`、`recent_style_signals` 和 `style_tag_preferences` |
 | `weather({city,latitude,longitude})` | `GET /api/weather` | 以同一位置上下文读取本地日期、城市、温度、天气和降雨数据 |
-| `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；可传本地 `local_date` 使普通 recommendation set 复用不依赖服务器时区。普通非 prepared 完整组按同一天无条件复用；prepared 组另受位置、温度带和降雨阈值校验，未命中时仍可在不传 `force_refresh` 的情况下新生成 |
+| `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；今日页会把已获取天气的本地 `local_date` 传入，使普通 recommendation set 复用不依赖服务器时区。普通非 prepared 完整组按同一天无条件复用；prepared 组另受位置、温度带和降雨阈值校验，未命中时仍可在不传 `force_refresh` 的情况下新生成 |
 | `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈；`action` 可省略以仅提交 `rating: 1..5`。已有 Look 的持久反馈必须含服务端 `history_id`，成功后才更新 UI |
 | `history({scope,limit} = {})` | `GET /api/history?scope=recent|archive&limit=` | truthy 的 `limit` 会转发，后端接受范围为 1–100；省略或传 `0` 时不带该参数，使用后端默认 `20`。`recent` 读取临时记录，`archive` 读取收藏、穿过或高评分存档；每项含 `scope`、`rating` |
 | `generateInspiration(data)` | `POST /api/inspiration/generate` | 一次返回三张独立灵感图 |
