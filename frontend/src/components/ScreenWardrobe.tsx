@@ -508,7 +508,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
 
       {/* Item Detail Modal */}
       {selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-[#fbf9f4] p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto rounded-lg border border-[#162839] relative shadow-2xl">
             <div className="w-full aspect-square bg-white p-4 mb-4 flex items-center justify-center rounded">
               <img src={selectedItem.imageUrl} alt={selectedItem.name} className="max-h-full object-contain" />
@@ -542,7 +542,6 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
               <form onSubmit={handleSaveItem} className="space-y-3 text-xs">
                 <div className="flex items-center justify-between">
                   <h3 className="font-serif-display text-xl text-[#162839] font-bold">编辑信息</h3>
-                  <span className="text-[#43474c]">{selectedItem.brand || '未填写品牌'}</span>
                 </div>
                 <label className="block text-[#43474c] font-semibold">
                   单品名称
@@ -630,8 +629,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
             ) : (
               <>
                 <span className="text-xs font-mono text-[#9a442a] uppercase font-semibold">{selectedItem.category}</span>
-                <h3 className="font-serif-display text-xl text-[#162839] font-bold mt-1">{selectedItem.brand || '未填写品牌'}</h3>
-                <p className="text-sm text-[#43474c] mt-1 mb-5">{selectedItem.name}</p>
+                <h3 className="font-serif-display text-xl text-[#162839] font-bold mt-1">{selectedItem.name}</h3>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -663,7 +661,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
 
       {/* Single Add Item Modal */}
       {isAdding && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <form onSubmit={handleAddItem} className="bg-[#fbf9f4] p-6 max-w-sm w-full rounded-lg border border-[#162839] relative shadow-2xl">
             <h3 className="font-serif-display text-lg text-[#162839] font-bold mb-4">手动录入新单品</h3>
             <div className="space-y-4 text-xs">

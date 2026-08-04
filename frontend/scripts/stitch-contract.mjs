@@ -46,6 +46,8 @@ assert.match(wardrobe, /保存修改/, "wardrobe edit modal must expose a save a
 assert.match(wardrobe, /确认删除/, "wardrobe delete must require in-modal confirmation");
 assert.match(wardrobe, /api\.updateWardrobe/, "wardrobe edit must call the PATCH API");
 assert.match(wardrobe, /api\.deleteWardrobe/, "wardrobe delete must call the DELETE API");
+assert.match(wardrobe, /fixed inset-0 z-\[60\]/, "wardrobe modal must sit above the fixed bottom navigation");
+assert.doesNotMatch(wardrobe, /selectedItem\.brand \|\| '未填写品牌'/, "wardrobe detail edit must not require a brand field");
 assert.doesNotMatch(today, /TOKYO \/ 24°C/);
 assert.match(today, /resolveLocationContext/);
 assert.match(today, /precipitation_probability_max/);
