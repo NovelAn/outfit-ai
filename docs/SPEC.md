@@ -78,8 +78,8 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 
 ### 4.2 文本造型师调用契约（services/stylist.py）
 - 模型：MiniMax-M3；通过 OpenAI SDK 调用 `/v1/chat/completions`。
-- 结构化输出：**tool use** 强制 schema（`tool_choice` 强制调 `propose_looks`），解析 `tool_calls[0].function.arguments` → Pydantic。
-- tool schema：`propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；prompt 要求恰好三档各一。
+- 结构化输出：**tool use** 强制 schema（`tool_choice` 强制调 `propose_looks` 或单卡刷新时的 `propose_one_look`），解析 `tool_calls[0].function.arguments` → Pydantic。
+- tool schema：普通请求使用 `propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；单卡刷新使用 `propose_one_look(look:{tier,item_ids,reason,weather_fit,occasion_fit})`，且 tier 必须与请求一致。
 - 图像分工：真实衣物和参考 Look 先由 MiniMax VLM 提取结构化属性；M3 只读取这些文本属性，不重复消耗识图额度。
 - system prompt：造型师人格 + 硬规则（只用给定单品、三档各一、不重复近期 Look、locked 必含）。
 - 失败重试：Stage 3 不过 → 错误回灌再调一次；两次失败抛错给前端。
@@ -121,7 +121,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 （**已删 `base_score`**——规则评分产物，新架构无此数）
 索引：`(user_id,date)`、`(user_id,action)`
 
-`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`prepared`、`recommendation_set_id`、`recommendation_set_created_at`、`weather_fit`、`occasion_fit`。一次成功生成的 Safe/Fresh/Stretch 三档共享一个 `recommendation_set_id`；同一天的普通请求只复用最新**完整**三档组，旧行没有 set id 时才按每档最新记录兼容回退。`force_refresh=true` 必定另建一组；任何不完整或生成失败的组均不可复用。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作。应用启动不因本功能迁移、改写或清理既有用户数据；运行期保留清理只在成功写入新推荐后执行，且仅作用于 §6.6 定义的临时记录。
+`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`prepared`、`recommendation_set_id`、`recommendation_set_created_at`、`weather_fit`、`occasion_fit`。一次成功生成的 Safe/Fresh/Stretch 三档共享一个 `recommendation_set_id`；同一天的普通请求只复用最新**完整**三档组，旧行没有 set id 时才按每档最新记录兼容回退。完整 `force_refresh=true` 请求另建一组；带 `refresh_tier=safe|fresh|stretch` 的单卡刷新只调用 M3 生成目标档，并在当前完整组中追加目标档最新 history，另外两档原记录与 history_id 不变。任何不完整或生成失败的组均不可复用，单卡失败不写入新 history。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作。应用启动不因本功能迁移、改写或清理既有用户数据；运行期保留清理只在成功写入新推荐后执行，且仅作用于 §6.6 定义的临时记录。
 
 ### 5.5 `feedback`
 `id`(PK) · `user_id` · `date` · `items_worn_json` · `occasion`? · `occasion_type`? · `sentiment`? · `compliments_json` · `didnt_work`? · `learnings`?
@@ -159,7 +159,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
 | GET | `/api/weather?city=` | 输入经纬度先四舍五入至三位再用于 Open-Meteo、Nominatim、缓存和下游上下文；反向地理编码在市辖区/县场景优先显示上级直辖市名称，手动城市保留用户输入；天气内存缓存 30min，反查城市缓存 24h，反查失败不影响天气 | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
-| POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,local_date?,locked_item_ids?[],force_refresh?:false}`；每套 Look 为 3–6 件，含 top/bottom/shoes，叠穿和配饰按需加入、不凑数；先复用本地当天最新完整普通三档组，再按 prepared 的坐标、温度带和降雨阈值判断复用，否则 guardrail→stylist→validator | 200 `{weather,safe,fresh,stretch}` |
+| POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,local_date?,locked_item_ids?[],force_refresh?:false,refresh_tier?:safe|fresh|stretch}`；每套 Look 为 3–6 件，含 top/bottom/shoes，叠穿和配饰按需加入、不凑数；普通请求先复用本地当天最新完整普通三档组，再按 prepared 的坐标、温度带和降雨阈值判断复用，否则 guardrail→stylist→validator；`force_refresh=true` 且带 `refresh_tier` 时只生成目标档并复用另外两档 | 200 `{weather,safe,fresh,stretch}` |
 
 `recommend` 卡片结构（**无 base_score**）：
 ```json
@@ -168,7 +168,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
  "pick_mode":"safe|fresh|stretch"}
 ```
 
-每次新生成推荐会把粗略经纬度、返回城市、时区和更新时间写入 Profile 的 `last_location`，并为三档写入同一个 recommendation set id。普通请求会在天气、坐标和 MiniMax Key 校验前复用当地日期最新完整的非 prepared 三档组；`local_date` 由请求提供时优先使用，否则用已保存定位的时区计算本地日期。prepared 组不会遮蔽较早的普通完整组；因此页面导航或重复打开不会重复生成。`force_refresh=true` 和预生成调用都明确跳过这一路径。prepared 三档仍须满足：距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25`、当天降水概率未跨越 50%；命中后按卡片结构重建返回，不调用 MiniMax。预生成调用使用 `history_action="prepared"`。
+每次新生成推荐会把粗略经纬度、返回城市、时区和更新时间写入 Profile 的 `last_location`，完整三档会写入同一个 recommendation set id。普通请求会在天气、坐标和 MiniMax Key 校验前复用当地日期最新完整的非 prepared 三档组；`local_date` 由请求提供时优先使用，否则用已保存定位的时区计算本地日期。prepared 组不会遮蔽较早的普通完整组；因此页面导航或重复打开不会重复生成。完整 `force_refresh=true` 和预生成调用都明确跳过这一路径；单卡刷新同样跳过复用检查，但只调用一次目标档 M3，并保留另外两档。prepared 三档仍须满足：距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25`、当天降水概率未跨越 50%；命中后按卡片结构重建返回，不调用 MiniMax。预生成调用使用 `history_action="prepared"`。
 
 MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因此未配置 Key 但存在有效 prepared 时仍返回 200，未命中 prepared 时返回 503。
 
@@ -206,7 +206,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 prompt 使用短字段模板，`category` 仅允许 `top/bottom/outerwear/dress/shoes/accessory`，`versatility` 要求为 0–1 数字，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；响应兼容纯 JSON、单个或多个 Markdown JSON 代码块，并取最后一个有效 JSON。衣物模型只把 VLM 常见语义值 `高/high`、`中/medium`、`低/low` 分别归一为 `0.85`、`0.5`、`0.25`，未知字符串仍拒绝；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测
-- `services/stylist.py`：`propose(...) -> list[Look]`（M3 文本属性 + 参考分析，tool use）
+- `services/stylist.py`：`propose(...) -> list[Look]`；`propose_tier(...) -> Look`（M3 文本属性 + 参考分析，tool use；单卡刷新只调用目标档）
 - `services/profile_state.py`：profile JSON 封套的兼容解码/编码，以及 pin、hide、alias 后的有效 Style DNA 关键词；有效关键词最多 7 个，alias 归一化后应用 hidden，冲突时 pinned 优先保留。
 - `services/validator.py`（**新**）：`validate_looks(looks, candidate_ids)->(ok, error)`（item_id 真实、3–6 件、无重复、含 top+bottom+shoes）。来源：ai-closet 校验链，port 为内部自检 + `tests/test_validation.py`
 - `services/recommend.py`（**新**，编排）：当日完整 recommendation set 复用、prepared 复用/卡片重建或 guardrail→stylist→validator(重试)→返回三卡；prepared 复用阈值为 20km、三个温度带和 50% 降雨概率
@@ -229,7 +229,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - 数据层：五张 SQLite 表和索引已实现，由 `init_db()` 初始化。
 - 真实衣物：上传、rembg、VLM、轮询、确认、列表、用户可编辑属性和删除已实现；删除会清理数据库记录、原图与 `.nobg` 图片。当前 schema 不新增厚薄度列，前端把 `轻薄`、`适中`、`厚实` 作为受控标签保存。
 - 长期灵感：参考 Look 上传、VLM 分析、M3 合并 Style DNA、列表、重试、删除已实现。
-- 推荐：天气、候选硬护栏、M3 Safe/Fresh/Stretch、item_id 校验、历史记录已实现；衣橱识图返回的中文季节标签会在候选过滤时归一化为内部英文季节值。
+- 推荐：天气、候选硬护栏、M3 Safe/Fresh/Stretch、单卡 `refresh_tier`、item_id 校验、历史记录已实现；衣橱识图返回的中文季节标签会在候选过滤时归一化为内部英文季节值。
 - 独立灵感：M3 提示词与 `image-01` 三图生成已实现。
 - 反馈：收藏/跳过/穿着/评分、历史与 taste memo 批量刷新已实现。
 - 前端：Stitch React 五页和统一 API 接线已实现，详见当前前端事实源。

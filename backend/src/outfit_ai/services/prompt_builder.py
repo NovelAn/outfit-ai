@@ -27,11 +27,17 @@ def style_dna_messages(samples: list[str], text: str) -> list[dict[str, Any]]:
     ]
 
 
-def stylist_system(locked_ids: set[str]) -> str:
+def stylist_system(locked_ids: set[str], tier: str | None = None) -> str:
     locked = ", ".join(sorted(locked_ids)) or "无"
+    target = f"只生成 {tier} 这一档，不要生成其它档位；" if tier else ""
+    output = (
+        "必须给出 safe、fresh、stretch 各一套；"
+        if not tier
+        else f"必须给出 tier 为 {tier} 的一套；"
+    )
     return (
-        "你是一位克制、懂个人风格的造型师。只能使用候选 item_id，必须给出 safe、fresh、"
-        "stretch 各一套；每套 3–6 件，必须包含 top、bottom、shoes。"
+        "你是一位克制、懂个人风格的造型师。只能使用候选 item_id；"
+        f"{target}{output}每套 3–6 件，必须包含 top、bottom、shoes。"
         "天气需要时可加叠穿，配饰可选；不要为了凑数量加入无作用的单品。"
         f"锁定单品必须出现：{locked}。"
     )

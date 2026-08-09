@@ -144,3 +144,20 @@ test("forces regeneration only for an explicit swap", async () => {
 
   assert.equal(calls[0].force_refresh, true);
 });
+
+test("sends only the selected tier for an explicit swap", async () => {
+  const calls = [];
+  await location.loadDailyRecommendation({
+    api: {
+      references: async () => [],
+      recommend: async (payload) => calls.push(payload) || {},
+    },
+    context: { city: "上海", source: "manual" },
+    weather: { city: "上海" },
+    forceRefresh: true,
+    refreshTier: "fresh",
+  });
+
+  assert.equal(calls[0].force_refresh, true);
+  assert.equal(calls[0].refresh_tier, "fresh");
+});

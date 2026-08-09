@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import * as profileApi from "../src/lib/api.mjs";
-import { compactLookItems } from "../src/lib/look-layout.mjs";
+import { orderLookItems } from "../src/lib/look-layout.mjs";
 import { displayWeatherForRecommendation, lookFeedbackKey } from "../src/lib/today-state.mjs";
 import {
   api,
@@ -299,37 +299,33 @@ test("refuses persistent Look feedback without a server history identity", () =>
   assert.match(profile, /historyId = requireHistoryId/);
 });
 
-test("uses a compact two-column Look collage", () => {
+test("uses a vertical ordered Look flow", () => {
   const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
-  assert.match(today, /compact-look-collage/);
-  assert.match(today, /grid-cols-2/);
-  assert.match(today, /look-item-rail/);
-  assert.doesNotMatch(today, /vertical-stack-img/);
+  assert.match(today, /look-flow/);
+  assert.match(today, /refreshTier: tier/);
+  assert.doesNotMatch(today, /compact-look-collage/);
+  assert.doesNotMatch(today, /look-item-rail/);
 });
 
-test("keeps feedback order while promoting a hat and railing remaining Look items", () => {
+test("orders visual items from head to foot while preserving API feedback order", () => {
   const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
   assert.match(today, /items_worn: look\.items\.map\(\(item: any\) => item\.id\)/);
 
-  for (const count of [4, 5, 6]) {
-    const items = [
-      { id: "top", category: "上装", name: "T恤" },
-      { id: "bottom", category: "下装", name: "长裤" },
-      { id: "shoes", category: "鞋履", name: "跑鞋" },
-      { id: "hat", category: "配饰", name: "渔夫帽" },
-      { id: "layer", category: "上装", name: "工装背心" },
-      { id: "bag", category: "配饰", name: "托特包" },
-    ].slice(0, count);
-    const apiOrder = items.map((item) => item.id);
-
-    const { primaryItems, railItems } = compactLookItems(items);
-
-    assert.equal(primaryItems[0].id, "hat");
-    const feedbackHistoryIds = items.map((item) => item.id);
-    assert.deepEqual(items.map((item) => item.id), apiOrder);
-    assert.deepEqual(feedbackHistoryIds, apiOrder, "feedback/history IDs retain API order");
-    assert.deepEqual(railItems.map((item) => item.id), ["shoes", "layer", "bag"].slice(0, count - 3));
-  }
+  const items = [
+    { id: "bag", category: "配饰", name: "托特包" },
+    { id: "shoes", category: "鞋履", name: "跑鞋" },
+    { id: "top", category: "上装", name: "T恤" },
+    { id: "scarf", category: "配饰", name: "羊绒围巾" },
+    { id: "hat", category: "配饰", name: "渔夫帽" },
+    { id: "coat", category: "上装", name: "工装外套" },
+    { id: "bottom", category: "下装", name: "长裤" },
+  ];
+  assert.deepEqual(orderLookItems(items).map((item) => item.id), [
+    "hat", "scarf", "coat", "top", "bottom", "shoes", "bag",
+  ]);
+  assert.deepEqual(items.map((item) => item.id), [
+    "bag", "shoes", "top", "scarf", "hat", "coat", "bottom",
+  ]);
 });
 
 test("keys Today feedback by history identity and preserves freshly fetched weather", () => {

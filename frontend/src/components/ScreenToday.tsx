@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api, confirmFeedback, requireHistoryId } from '../lib/api.mjs';
 import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
-import { compactLookItems } from '../lib/look-layout.mjs';
+import { orderLookItems } from '../lib/look-layout.mjs';
 import { displayWeatherForRecommendation, lookFeedbackKey } from '../lib/today-state.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
@@ -160,30 +160,22 @@ const EMPTY_LOOKS: Record<'safe' | 'fresh' | 'stretch', any> = {
 };
 
 const LookItems = ({ items = [], onSelect }: { items: any[]; onSelect: (item: any) => void }) => {
-  const { primaryItems, railItems } = compactLookItems(items);
+  const visualItems = orderLookItems(items);
 
-  return <>
-    <div className="compact-look-collage grid w-full max-w-[290px] grid-cols-2 auto-rows-[92px] gap-2">
-      {primaryItems.map((item, index) => (
+  return <div className="look-flow flex min-h-[470px] w-full max-w-[300px] flex-col items-center gap-2">
+    {visualItems.map((item, index) => (
+      <React.Fragment key={item.id || `${item.name}-${index}`}>
         <button
-          key={item.id || `${item.name}-${index}`}
           onClick={() => onSelect(item)}
-          className={`${index === 0 ? 'row-span-2' : ''} overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-2 text-left transition-colors hover:border-[#9a442a]/50`}
+          className="flex h-[132px] w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#c4c6cd]/50 bg-white p-3 text-left shadow-[0_4px_12px_rgba(22,40,57,0.05)] transition-colors hover:border-[#9a442a]/50"
         >
           <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
           <span className="sr-only">{item.name}</span>
         </button>
-      ))}
-    </div>
-    {railItems.length > 0 && <div className="look-item-rail flex w-full max-w-[290px] gap-2 overflow-x-auto pb-1 pt-2">
-      {railItems.map((item, index) => (
-        <button key={item.id || `${item.name}-${index + 3}`} onClick={() => onSelect(item)} className="size-16 shrink-0 overflow-hidden rounded-lg border border-[#c4c6cd]/40 bg-white p-1.5 hover:border-[#9a442a]/50 transition-colors">
-          <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
-          <span className="sr-only">{item.name}</span>
-        </button>
-      ))}
-    </div>}
-  </>;
+        {index < visualItems.length - 1 && <span aria-hidden="true" className="h-3 w-px bg-[#9a442a]/35" />}
+      </React.Fragment>
+    ))}
+  </div>;
 };
 
 export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
@@ -307,17 +299,25 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [commentText, setCommentText] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const applyRecommendation = (recommendation: any, currentWeather = weatherRef.current) => {
-    setLiveLooks(recommendation);
-    localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(recommendation));
+  const applyRecommendation = (
+    recommendation: any,
+    currentWeather = weatherRef.current,
+    targetTier?: 'safe' | 'fresh' | 'stretch',
+  ) => {
+    const nextRecommendation = targetTier && liveLooks
+      ? { ...liveLooks, [targetTier]: recommendation[targetTier] }
+      : recommendation;
+    setLiveLooks(nextRecommendation);
+    localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(nextRecommendation));
     const displayWeather = displayWeatherForRecommendation(currentWeather, recommendation);
     if (displayWeather) {
       setWeather(displayWeather);
       weatherRef.current = displayWeather;
     }
     setWeatherIsStale(false);
-    (['safe', 'fresh', 'stretch'] as const).forEach((key) => {
-      const look = recommendation[key];
+    const keys = targetTier ? [targetTier] : (['safe', 'fresh', 'stretch'] as const);
+    keys.forEach((key) => {
+      const look = nextRecommendation[key];
       LOOK_DETAILS[key] = {
         id: key,
         title: look.title,
@@ -388,9 +388,10 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
         context: currentContext,
         weather: weatherRef.current || weather,
         forceRefresh: true,
+        refreshTier: tier,
       });
-      applyRecommendation(recommendation);
-      triggerToast('✨ AI 已根据真实衣橱与 Style DNA 生成三套新搭配！');
+      applyRecommendation(recommendation, undefined, tier);
+      triggerToast(`✨ AI 已更新 ${tier === 'safe' ? '稳妥' : tier === 'fresh' ? '新鲜' : '突破'} Look！`);
     } catch (error) {
       triggerToast(error instanceof Error ? error.message : '推荐生成失败');
     } finally {

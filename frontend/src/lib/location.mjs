@@ -96,6 +96,7 @@ export async function loadDailyRecommendation({
   context,
   weather,
   forceRefresh = false,
+  refreshTier = null,
 }) {
   const references = await api.references().catch(() => []);
   return api.recommend({
@@ -106,6 +107,7 @@ export async function loadDailyRecommendation({
     longitude: context.longitude,
     ...(weather?.local_date ? { local_date: weather.local_date } : {}),
     ...(forceRefresh ? { force_refresh: true } : {}),
+    ...(refreshTier ? { refresh_tier: refreshTier } : {}),
     reference_ids: references
       .filter((item) => item.status === "ready")
       .slice(0, 6)

@@ -124,6 +124,14 @@ def test_haversine_shanghai_to_suzhou_exceeds_prepared_reuse_radius() -> None:
     assert recommend_service._haversine_km(31.230, 121.474, 31.299, 120.585) > 20
 
 
+def test_recommend_request_limits_refresh_tier() -> None:
+    assert RecommendRequest(refresh_tier="stretch", force_refresh=True).refresh_tier == "stretch"
+    with pytest.raises(ValueError):
+        RecommendRequest(refresh_tier="unknown")
+    with pytest.raises(ValueError, match="force_refresh"):
+        RecommendRequest(refresh_tier="safe")
+
+
 def test_normal_request_reuses_latest_complete_same_day_set_for_manual_city(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
@@ -183,6 +191,95 @@ def test_force_refresh_creates_a_new_recommendation_set(monkeypatch) -> None:
 
         assert refreshed_set_ids.isdisjoint({"old-set"})
         assert len(refreshed_set_ids) == 1
+
+
+def test_refresh_tier_generates_only_target_and_keeps_other_history(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    weather = SimpleNamespace(
+        temp=20,
+        condition="晴",
+        city="上海",
+        local_date=date.today(),
+        timezone="Asia/Shanghai",
+        model_dump=lambda: {
+            "temp": 20,
+            "condition": "晴",
+            "city": "上海",
+            "local_date": date.today(),
+            "timezone": "Asia/Shanghai",
+        },
+    )
+    target = ProposedLook(
+        tier="safe",
+        item_ids=["top-2", "bottom-2", "shoes-2"],
+        reason="换一套更利落的安全牌",
+        weather_fit="适合",
+        occasion_fit="日常",
+    )
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: weather)
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: pytest.fail("single-tier refresh must not generate all looks"),
+    )
+    monkeypatch.setattr(recommend_service, "propose_tier", lambda *args, **kwargs: target)
+
+    with Session(engine) as db:
+        db.add_all(
+            _recommendation_items()
+            + _same_day_set_rows("current-set", created_at="2026-08-09T06:30:00+08:00")
+        )
+        db.commit()
+        before = {
+            row.pick_mode: row.id
+            for row in db.scalars(select(OutfitHistory)).all()
+            if row.pick_mode in {"safe", "fresh", "stretch"}
+        }
+
+        result = recommend_service.recommend(
+            db,
+            RecommendRequest(
+                city="上海", local_date=date.today(), force_refresh=True, refresh_tier="safe"
+            ),
+        )
+
+        assert result["fresh"]["history_id"] == before["fresh"]
+        assert result["stretch"]["history_id"] == before["stretch"]
+        assert result["safe"]["history_id"] != before["safe"]
+        assert result["safe"]["items"][0]["id"] == "top-2"
+        assert len(list(db.scalars(select(OutfitHistory)))) == 4
+
+
+def test_refresh_tier_failure_does_not_write_history(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service,
+        "propose_tier",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("MiniMax unavailable")),
+    )
+
+    with Session(engine) as db:
+        db.add_all(
+            _recommendation_items()
+            + _same_day_set_rows("current-set", created_at="2026-08-09T06:30:00+08:00")
+        )
+        db.commit()
+        count_before = len(list(db.scalars(select(OutfitHistory))))
+
+        with pytest.raises(RuntimeError, match="MiniMax unavailable"):
+            recommend_service.recommend(
+                db,
+                RecommendRequest(city="上海", force_refresh=True, refresh_tier="fresh"),
+            )
+
+        assert len(list(db.scalars(select(OutfitHistory)))) == count_before
 
 
 def test_same_day_reuse_skips_latest_prepared_group_before_weather(monkeypatch) -> None:

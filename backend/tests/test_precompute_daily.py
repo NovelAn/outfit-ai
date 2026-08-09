@@ -56,8 +56,9 @@ def test_precompute_uses_stored_location_and_prepares_looks(monkeypatch, capsys)
             "latitude": 31.23,
             "longitude": 121.474,
             "local_date": None,
-            "locked_item_ids": [],
+        "locked_item_ids": [],
         "force_refresh": True,
+        "refresh_tier": None,
     }
     assert "2026-07-31 上海" in capsys.readouterr().out
 

@@ -156,6 +156,13 @@ class RecommendRequest(BaseModel):
     local_date: date | None = None
     locked_item_ids: list[str] = Field(default_factory=list)
     force_refresh: bool = False
+    refresh_tier: Literal["safe", "fresh", "stretch"] | None = None
+
+    @model_validator(mode="after")
+    def require_force_refresh_for_tier(self):
+        if self.refresh_tier and not self.force_refresh:
+            raise ValueError("refresh_tier 只能与 force_refresh=true 一起使用")
+        return self
 
 
 class InspirationRequest(BaseModel):

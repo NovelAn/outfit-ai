@@ -24,8 +24,8 @@ from .history import (
 from .llm import require_api_key
 from .profile_state import decode_profile_state, save_last_location
 from .style_references import get_reference_analyses
-from .stylist import propose
-from .validator import validate_looks
+from .stylist import propose, propose_tier
+from .validator import validate_look, validate_looks
 from .weather import get_weather
 
 
@@ -208,6 +208,12 @@ def recommend(
         )
         if reused is not None:
             return reused
+    local_date = _request_local_date(profile, request)
+    current_set = (
+        get_latest_recommendation_set(db, settings.user_id, local_date, prepared=False)
+        if request.force_refresh and request.refresh_tier
+        else None
+    )
     latitude, longitude = _effective_coordinates(profile, request)
     city = request.city or (profile.city if profile else None)
     weather = get_weather(
@@ -252,6 +258,77 @@ def recommend(
     recent_looks = [json.loads(outfit.item_ids_json) for outfit in recent]
     references = get_reference_analyses(db, request.reference_ids)
     scene = request.scene or request.occasion
+
+    if request.force_refresh and request.refresh_tier and current_set:
+        base_items = {item.id: item for item in items}
+        base_cards = {history.pick_mode: _card(history, base_items) for history in current_set}
+        if all(base_cards.get(tier) is not None for tier in ("safe", "fresh", "stretch")):
+            error = ""
+            for _ in range(2):
+                target = propose_tier(
+                    candidates,
+                    profile,
+                    weather.model_dump(),
+                    request.occasion,
+                    request.mood,
+                    recent_looks,
+                    set(request.locked_item_ids),
+                    request.refresh_tier,
+                    error,
+                    references=references,
+                    style_note=request.style_note,
+                    season=request.season or _season(weather.temp),
+                    scene=scene,
+                )
+                if target.tier != request.refresh_tier:
+                    ok, error = False, f"返回 tier 必须为 {request.refresh_tier}"
+                else:
+                    ok, error = validate_look(
+                        target, categories, locked_ids=set(request.locked_item_ids)
+                    )
+                if ok:
+                    break
+            else:
+                raise ValueError(f"造型师结果校验失败：{error}")
+            existing_set_id = json.loads(current_set[0].context_json or "{}").get(
+                "recommendation_set_id"
+            )
+            if not isinstance(existing_set_id, str) or not existing_set_id:
+                raise ValueError("当前推荐缺少 recommendation_set_id，无法单卡刷新")
+            context_base = {
+                "latitude": round(latitude, 3) if latitude is not None else None,
+                "longitude": round(longitude, 3) if longitude is not None else None,
+                "weather": _weather_context(weather),
+                "local_date": getattr(weather, "local_date", date.today()).isoformat(),
+                "prepared_at": datetime.now().astimezone().isoformat(),
+                "prepared": False,
+                "recommendation_set_created_at": datetime.now().astimezone().isoformat(),
+            }
+            history = record_outfit(
+                db,
+                settings.user_id,
+                target,
+                occasion=scene,
+                mood=request.mood,
+                weather_summary=weather.condition,
+                temp=weather.temp,
+                action=history_action,
+                context={
+                    **context_base,
+                    "weather_fit": target.weather_fit,
+                    "occasion_fit": target.occasion_fit,
+                },
+                recommendation_set_id=existing_set_id,
+            )
+            history.date = getattr(weather, "local_date", local_date)
+            result = {"weather": weather.model_dump(), **base_cards}
+            result[target.tier] = _card(history, base_items)
+            prune_temporary_history(
+                db, settings.user_id, local_today=getattr(weather, "local_date", local_date)
+            )
+            db.commit()
+            return result
+
     error = ""
     for _ in range(2):
         looks = propose(

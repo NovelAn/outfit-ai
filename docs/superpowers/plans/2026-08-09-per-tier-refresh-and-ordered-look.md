@@ -33,7 +33,7 @@
 
 - [ ] **Step 1: Write the failing backend tests**
 
-  Add tests that instantiate `RecommendRequest(refresh_tier="safe")`, stub `propose` to fail if called, stub `propose_tier` to return one target look, and assert the response keeps the old `fresh`/`stretch` history IDs while only `safe` gets a new history row. Add a second test where `propose_tier` raises and assert no new history row is committed. Add a schema test rejecting `refresh_tier="unknown"`.
+  Add tests that instantiate `RecommendRequest(refresh_tier="safe", force_refresh=True)`, stub `propose` to fail if called, stub `propose_tier` to return one target look, and assert the response keeps the old `fresh`/`stretch` history IDs while only `safe` gets a new history row. Add a second test where `propose_tier` raises and assert no new history row is committed. Add schema tests rejecting `refresh_tier="unknown"` and `refresh_tier` without `force_refresh`.
 
 - [ ] **Step 2: Write the failing frontend tests**
 
@@ -151,4 +151,3 @@
 - [ ] **Step 3: Run final checks and report exact status**
 
   Run backend tests/Ruff and frontend tests/lint/build again after any runtime fix. Report the branch, commits, checks, and any unverified external MiniMax behavior; do not push or merge.
-
