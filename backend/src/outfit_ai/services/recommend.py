@@ -209,11 +209,13 @@ def recommend(
         if reused is not None:
             return reused
     local_date = _request_local_date(profile, request)
-    current_set = (
-        get_latest_recommendation_set(db, settings.user_id, local_date, prepared=False)
-        if request.force_refresh and request.refresh_tier
-        else None
-    )
+    current_set = None
+    if request.force_refresh and request.refresh_tier:
+        current_set = get_latest_recommendation_set(
+            db, settings.user_id, local_date, prepared=False
+        ) or get_latest_recommendation_set(db, settings.user_id, local_date, prepared=True)
+        if current_set is None:
+            raise ValueError("当前推荐组不可用，请先重新加载今日推荐")
     latitude, longitude = _effective_coordinates(profile, request)
     city = request.city or (profile.city if profile else None)
     weather = get_weather(

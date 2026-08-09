@@ -18,7 +18,7 @@
 
 ### 单卡刷新
 
-`POST /api/recommend` 增加可选 `refresh_tier: safe|fresh|stretch`。普通请求保持原有同日复用逻辑；带 `force_refresh=true` 与 `refresh_tier` 时，仅为目标 tier 调用 M3，另外两档从当前有效 recommendation set 复用。响应仍返回三档完整卡片，便于前端保持现有数据模型。
+`POST /api/recommend` 增加可选 `refresh_tier: safe|fresh|stretch`。普通请求保持原有同日复用逻辑；带 `force_refresh=true` 与 `refresh_tier` 时，仅为目标 tier 调用 M3，另外两档从当前有效 recommendation set 复用；没有当前完整组时明确报错并要求重新加载，不退化为三档生成。响应仍返回三档完整卡片，便于前端保持现有数据模型。
 
 后端只为目标 tier 写入新的 history 记录，并保留其他两档的 history；失败不写入新记录、不清理历史、不改变缓存。前端只替换目标 tier，目标卡片显示独立 loading，其他卡片保持可交互。
 

@@ -69,7 +69,7 @@
 
 - [ ] **Step 3: Add the target-tier branch before full generation**
 
-  In `recommend()`, after profile/items and local-date resolution, find the current ordinary same-day complete set. When `request.force_refresh and request.refresh_tier` and a complete set exists, fetch current weather, build candidates, call `propose_tier` with one retry on validation correction, record only the target look using the existing recommendation-set ID so the latest row for that tier replaces the visible card, and return target card plus `_card()` values for the other two. Do not call `propose`; on any exception leave the session uncommitted and propagate the existing router error. If no current complete set exists, fall through to the existing three-look force-refresh path.
+  In `recommend()`, after profile/items and local-date resolution, find the current same-day complete ordinary set (or prepared set fallback). When `request.force_refresh and request.refresh_tier` and a complete set exists, fetch current weather, build candidates, call `propose_tier` with one retry on validation correction, record only the target look using the existing recommendation-set ID so the latest row for that tier replaces the visible card, and return target card plus `_card()` values for the other two. Do not call `propose`; on any exception leave the session uncommitted and propagate the existing router error. If no complete set exists, return an explicit reload error rather than silently regenerating all three.
 
 - [ ] **Step 4: Run backend focused tests and full suite**
 

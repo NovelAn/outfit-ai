@@ -121,7 +121,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 （**已删 `base_score`**——规则评分产物，新架构无此数）
 索引：`(user_id,date)`、`(user_id,action)`
 
-`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`prepared`、`recommendation_set_id`、`recommendation_set_created_at`、`weather_fit`、`occasion_fit`。一次成功生成的 Safe/Fresh/Stretch 三档共享一个 `recommendation_set_id`；同一天的普通请求只复用最新**完整**三档组，旧行没有 set id 时才按每档最新记录兼容回退。完整 `force_refresh=true` 请求另建一组；带 `refresh_tier=safe|fresh|stretch` 的单卡刷新只调用 M3 生成目标档，并在当前完整组中追加目标档最新 history，另外两档原记录与 history_id 不变。任何不完整或生成失败的组均不可复用，单卡失败不写入新 history。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作。应用启动不因本功能迁移、改写或清理既有用户数据；运行期保留清理只在成功写入新推荐后执行，且仅作用于 §6.6 定义的临时记录。
+`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`prepared`、`recommendation_set_id`、`recommendation_set_created_at`、`weather_fit`、`occasion_fit`。一次成功生成的 Safe/Fresh/Stretch 三档共享一个 `recommendation_set_id`；同一天的普通请求只复用最新**完整**三档组，旧行没有 set id 时才按每档最新记录兼容回退。完整 `force_refresh=true` 请求另建一组；带 `refresh_tier=safe|fresh|stretch` 的单卡刷新只调用 M3 生成目标档，并在当前完整普通组（无普通组时为 prepared 组）中追加目标档最新 history，另外两档原记录与 history_id 不变；没有完整组时返回明确的重新加载错误，不退化为三档生成。任何不完整或生成失败的组均不可复用，单卡失败不写入新 history。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作。应用启动不因本功能迁移、改写或清理既有用户数据；运行期保留清理只在成功写入新推荐后执行，且仅作用于 §6.6 定义的临时记录。
 
 ### 5.5 `feedback`
 `id`(PK) · `user_id` · `date` · `items_worn_json` · `occasion`? · `occasion_type`? · `sentiment`? · `compliments_json` · `didnt_work`? · `learnings`?
