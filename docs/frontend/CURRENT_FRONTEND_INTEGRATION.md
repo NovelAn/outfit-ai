@@ -1,6 +1,6 @@
 # Outfit-AI 当前前端与后端集成
 
-> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-08-04。
+> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-08-09。
 
 ## 1. 前端基准
 
@@ -35,7 +35,7 @@ frontend/index.html
 
 | 页面 | 源文件 | 用户功能 | 主要后端接口 |
 |---|---|---|---|
-| 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；每套按后端返回的 3–6 件完整展示（含外搭与配饰），手机端按帽子→颈部配饰→外套/叠穿→上装→下装→鞋履→其他配饰的顺序纵向展示；“AI 换一换”只替换被点击的 Look，其他卡片保持不变；收藏、打分和反馈仍使用原始 item 顺序 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
+| 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；每套按后端返回的 3–6 件完整展示（含外搭与配饰），手机端按帽子→颈部配饰→外套/叠穿→上装→下装→鞋履→其他配饰的顺序纵向展示；点击任意单品打开详情浮层，显示该单品图片、名称、颜色和品类；“AI 换一换”只替换被点击的 Look，其他卡片保持不变；收藏、打分和反馈仍使用原始 item 顺序 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开详情，可编辑识别字段或二次确认删除单品及图片 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
 | 灵感 | `ScreenInspiration.tsx` | 移动端内容画布、页眉和底部主导航统一为同一窄版宽度；单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 移动端内容画布与底部主导航统一为同一窄版宽度；三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |

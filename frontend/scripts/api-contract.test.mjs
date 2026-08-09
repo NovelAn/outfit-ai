@@ -199,7 +199,7 @@ test("maps every 3–6 item Look, including optional layers and accessories", ()
     safe: {
       history_id: "history-full-look",
       items: [
-        { id: "coat", name: "风衣", category: "outerwear", image_url: "/media/coat.png" },
+        { id: "coat", name: "风衣", category: "outerwear", primary_color: "卡其色", image_url: "/media/coat.png" },
         { id: "shirt", name: "衬衫", category: "top", image_url: "/media/shirt.png" },
         { id: "pants", name: "长裤", category: "bottom", image_url: "/media/pants.png" },
         { id: "shoes", name: "乐福鞋", category: "shoes", image_url: "/media/shoes.png" },
@@ -210,6 +210,7 @@ test("maps every 3–6 item Look, including optional layers and accessories", ()
 
   assert.equal(mapped.safe.lookItems.length, 5);
   assert.equal(mapped.safe.lookItems[0].category, "上装");
+  assert.equal(mapped.safe.lookItems[0].primaryColor, "卡其色");
   assert.equal(mapped.safe.lookItems[4].category, "配饰");
 });
 
@@ -307,6 +308,13 @@ test("uses a vertical ordered Look flow", () => {
   assert.doesNotMatch(today, /look-item-rail/);
   assert.match(today, /header className="fixed inset-x-0 top-0/);
   assert.match(today, /pt-\[132px\]/);
+});
+
+test("shows the selected recommendation item image and attributes in its detail modal", () => {
+  const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
+  assert.match(today, /activeModalItem\.imageUrl/);
+  assert.match(today, /activeModalItem\.category/);
+  assert.match(today, /activeModalItem\.color/);
 });
 
 test("keeps mobile header and bottom navigation fixed during scrolling", () => {

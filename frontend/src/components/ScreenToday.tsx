@@ -178,9 +178,17 @@ const LookItems = ({ items = [], onSelect }: { items: any[]; onSelect: (item: an
   </div>;
 };
 
+const toModalItem = (item: any) => ({
+  title: item.name,
+  imageUrl: item.img,
+  category: item.category || '未分类',
+  color: item.primaryColor || item.secondaryColor || '未标注',
+  desc: item.desc,
+});
+
 export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
-  const [activeModalItem, setActiveModalItem] = useState<{ title: string; desc: string } | null>(null);
+  const [activeModalItem, setActiveModalItem] = useState<ReturnType<typeof toModalItem> | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [locationContext, setLocationContext] = useState<any>({ source: 'missing' });
   const locationRef = useRef<any>({ source: 'missing' });
@@ -747,7 +755,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentSafe.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentSafe.items} onSelect={(item) => setActiveModalItem(toModalItem(item))} />
 
               <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -841,7 +849,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentFresh.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentFresh.items} onSelect={(item) => setActiveModalItem(toModalItem(item))} />
 
               <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -935,7 +943,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentStretch.items} onSelect={(item) => setActiveModalItem({ title: item.name, desc: item.desc })} />
+              <LookItems items={currentStretch.items} onSelect={(item) => setActiveModalItem(toModalItem(item))} />
 
               <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -987,7 +995,18 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       {activeModalItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-[#fbf9f4] p-6 max-w-sm w-full rounded-lg border border-[#162839] shadow-2xl relative">
-            <h3 className="font-serif-display text-lg text-[#162839] font-bold mb-2">{activeModalItem.title}</h3>
+            <div className="w-full aspect-square mb-4 rounded-lg border border-[#c4c6cd]/40 bg-white flex items-center justify-center overflow-hidden">
+              {activeModalItem.imageUrl ? (
+                <img src={activeModalItem.imageUrl} alt={activeModalItem.title} className="h-full w-full object-contain p-3" />
+              ) : (
+                <span className="text-xs text-[#74777d]">暂无图片</span>
+              )}
+            </div>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <h3 className="font-serif-display text-lg text-[#162839] font-bold">{activeModalItem.title}</h3>
+              <span className="shrink-0 text-[10px] font-semibold text-[#9a442a] border border-[#9a442a]/30 rounded-full px-2 py-1">{activeModalItem.category}</span>
+            </div>
+            <p className="text-xs text-[#43474c] mb-2">颜色：{activeModalItem.color}</p>
             <p className="text-sm text-[#43474c] mb-6 leading-relaxed">{activeModalItem.desc}</p>
             <button
               onClick={() => setActiveModalItem(null)}

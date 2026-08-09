@@ -128,6 +128,8 @@ function mapLook(tier, look) {
     name: item.name || "未命名单品",
     category: categoryLabel(item.category),
     img: mediaUrl(item.image_url),
+    primaryColor: item.primary_color || "",
+    secondaryColor: item.secondary_color || "",
     desc: [item.primary_color, item.category].filter(Boolean).join(" · "),
   }));
   return {
