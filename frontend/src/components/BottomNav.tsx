@@ -15,7 +15,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentScreen, onNavigate 
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#fbf9f4]/95 backdrop-blur-md border-t border-[#e4e2dd] shadow-[0_-4px_20px_rgba(0,0,0,0.03)] px-6 py-2 pb-6 flex justify-around items-center max-w-lg mx-auto">
+    <nav aria-label="主导航" className="fixed inset-x-0 bottom-0 z-[60] bg-[#fbf9f4]/95 backdrop-blur-md border-t border-[#e4e2dd] shadow-[0_-4px_20px_rgba(0,0,0,0.03)] px-6 py-2 pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex justify-around items-center max-w-lg mx-auto">
       {tabs.map((tab) => {
         const isActive = currentScreen === tab.id || (tab.id === 'inspiration' && currentScreen === 'archive');
         return (

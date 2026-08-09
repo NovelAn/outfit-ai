@@ -305,6 +305,24 @@ test("uses a vertical ordered Look flow", () => {
   assert.match(today, /refreshTier: tier/);
   assert.doesNotMatch(today, /compact-look-collage/);
   assert.doesNotMatch(today, /look-item-rail/);
+  assert.match(today, /header className="fixed inset-x-0 top-0/);
+  assert.match(today, /pt-\[132px\]/);
+});
+
+test("keeps mobile header and bottom navigation fixed during scrolling", () => {
+  const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
+  const nav = readFileSync(new URL("../src/components/BottomNav.tsx", import.meta.url), "utf8");
+  assert.match(today, /header className="fixed inset-x-0 top-0/);
+  assert.match(nav, /nav aria-label="主导航" className="fixed inset-x-0 bottom-0/);
+  assert.match(nav, /safe-area-inset-bottom/);
+});
+
+test("aligns the inspiration archive shell with the mobile navigation width", () => {
+  const archive = readFileSync(new URL("../src/components/ScreenArchive.tsx", import.meta.url), "utf8");
+  const inspiration = readFileSync(new URL("../src/components/ScreenInspiration.tsx", import.meta.url), "utf8");
+  assert.equal((archive.match(/max-w-lg mx-auto/g) || []).length, 2);
+  assert.match(inspiration, /header className="fixed top-0 inset-x-0[^\n]*max-w-lg mx-auto/);
+  assert.match(inspiration, /main className="pt-24 max-w-lg mx-auto/);
 });
 
 test("orders visual items from head to foot while preserving API feedback order", () => {

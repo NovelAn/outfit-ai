@@ -37,8 +37,8 @@ frontend/index.html
 |---|---|---|---|
 | 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；每套按后端返回的 3–6 件完整展示（含外搭与配饰），手机端按帽子→颈部配饰→外套/叠穿→上装→下装→鞋履→其他配饰的顺序纵向展示；“AI 换一换”只替换被点击的 Look，其他卡片保持不变；收藏、打分和反馈仍使用原始 item 顺序 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开详情，可编辑识别字段或二次确认删除单品及图片 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
-| 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
-| 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
+| 灵感 | `ScreenInspiration.tsx` | 移动端内容画布、页眉和底部主导航统一为同一窄版宽度；单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
+| 灵感存档 | `ScreenArchive.tsx` | 移动端内容画布与底部主导航统一为同一窄版宽度；三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
 | 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；分别读取 `recent` 和 `archive` 推荐历史。历史、收藏和评分的 AI 品味备忘录按已解析到的单品渲染缩略图网格（完整 Look 为 3–6 件）；仅当零件单品都无法解析时，旧记录才回退其单张拼图，并可收藏、评分或标记穿过 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history?scope=`、`POST /api/feedback` |
 
 ## 4. 前端 API 接线
@@ -80,7 +80,7 @@ frontend/index.html
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
 
-今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；上下文就绪后自动请求一次不带 `force_refresh` 的每日推荐。后端先按本地日期无条件复用最近完整的普通 Safe/Fresh/Stretch recommendation set，因此重新打开、导航或天气刷新不会重新生成。每日 06:30 预生成的 prepared 组只是后备候选：仅在不存在普通组时才考虑，且须同时满足距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25` 三档、降雨概率同处 50% 阈值的一侧；不命中时即使不传 `force_refresh` 也会新生成。只有用户点击“AI 换一换”才传 `force_refresh: true` 与对应 `refresh_tier`，后端只生成目标档，前端只合并目标卡片，其它卡片、反馈状态和历史 ID 不跳变。并发刷新会合并为一个进行中的请求，过期响应不会覆盖更新结果。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”，推荐加载或失败时保留本机缓存作为后备。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
+今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；天气栏固定在顶部，底部四项主导航固定在底部并避让 iPhone 安全区，滚动时仍可快速切换页面。上下文就绪后自动请求一次不带 `force_refresh` 的每日推荐。后端先按本地日期无条件复用最近完整的普通 Safe/Fresh/Stretch recommendation set，因此重新打开、导航或天气刷新不会重新生成。每日 06:30 预生成的 prepared 组只是后备候选：仅在不存在普通组时才考虑，且须同时满足距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25` 三档、降雨概率同处 50% 阈值的一侧；不命中时即使不传 `force_refresh` 也会新生成。只有用户点击“AI 换一换”才传 `force_refresh: true` 与对应 `refresh_tier`，后端只生成目标档，前端只合并目标卡片，其它卡片、反馈状态和历史 ID 不跳变。并发刷新会合并为一个进行中的请求，过期响应不会覆盖更新结果。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”，推荐加载或失败时保留本机缓存作为后备。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
 
 今日卡片不假定固定三件：逐项渲染后端 `items` 数组中的全部 3–6 件，必含上装、下装、鞋履；渲染副本由 `orderLookItems()` 稳定排序为从头到脚的纵向 editorial flow，原始 `items` 数组用于反馈与历史。每张返回卡片均带 `history_id`，收藏/取消收藏、评分和“穿过”通过该 id 提交。请求失败时不乐观更新收藏、评分或穿过状态，保留服务端已确认状态并显示统一错误。
 

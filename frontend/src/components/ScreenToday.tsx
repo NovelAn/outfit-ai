@@ -585,7 +585,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#fbf9f4] text-[#1b1c19] pb-[100px]">
+    <div className={`min-h-screen bg-[#fbf9f4] text-[#1b1c19] pb-[100px] ${isCompareMode ? 'pt-[250px]' : 'pt-[132px]'}`}>
       {/* Side Drawer Menu */}
       <SideDrawer
         isOpen={isDrawerOpen}
@@ -596,7 +596,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       />
 
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-[#fbf9f4]/95 backdrop-blur-md px-6 py-4 flex flex-col items-center border-b border-[#e4e2dd]">
+      <header className="fixed inset-x-0 top-0 z-40 bg-[#fbf9f4]/95 backdrop-blur-md px-6 py-4 flex flex-col items-center border-b border-[#e4e2dd]">
         <div className="w-full flex flex-col gap-1 max-w-md mx-auto">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-4">
