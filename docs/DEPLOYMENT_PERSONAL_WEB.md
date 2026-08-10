@@ -32,6 +32,18 @@ cd frontend && npm run build
 
 实际云端发布尚未执行：当前没有指定 VPS、域名、DNS 或服务器密钥，因此本文件是可执行方案而不是“已部署”声明。
 
+## 平台取舍（2026-08-10 核对）
+
+| 方案 | 免费情况 | 中国大陆访问 | 与当前项目的匹配度 | 结论 |
+|---|---|---|---|---|
+| 国内轻量云主机（腾讯云 Lighthouse 等） | 通常是新用户试用/代金券，不承诺永久免费 | 国内地域最稳；正式域名服务需按要求备案 | 可直接运行 FastAPI、SQLite、rembg 和本地图片目录 | **第一阶段推荐** |
+| Vercel | 前端免费层可用，Python/FastAPI Functions 可部署 | 访问质量需实测，不应假设大陆稳定 | 函数文件系统不适合 SQLite/media；上传与长 AI 请求也有函数限制 | 只适合静态前端预览 |
+| Cloudflare Pages + Workers | Pages/Workers 有免费额度 | `pages.dev` 在大陆不可用；China Network 是 Enterprise 独立订阅且需 ICP | Pages 适合静态前端；当前 FastAPI/rembg/SQLite 不能直接搬到 Workers | 不作为当前后端方案 |
+| Supabase Free | 500 MB Postgres、1 GB Storage；闲置项目会暂停 | 没有中国大陆 region，最近通常选新加坡 | 适合未来的 Postgres + 对象存储；需要改 SQLAlchemy 配置和图片存储 | 第二阶段再评估 |
+| 腾讯云 CloudBase 免费体验 | 目前每账号一个免费体验环境，资源点和续期有明确限制 | 国内产品，访问更友好 | 需要适配 CloudBase 数据库/云函数/云托管，不是当前 FastAPI 的零改动部署 | 若转小程序再评估 |
+
+严格意义上“永久免费、国内稳定、同时支持 FastAPI + 持久化数据库 + 图片存储”的一体化免费方案目前不现实。当前个人使用的最低成本路径是：国内轻量云主机 + 持久化 SQLite + 同机图片目录；后续多人使用再换 PostgreSQL 和对象存储。
+
 ## 后续形态
 
 - iOS：等功能稳定后再用 Capacitor 包装现有 React；提交 App Store 需要 Apple Developer Program 会员。
