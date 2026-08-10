@@ -76,6 +76,7 @@ def test_generate_image_decodes_one_base64_image(monkeypatch) -> None:
     assert captured["payload"]["model"] == "image-01"
     assert captured["payload"]["n"] == 1
     assert captured["payload"]["response_format"] == "base64"
+    assert captured["payload"]["prompt_optimizer"] is True
 
 
 def test_generate_images_requests_and_decodes_three_images(monkeypatch) -> None:
@@ -96,3 +97,44 @@ def test_generate_images_requests_and_decodes_three_images(monkeypatch) -> None:
 
     assert minimax_images.generate_images("三套编辑画报", count=3) == expected
     assert captured["payload"]["n"] == 3
+
+
+def test_generate_images_keeps_valid_partial_results(monkeypatch) -> None:
+    expected = [b"image-1", b"image-2"]
+
+    monkeypatch.setattr(
+        minimax_images,
+        "_post_json",
+        lambda *_args, **_kwargs: {
+            "data": {
+                "image_base64": [
+                    base64.b64encode(expected[0]).decode(),
+                    "not-base64",
+                    base64.b64encode(expected[1]).decode(),
+                ],
+                "success_count": 2,
+                "failed_count": 1,
+            }
+        },
+    )
+
+    assert minimax_images.generate_images("三套编辑画报", count=3) == expected
+
+
+def test_generate_images_accepts_image_urls(monkeypatch) -> None:
+    expected = b"downloaded-image"
+    monkeypatch.setattr(
+        minimax_images,
+        "_post_json",
+        lambda *_args, **_kwargs: {"data": {"image_urls": ["https://cdn.test/look.jpg"]}},
+    )
+
+    class Response:
+        content = expected
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(minimax_images.httpx, "get", lambda *args, **kwargs: Response())
+
+    assert minimax_images.generate_images("一套编辑画报", count=1) == [expected]

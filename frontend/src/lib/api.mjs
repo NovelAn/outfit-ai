@@ -172,21 +172,20 @@ export const api = {
         reference_ids: referenceIds,
       }),
     });
-    if (Array.isArray(result.looks)) {
-      return result.looks.map((look, index) => ({
+    if (Array.isArray(result.looks) && result.looks.length > 0) {
+      const looks = result.looks.map((look, index) => ({
         id: look.id || `look-${index + 1}`,
         title: look.title || `Look ${String(index + 1).padStart(2, "0")}`,
         subtitle: look.subtitle || `${season}季${scene}`,
         imageUrl: mediaUrl(look.image_url || look.imageUrl),
       }));
+      return {
+        looks,
+        status: result.status || (looks.length === 3 ? "complete" : "partial"),
+        requestedCount: result.requested_count || 3,
+        generatedCount: result.generated_count || looks.length,
+      };
     }
-    return [
-      {
-        id: "look-1",
-        title: "Look 01 / New Direction",
-        subtitle: `${season}季${scene}`,
-        imageUrl: mediaUrl(result.image_url),
-      },
-    ];
+    throw new Error("灵感图生成结果为空，请稍后重试");
   },
 };

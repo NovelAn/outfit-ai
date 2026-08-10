@@ -1,4 +1,5 @@
 import base64
+import binascii
 import json
 import mimetypes
 import os
@@ -140,17 +141,42 @@ def generate_images(prompt: str, *, count: int) -> list[bytes]:
             "aspect_ratio": "3:4",
             "n": count,
             "response_format": "base64",
+            "prompt_optimizer": True,
         },
     )
-    try:
-        encoded_images = body["data"]["image_base64"]
-        if not isinstance(encoded_images, list) or len(encoded_images) != count:
-            raise ValueError
-        return [
-            base64.b64decode(encoded, validate=True) for encoded in encoded_images
-        ]
-    except (KeyError, TypeError, ValueError) as exc:
-        raise MiniMaxResponseError("MiniMax 未返回有效图片") from exc
+    data = body.get("data")
+    if not isinstance(data, dict):
+        raise MiniMaxResponseError("MiniMax 未返回有效图片")
+
+    images: list[bytes] = []
+    encoded_images = data.get("image_base64")
+    if isinstance(encoded_images, list):
+        for encoded in encoded_images:
+            if not isinstance(encoded, str):
+                continue
+            try:
+                decoded = base64.b64decode(encoded, validate=True)
+            except (binascii.Error, ValueError):
+                continue
+            if decoded:
+                images.append(decoded)
+
+    image_urls = data.get("image_urls")
+    if isinstance(image_urls, list):
+        for url in image_urls:
+            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                continue
+            try:
+                response = httpx.get(url, timeout=120)
+                response.raise_for_status()
+            except httpx.HTTPError:
+                continue
+            if response.content:
+                images.append(response.content)
+
+    if not images:
+        raise MiniMaxResponseError("MiniMax 未返回有效图片")
+    return images[:count]
 
 
 def generate_image(prompt: str) -> bytes:

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   categoryCode,
+  api,
   mapRecommendation,
   mapStyleReference,
   mapWardrobeItem,
@@ -113,4 +114,17 @@ test("stops polling when analysis fails", async () => {
     () => waitForReady(() => Promise.resolve({ status: "failed" }), { delay: 0 }),
     /识别失败/,
   );
+});
+
+test("never substitutes unrelated static images when inspiration generation is empty", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
+  try {
+    await assert.rejects(
+      () => api.generateInspiration({ season: "秋", scene: "通勤" }),
+      /灵感图生成结果为空/,
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });

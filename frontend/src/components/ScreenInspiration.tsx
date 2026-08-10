@@ -8,27 +8,6 @@ interface ScreenInspirationProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
-const DEFAULT_LOOKS: GeneratedLook[] = [
-  {
-    id: 'look-1',
-    title: 'Look 01 / Texture Focus',
-    subtitle: '秋季咖啡馆阅读 · 经典针织与复古质感',
-    imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBHql_kA1QBu5PdlksjBh57JEYklOBf9QFgGOemLmBKOIcR1_4HYVUfx8__czG7X8xJao48bfq_5Qc9WiKU7vs8zlNs-5QTgdbLuw6s9pkespNnL89bpuEqBv-xyt6lMXV_U6_NyBkZqqFnkkTXwTDK9DdoWOFQS44o0UhL4iNLmv93AlS7xo_xDcT7UbE4-2cbn-uYJ4tOAtGTt3goA9h1iucCnjRKzMK3bdeVtB88eXkop0hCgDRg'
-  },
-  {
-    id: 'look-2',
-    title: 'Look 02 / Silhouette Study',
-    subtitle: '秋季咖啡馆阅读 · 条纹衬衫与羊毛衫叠穿',
-    imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD78ZO71iiNM0eur0CzpknzuLV0XqwlYB21cOepkGDRlrodTofaveXVw1ojVZ3ZbjI9yKef5JT7jq7x8rX5laZ-MrJWgX8o69FT1Jy0io5eXcK3mgZ_Nthlajrd65PkE1617KvgzW7mj5rVOtZUABPk5fdYtuYjdFCedLQqA20WQCst1fZl2D9W1g1G6aP7AnDwoa633xl4Xa4ad_Up3qn6ZVTlhKoOMlfdChtxyG6eXmEJKvhdklWj'
-  },
-  {
-    id: 'look-3',
-    title: 'Look 03 / Color Palette',
-    subtitle: '秋季咖啡馆阅读 · 浅卡其风衣与深色内搭对比',
-    imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuA-pfIL9b9XBhE2BUt63veY_0rB8R8x2L0nmAtS9a0CgiJc3lcH7mzzgknlYvk4U8jeA242IY4gpj3PJbatQmsm0aF8JtiVZdhOh7EKsZyzJSTHCwhlz328vlCJBZAHiR8Ams_H-7TH5Y6Ge4pwV8EXJk1vl13N_n3rzU2EVPwWYPGtAue-wyU1r9SAAB51AEOKDw-qsbbRyvpTn3n3w7l7Q-1Moned4n2X1a3ERWCCU_LQo28FzECX'
-  }
-];
-
 export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate }) => {
   const [season, setSeason] = useState('秋');
   const [occasion, setOccasion] = useState('咖啡馆阅读');
@@ -58,14 +37,15 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
 
   const handleGenerate = async () => {
     setIsGenerating(true);
+    setLooks([]);
     try {
-      const generated = await api.generateInspiration({
+      const result = await api.generateInspiration({
         season,
         scene: occasion,
         referenceIds: references.filter((item: any) => item.status === 'ready').slice(0, 6).map((item) => item.id),
       });
-      setLooks(generated);
-      showToast('已由 AI 为您生成专属穿搭画报！');
+      setLooks(result.looks);
+      showToast(result.status === 'partial' ? `已生成 ${result.generatedCount} 张，部分图片失败，可再次生成` : '已由 AI 为您生成专属穿搭画报！');
     } catch (error) {
       showToast(error instanceof Error ? error.message : '生成失败');
     } finally {
@@ -248,7 +228,7 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
         </section>
 
         {/* AI Generated Result (3-Image Generation Edition) */}
-        <section className="mb-12 relative">
+        {looks.length > 0 && <section className="mb-12 relative">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
               {looks.map((look) => (
@@ -270,7 +250,7 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
               <p className="text-xs text-[#43474c] italic mb-6">AI 灵感图 · 不代表衣橱已有单品</p>
               <div className="flex justify-center gap-10">
                 <button
-                  onClick={() => showToast('已成功保存全部3套灵感画报至您的个人档案！')}
+                  onClick={() => showToast(`已成功保存全部${looks.length}套灵感画报至您的个人档案！`)}
                   className="flex items-center gap-2 text-[#162839] hover:opacity-70 transition-opacity"
                 >
                   <span className="material-symbols-outlined text-lg text-[#9a442a]">favorite</span>
@@ -287,7 +267,7 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
               </div>
             </div>
           </div>
-        </section>
+        </section>}
       </main>
 
       {/* Toast message */}

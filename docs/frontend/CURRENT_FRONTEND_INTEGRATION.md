@@ -1,6 +1,6 @@
 # Outfit-AI 当前前端与后端集成
 
-> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-07-31。
+> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-08-10。
 
 ## 1. 前端基准
 
@@ -35,7 +35,7 @@ frontend/index.html
 |---|---|---|---|
 | 今日 | `ScreenToday.tsx` | 从真实衣橱生成 Safe / Fresh / Stretch；收藏、打分和反馈 | `GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
-| 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
+| 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景让后端基于参考分析生成三张非衣橱灵感图；生成前清空旧结果，部分成功明确提示 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
 | 我的 | `ScreenProfile.tsx` | 查看和编辑风格关键词、色板、反馈历史、推荐历史和收藏 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history` |
 
@@ -58,7 +58,7 @@ frontend/index.html
 | `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐 |
 | `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈 |
 | `history()` | `GET /api/history` | 读取近期推荐记录 |
-| `generateInspiration(data)` | `POST /api/inspiration/generate` | 一次返回三张独立灵感图 |
+| `generateInspiration(data)` | `POST /api/inspiration/generate` | 返回 `{looks,status,requestedCount,generatedCount}`；禁止空结果回退到静态无关图片 |
 
 灵感参考图批量上传复用现有单文件接口：前端对每张图片分别调用 `uploadReference()` 和 `referenceStatus()`，使用独立结算保证单张失败不影响同批其他图片，完成后只刷新一次灵感库。
 
@@ -87,9 +87,10 @@ frontend/index.html
 ### 独立灵感生成
 
 ```text
-长期参考 Look + Style DNA + 季节 + 场景
-→ MiniMax-M3 生成图像提示
-→ MiniMax image-01 一次生成三张 3:4 图片
+长期参考 Look 的 VLM 结构化分析 + Style DNA + 季节 + 场景
+→ MiniMax-M3 提炼共性、视觉锚点和排除项
+→ MiniMax image-01（prompt optimizer）生成三张 3:4 图片
+→ 仅保存有效返回；部分成功也展示，不显示旧图或静态占位图
 → 前端明确标注“不代表衣橱已有单品”
 ```
 

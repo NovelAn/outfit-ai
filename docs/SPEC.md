@@ -167,7 +167,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 6.5 inspiration
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| POST | `/api/inspiration/generate` | body `{reference_ids?[],style_note?,season?,scene}`；不使用真实衣橱，生成三张 3:4 灵感图 | 200 `{image_url,looks:[3],disclaimer}` |
+| POST | `/api/inspiration/generate` | body `{reference_ids?[],style_note?,season?,scene}`；先将所选长期灵感的 VLM 结构化分析与 Style DNA 交给 M3 提炼，再调用 image-01 生成，不使用真实衣橱 | 200 `{image_url,looks,requested_count,generated_count,status,disclaimer}`；部分成功时 `status=partial`，只返回已保存图片 |
 
 ### 6.6 feedback / history
 | Method | Path | 说明 | 返回 |
@@ -204,8 +204,8 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - 数据层：五张 SQLite 表和索引已实现，由 `init_db()` 初始化。
 - 真实衣物：上传、rembg、VLM、轮询、确认、列表、删除已实现。
 - 长期灵感：参考 Look 上传、VLM 分析、M3 合并 Style DNA、列表、重试、删除已实现。
-- 推荐：天气、候选硬护栏、M3 Safe/Fresh/Stretch、item_id 校验、历史记录已实现。
-- 独立灵感：M3 提示词与 `image-01` 三图生成已实现。
+- 推荐：天气、候选硬护栏、M3 Safe/Fresh/Stretch、item_id 校验、历史记录已实现；衣橱识图返回的中文季节标签会在候选过滤时归一化为内部英文季节值。
+- 独立灵感：M3 根据长期灵感分析与 Style DNA 生成结构化提示（含视觉锚点与排除项），`image-01` 开启 prompt optimizer；支持 base64/URL 响应和部分成功，不再回退无关静态图片。
 - 反馈：收藏/跳过/穿着/评分、历史与 taste memo 批量刷新已实现。
 - 前端：Stitch React 五页和统一 API 接线已实现，详见当前前端事实源。
 
