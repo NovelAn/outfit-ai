@@ -2,6 +2,19 @@
 
 当前先部署为私有 HTTPS Web（手机浏览器可添加到主屏幕），暂不做 App Store 或微信小程序发布。这样可以保留已确认的 React 视觉与交互，也不需要先支付应用商店年费；真正的离线 PWA 壳等功能稳定后再加。
 
+## PocketBay：适合先做验证部署
+
+PocketBay 不是数据库或后端框架，而是面向 AI Coding 项目的托管平台。它目前支持 Python Web 服务和自带 Dockerfile 的单容器应用，能自动处理构建、健康检查、HTTPS、域名和日志；动态应用提供项目级 `/data` 持久卷，也可配置托管 PostgreSQL。官方同时说明暂不支持完整 Docker Compose、独立 Worker、Redis、对象存储和多区域部署。详情见 [PocketBay FAQ](https://pocketbay.com/faq)、[部署指南](https://pocketbay.com/docs/deploy) 和 [平台边界](https://pocketbay.com/docs/limitations)。
+
+因此，PocketBay 可以作为 Outfit-AI 的第一版云验证环境：
+
+1. 用一个 Dockerfile 打包前端构建产物和 FastAPI，运行单个 HTTP 容器。
+2. 将 `DATABASE_URL` 和 `UPLOAD_DIR` 指向 `/data`，避免重启丢 SQLite 和图片。
+3. 用环境变量注入 `MINIMAX_API_KEY`，不上传本机 `.env` 或 `~/.mmx/config.json`。
+4. 接受动态应用约 10 分钟无访问后休眠，首次访问和首次 rembg 处理会较慢。
+
+PocketBay 公共测试期目前免费，但官方没有给出中国大陆网络可用性保证；正式使用前必须从你的手机网络实测登录、上传图片、访问 `/media` 和调用 MiniMax。若实测不稳定，切换到国内 Lighthouse/CloudBase，不改变 Docker 镜像。
+
 ## 推荐拓扑
 
 ```text
@@ -36,7 +49,8 @@ cd frontend && npm run build
 
 | 方案 | 免费情况 | 中国大陆访问 | 与当前项目的匹配度 | 结论 |
 |---|---|---|---|---|
-| 国内轻量云主机（腾讯云 Lighthouse 等） | 通常是新用户试用/代金券，不承诺永久免费 | 国内地域最稳；正式域名服务需按要求备案 | 可直接运行 FastAPI、SQLite、rembg 和本地图片目录 | **第一阶段推荐** |
+| PocketBay | 公共测试期免费；动态应用会休眠 | 中国大陆可用性需要实测，无官方保证 | 支持 Python/Docker 单容器和 `/data`；不支持 Compose/Worker/Redis | **最快验证** |
+| 国内轻量云主机（腾讯云 Lighthouse 等） | 通常是新用户试用/代金券，不承诺永久免费 | 国内地域最稳；正式域名服务需按要求备案 | 可直接运行 FastAPI、SQLite、rembg 和本地图片目录 | **稳定自用推荐** |
 | Vercel | 前端免费层可用，Python/FastAPI Functions 可部署 | 访问质量需实测，不应假设大陆稳定 | 函数文件系统不适合 SQLite/media；上传与长 AI 请求也有函数限制 | 只适合静态前端预览 |
 | Cloudflare Pages + Workers | Pages/Workers 有免费额度 | `pages.dev` 在大陆不可用；China Network 是 Enterprise 独立订阅且需 ICP | Pages 适合静态前端；当前 FastAPI/rembg/SQLite 不能直接搬到 Workers | 不作为当前后端方案 |
 | Supabase Free | 500 MB Postgres、1 GB Storage；闲置项目会暂停 | 没有中国大陆 region，最近通常选新加坡 | 适合未来的 Postgres + 对象存储；需要改 SQLAlchemy 配置和图片存储 | 第二阶段再评估 |
