@@ -1,6 +1,6 @@
 # Outfit-AI · 当前后端与 API 规格
 
-> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-07-31。
+> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-08-12。
 > 配套：[`CLAUDE.md`](../CLAUDE.md)=项目规范（必读）；[`README.md`](../README.md)=概览；[`CURRENT_FRONTEND_INTEGRATION.md`](./frontend/CURRENT_FRONTEND_INTEGRATION.md)=当前前端事实源。
 > 文档不重复——架构/数据/API 只在此处定义，CLAUDE.md 与 README 仅引用。
 
@@ -173,7 +173,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
 | POST | `/api/feedback` | body `{history_id?,items_worn[],action:shown/saved/skipped/worn,...}`；写 feedback+更新 outfit_history.action；`feedback_since_refresh++`，到 8 触发 memo 刷新 | 200 `{ok:true}` |
-| GET | `/api/history?limit=20` | 近期穿搭 | 200 `[OutfitHistory]` |
+| GET | `/api/history?limit=20` | 近期穿搭；除历史字段外返回 `rating` 与按日期/单品集合匹配的 `feedback`（`sentiment`、`compliments`、`didnt_work`、`learnings`） | 200 `[OutfitHistory]` |
 
 ---
 
@@ -202,7 +202,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ## 8. 当前实现状态
 
 - 数据层：五张 SQLite 表和索引已实现，由 `init_db()` 初始化。
-- 真实衣物：上传、rembg、VLM、轮询、确认、列表、删除已实现。
+- 真实衣物：上传、rembg、VLM、轮询、确认、列表、删除已实现；迁移旧 SQLite 时，图片字段中的旧绝对路径会按文件名回落到当前 `UPLOAD_DIR`，继续返回去背景 PNG。
 - 长期灵感：参考 Look 上传、VLM 分析、M3 合并 Style DNA、列表、重试、删除已实现。
 - 推荐：天气、候选硬护栏、M3 Safe/Fresh/Stretch、item_id 校验、历史记录已实现；衣橱识图返回的中文季节标签会在候选过滤时归一化为内部英文季节值。
 - 独立灵感：M3 根据长期灵感分析与 Style DNA 生成结构化提示（含视觉锚点与排除项），`image-01` 开启 prompt optimizer；支持 base64/URL 响应和部分成功，不再回退无关静态图片。

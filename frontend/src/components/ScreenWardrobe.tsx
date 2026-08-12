@@ -406,8 +406,22 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
               <img src={selectedItem.imageUrl} alt={selectedItem.name} className="max-h-full object-contain" />
             </div>
             <span className="text-xs font-mono text-[#9a442a] uppercase font-semibold">{selectedItem.category}</span>
-            <h3 className="font-serif-display text-xl text-[#162839] font-bold mt-1">{selectedItem.brand}</h3>
+            {selectedItem.brand && (
+              <h3 className="font-serif-display text-xl text-[#162839] font-bold mt-1">{selectedItem.brand}</h3>
+            )}
             <p className="text-sm text-[#43474c] mt-1 mb-6">{selectedItem.name}</p>
+            <div className="mb-6 space-y-2 text-[11px] text-[#43474c]">
+              {[selectedItem.primaryColor, selectedItem.material, selectedItem.fit].filter(Boolean).length > 0 && (
+                <p>{[selectedItem.primaryColor, selectedItem.material, selectedItem.fit].filter(Boolean).join(' · ')}</p>
+              )}
+              {(selectedItem.tags || []).length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {selectedItem.tags?.map((tag) => (
+                    <span key={tag} className="rounded bg-[#f0eee9] px-1.5 py-0.5">{tag}</span>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               onClick={() => setSelectedItem(null)}
               className="w-full bg-[#162839] text-white py-2.5 rounded text-xs font-semibold uppercase tracking-widest hover:opacity-90"

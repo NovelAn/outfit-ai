@@ -6,6 +6,14 @@ export interface OutfitItem {
   name: string;
   category: '上装' | '下装' | '鞋履' | '配饰';
   imageUrl: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+  material?: string;
+  fit?: string;
+  styles?: string[];
+  tags?: string[];
+  seasons?: string[];
+  occasions?: string[];
   isNew?: boolean;
 }
 

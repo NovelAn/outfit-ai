@@ -9,8 +9,9 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from outfit_ai.db import Base
-from outfit_ai.models import Feedback, Profile, WardrobeItem
+from outfit_ai.models import Feedback, OutfitHistory, Profile, WardrobeItem
 from outfit_ai.routers.feedback import feedback
+from outfit_ai.routers.feedback import history as history_route
 from outfit_ai.schemas import FeedbackIn
 from outfit_ai.services import taste_memo
 
@@ -28,6 +29,37 @@ def test_first_feedback_initializes_profile_counter() -> None:
 
         assert result == {"ok": True}
         assert db.get(Profile, "local").feedback_since_refresh == 1
+
+
+def test_feedback_rating_and_history_expose_persisted_tags() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        outfit = OutfitHistory(
+            id="history-1",
+            user_id="local",
+            item_ids_json='["top-1", "bottom-1", "shoes-1"]',
+            pick_mode="safe",
+            action="shown",
+        )
+        db.add(outfit)
+        db.commit()
+        feedback(
+            FeedbackIn(
+                history_id=outfit.id,
+                items_worn=["top-1", "bottom-1", "shoes-1"],
+                action="saved",
+                sentiment="4 星",
+                compliments=["🎨 色彩搭配好"],
+            ),
+            BackgroundTasks(),
+            db,
+        )
+
+        result = history_route(db, 20)
+
+    assert result[0]["rating"] == 4
+    assert result[0]["feedback"]["compliments"] == ["🎨 色彩搭配好"]
 
 
 def test_feedback_is_not_deducted_before_background_task_starts() -> None:

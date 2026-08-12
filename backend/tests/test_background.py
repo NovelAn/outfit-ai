@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from PIL import Image
 
-from outfit_ai.services import background
+from outfit_ai.services import background, storage
 
 
 def _png_bytes() -> bytes:
@@ -55,3 +55,24 @@ def test_display_path_uses_transparent_image_only_when_ready(tmp_path) -> None:
         )
         == source
     )
+
+
+def test_display_path_resolves_legacy_absolute_path_after_migration(
+    monkeypatch, tmp_path
+) -> None:
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    source = uploads / "item.jpg"
+    transparent = uploads / "item.nobg.png"
+    source.write_bytes(b"source")
+    transparent.write_bytes(_png_bytes())
+    monkeypatch.setattr(storage.settings, "upload_dir", str(uploads))
+
+    resolved = background.display_image_path(
+        SimpleNamespace(
+            image_path="/Users/novel/.outfit-ai/uploads/item.jpg",
+            status="ready",
+        )
+    )
+
+    assert resolved == transparent

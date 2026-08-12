@@ -50,12 +50,21 @@ export function categoryCode(label) {
 }
 
 export function mapWardrobeItem(item) {
+  const attributes = item.attributes || item;
   return {
     id: item.id,
     brand: item.brand || "",
     name: item.name || "待确认单品",
     category: categoryLabel(item.category),
     imageUrl: mediaUrl(item.image_url),
+    primaryColor: attributes.primary_color || "",
+    secondaryColor: attributes.secondary_color || "",
+    material: attributes.material || "",
+    fit: attributes.fit || "",
+    styles: attributes.styles || [],
+    tags: attributes.tags || [],
+    seasons: attributes.seasons || [],
+    occasions: attributes.occasions || [],
     ...(item.isNew ? { isNew: true } : {}),
   };
 }
@@ -67,7 +76,6 @@ export function mapStyleReference(reference) {
   const palette = analysis.palette || [];
   const tags = [...keywords, ...elements, ...palette]
     .filter(Boolean)
-    .slice(0, 3)
     .map((value) => `#${String(value).replace(/^#/, "")}`);
   const statusBadges = { pending: "等待中", analyzing: "分析中", failed: "处理失败" };
   return {
@@ -75,6 +83,7 @@ export function mapStyleReference(reference) {
     title: keywords[0] || "正在沉淀的灵感",
     category: keywords[0] || "Reference",
     imageUrl: mediaUrl(reference.image_url),
+    analysis,
     tags,
     badge: statusBadges[reference.status],
     date: reference.added_at,

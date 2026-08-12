@@ -39,6 +39,31 @@ npm run dev                                    # http://localhost:5173
 - 生产图片改存阿里云 OSS/CDN；不要把用户图片打进小程序主包。
 - 微信小程序/App 上线方案需保留当前 React 界面与交互，不回退旧 uni-app 设计。
 
+## 腾讯云一键部署
+
+当前推荐一台 Ubuntu 24.04 LTS 轻量服务器：Docker 运行 FastAPI，Caddy 托管 React 静态资源并负责 HTTPS，SQLite、上传图片和 rembg 模型缓存使用持久化卷。千牛 Playwright MCP 继续运行在本机已登录 Chrome，不放进 Web 容器。
+
+首次腾讯云 Lighthouse 部署已于 2026-08-12 完成；当前先通过服务器公网 IP 的 HTTP 地址验收，正式域名和 HTTPS 后续再配置。
+
+首次部署（服务器已配置 SSH 公钥后）：
+
+```bash
+# 1. 首次只执行一次：初始化 Ubuntu/Docker/UFW
+ssh root@SERVER_IP 'mkdir -p /tmp/outfit-ai-bootstrap'
+rsync -az scripts/ root@SERVER_IP:/tmp/outfit-ai-bootstrap/scripts/
+ssh root@SERVER_IP 'bash /tmp/outfit-ai-bootstrap/scripts/bootstrap-ubuntu.sh'
+
+# 2. 服务器上创建密钥文件（只在服务器填写，不提交）
+scp .env.production.example root@SERVER_IP:/tmp/outfit-ai.env.production.example
+ssh root@SERVER_IP 'mkdir -p /opt/outfit-ai && cp /tmp/outfit-ai.env.production.example /opt/outfit-ai/.env.production'
+# 编辑 /opt/outfit-ai/.env.production，至少填写 MINIMAX_API_KEY 和 DOMAIN
+
+# 3. 本机一条命令构建、同步、启动并检查健康接口
+DEPLOY_HOST=root@SERVER_IP ./scripts/deploy.sh
+```
+
+`DOMAIN=:80` 只适合临时 IP 验收；正式使用应先把域名 A 记录指向服务器，再将 `DOMAIN` 改为域名，Caddy 会自动申请 HTTPS。不要把 `.env.production`、MiniMax Key、`data/` 或浏览器登录状态同步到服务器代码目录。
+
 ## 借鉴与署名
 
 本项目站在三个开源项目肩膀上（源码级调研后选择性 port / 抽象）：

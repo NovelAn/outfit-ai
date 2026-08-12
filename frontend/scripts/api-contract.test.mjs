@@ -11,7 +11,7 @@ import {
   waitForReady,
 } from "../src/lib/api.mjs";
 
-test("maps backend wardrobe records into the unchanged Stitch card model", () => {
+test("maps backend wardrobe records and preserves analyzed attributes", () => {
   assert.deepEqual(
     mapWardrobeItem({
       id: "shirt-1",
@@ -26,6 +26,14 @@ test("maps backend wardrobe records into the unchanged Stitch card model", () =>
       name: "青年布衬衫",
       category: "上装",
       imageUrl: "/media/shirt-1.nobg.png",
+      primaryColor: "",
+      secondaryColor: "",
+      material: "",
+      fit: "",
+      styles: [],
+      tags: [],
+      seasons: [],
+      occasions: [],
     },
   );
 });

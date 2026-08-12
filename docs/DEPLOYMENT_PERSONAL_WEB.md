@@ -36,6 +36,33 @@ PocketBay 公共测试期目前免费，但官方没有给出中国大陆网络�
 4. 先运行前端 `npm run build`，再由静态服务器托管 `frontend/dist`。
 5. 先用单用户密码/VPN 保护访问；多用户、对象存储、任务队列和登录在功能稳定后再做。
 
+## 腾讯云 Lighthouse：当前可执行的单服务器方案
+
+当前已在仓库中固化一套不依赖 GitHub 的首轮部署脚本：
+
+- `Dockerfile`：Node 20 构建 React，Python 3.11 构建 FastAPI；容器依赖按 `pyproject.toml` 从清华 PyPI 镜像安装，并设置 5 分钟超时、5 次重试和 BuildKit 缓存，避免 `uv.lock` 中的海外文件地址导致中国大陆服务器超时；同一 Docker 构建产物包含前端和后端。
+- `compose.yaml`：`app`、Caddy 静态/HTTPS 网关、SQLite/上传目录/rembg 模型缓存持久化卷。
+- `deploy/Caddyfile`：同源转发 `/api`、`/media`，其余路径托管 React 并回退到 `index.html`。
+- `scripts/bootstrap-ubuntu.sh`：首次初始化 Docker、Compose、Git、rsync 与 UFW，仅允许 22/80/443。
+- `scripts/deploy.sh`：通过 SSH + rsync 同步代码，执行 `docker compose up -d --build`，再检查 `/health`。
+- `.env.production.example`：服务器环境变量模板；真实 `.env.production` 只留在服务器。
+
+首轮部署步骤：
+
+```bash
+ssh root@SERVER_IP 'mkdir -p /tmp/outfit-ai-bootstrap'
+rsync -az scripts/ root@SERVER_IP:/tmp/outfit-ai-bootstrap/scripts/
+ssh root@SERVER_IP 'bash /tmp/outfit-ai-bootstrap/scripts/bootstrap-ubuntu.sh'
+scp .env.production.example root@SERVER_IP:/tmp/outfit-ai.env.production.example
+ssh root@SERVER_IP 'mkdir -p /opt/outfit-ai && cp /tmp/outfit-ai.env.production.example /opt/outfit-ai/.env.production'
+# 编辑服务器上的 /opt/outfit-ai/.env.production
+DEPLOY_HOST=root@SERVER_IP ./scripts/deploy.sh
+```
+
+服务器应使用 Ubuntu 24.04 LTS、x86_64，并为 SSH 配置公钥登录；不要把 SSH 私钥、MiniMax Key、浏览器 Cookie 或本机 `~/.mmx/config.json` 复制到仓库。`DOMAIN=:80` 可用于临时 IP 验收，但手机定位、图片上传和正式访问应使用已解析到服务器的 HTTPS 域名。千牛退款/聊天数据项目继续使用本机真实 Chrome + Playwright MCP，由本机任务通过 HTTPS 向服务器导入数据。
+
+这套脚本负责构建、同步、启动和健康检查。2026-08-12 已在腾讯云 Lighthouse 的 Ubuntu 24.04 实例上完成首次部署；真实公网 IP、MiniMax Key 和 `.env.production` 只保留在服务器，不写入仓库。
+
 ## 本地验收命令
 
 ```bash
@@ -43,7 +70,11 @@ cd backend && uv run uvicorn outfit_ai.main:app --host 127.0.0.1 --port 8000
 cd frontend && npm run build
 ```
 
-实际云端发布尚未执行：当前没有指定 VPS、域名、DNS 或服务器密钥，因此本文件是可执行方案而不是“已部署”声明。
+当前使用 `http://服务器公网IP` 临时验收，尚未配置正式域名和 HTTPS；域名就绪后将 `DOMAIN` 改为域名并重新运行部署脚本。
+
+### 从本机迁移已有数据
+
+本地实际运行数据默认位于 `~/.outfit-ai/`（包括 `outfit_ai.db`、原图和 `.nobg.png` 派生图），不是仓库内的 `backend/data/`。迁移前先停止云端 `app` 容器，备份 Docker volume，再将该目录中的数据库和 `uploads/` 同步到 `outfit-ai_outfit_data` volume，最后启动 Compose 并核对 `wardrobe_items`、`style_references`、`feedback`、`outfit_history` 和 `profile` 计数。不要删除本机源目录；云端替换前必须保留可回滚备份。
 
 ## 平台取舍（2026-08-10 核对）
 

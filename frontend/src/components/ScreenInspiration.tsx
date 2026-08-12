@@ -93,7 +93,7 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
       />
 
       {/* TopAppBar */}
-      <header className="fixed top-0 w-full z-50 bg-[#fbf9f4] flex justify-between items-center px-8 h-20 border-b border-[#e4e2dd]/40">
+      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg z-50 bg-[#fbf9f4] flex justify-between items-center px-6 h-20 border-b border-[#e4e2dd]/40">
         <button
           onClick={() => setIsDrawerOpen(true)}
           className="text-[#162839] hover:opacity-70 transition-opacity p-1 rounded hover:bg-[#f0eee9]"
@@ -110,7 +110,7 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
       </header>
 
       {/* Main Container */}
-      <main className="pt-24 md:pt-28 max-w-7xl mx-auto px-6 md:px-12 bg-[#fbf9f4]">
+      <main className="pt-24 max-w-lg mx-auto px-6 bg-[#fbf9f4]">
         {/* Header Section */}
         <section className="mb-10 text-left relative border-b border-[#c4c6cd]/30 pb-6">
           <div className="flex justify-between items-end mb-3">
@@ -229,7 +229,7 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
 
         {/* AI Generated Result (3-Image Generation Edition) */}
         {looks.length > 0 && <section className="mb-12 relative">
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-lg mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
               {looks.map((look) => (
                 <div key={look.id} className="flex flex-col group">

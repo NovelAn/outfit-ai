@@ -1,6 +1,6 @@
 # Outfit-AI 当前前端与后端集成
 
-> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-08-10。
+> 本文件是当前前端页面、入口、功能和 API 接线的事实源。最后核对：2026-08-12。
 
 ## 1. 前端基准
 
@@ -33,9 +33,9 @@ frontend/index.html
 
 | 页面 | 源文件 | 用户功能 | 主要后端接口 |
 |---|---|---|---|
-| 今日 | `ScreenToday.tsx` | 从真实衣橱生成 Safe / Fresh / Stretch；收藏、打分和反馈 | `GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
+| 今日 | `ScreenToday.tsx` | 首次打开且本地没有推荐缓存时自动生成一次 Safe / Fresh / Stretch；之后只在用户点击“AI 换一换”时请求新推荐；收藏、打分和反馈 | `GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
-| 灵感 | `ScreenInspiration.tsx` | 单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景让后端基于参考分析生成三张非衣橱灵感图；生成前清空旧结果，部分成功明确提示 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
+| 灵感 | `ScreenInspiration.tsx` | 页面内容使用与底部导航一致的 `max-w-lg` 手机画布；单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景让后端基于参考分析生成三张非衣橱灵感图；生成前清空旧结果，部分成功明确提示 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 三列紧凑缩略图浏览；点击图片放大、再次点击恢复原网格位置；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
 | 我的 | `ScreenProfile.tsx` | 查看和编辑风格关键词、色板、反馈历史、推荐历史和收藏 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history` |
 
@@ -45,7 +45,7 @@ frontend/index.html
 
 | 前端方法 | HTTP 接口 | 说明 |
 |---|---|---|
-| `wardrobe()` | `GET /api/wardrobe/items` | 读取已确认真实衣物 |
+| `wardrobe()` | `GET /api/wardrobe/items` | 读取已确认真实衣物；保留 AI 属性与标签，图片优先返回去背景 PNG |
 | `uploadWardrobe(file)` | `POST /api/wardrobe/upload` | 上传真实衣物 |
 | `wardrobeStatus(id)` | `GET /api/wardrobe/{id}/status` | 轮询识图状态 |
 | `confirmWardrobe(id,data)` | `POST /api/wardrobe/{id}/confirm` | 确认 AI 属性及用户修改 |
@@ -57,7 +57,7 @@ frontend/index.html
 | `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存 Style DNA |
 | `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐 |
 | `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈 |
-| `history()` | `GET /api/history` | 读取近期推荐记录 |
+| `history()` | `GET /api/history` | 读取近期推荐记录，并返回服务端评分与匹配到的反馈标签/文字；Profile 优先合并这些服务端数据，不再只依赖 localStorage |
 | `generateInspiration(data)` | `POST /api/inspiration/generate` | 返回 `{looks,status,requestedCount,generatedCount}`；禁止空结果回退到静态无关图片 |
 
 灵感参考图批量上传复用现有单文件接口：前端对每张图片分别调用 `uploadReference()` 和 `referenceStatus()`，使用独立结算保证单张失败不影响同批其他图片，完成后只刷新一次灵感库。

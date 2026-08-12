@@ -1,9 +1,10 @@
 import json
+import re
 from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import update
+from sqlalchemy import literal_column, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,9 @@ def feedback(
             raise HTTPException(404, "推荐历史不存在")
         history.action = payload.action
         history.wore_it = payload.action == "worn"
+        rating = re.search(r"([1-5])\s*星", payload.sentiment or "")
+        if rating:
+            history.user_rating = int(rating.group(1))
     row = Feedback(
         id=uuid4().hex,
         user_id=settings.user_id,
@@ -62,8 +66,32 @@ def feedback(
 @router.get("/history")
 def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
     rows = get_recent_outfits(db, settings.user_id, limit)
-    return [
-        {
+    dates = {row.date for row in rows}
+    feedback_rows = list(
+        db.scalars(
+            select(Feedback)
+            .where(Feedback.user_id == settings.user_id, Feedback.date.in_(dates))
+            .order_by(literal_column("feedback.rowid").desc())
+        )
+    ) if dates else []
+
+    def feedback_for(row: OutfitHistory) -> Feedback | None:
+        target = tuple(sorted(json.loads(row.item_ids_json or "[]")))
+        for candidate in feedback_rows:
+            if candidate.date != row.date:
+                continue
+            if tuple(sorted(json.loads(candidate.items_worn_json or "[]"))) == target:
+                return candidate
+        return None
+
+    result = []
+    for row in rows:
+        matched = feedback_for(row)
+        rating = row.user_rating
+        if rating is None and matched:
+            match = re.search(r"([1-5])\s*星", matched.sentiment or "")
+            rating = int(match.group(1)) if match else None
+        result.append({
             "id": row.id,
             "date": row.date,
             "item_ids": json.loads(row.item_ids_json),
@@ -74,6 +102,16 @@ def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
             "collage_path": row.collage_path,
             "action": row.action,
             "wore_it": row.wore_it,
-        }
-        for row in rows
-    ]
+            "rating": rating,
+            "feedback": (
+                {
+                    "sentiment": matched.sentiment,
+                    "compliments": json.loads(matched.compliments_json or "[]"),
+                    "didnt_work": matched.didnt_work,
+                    "learnings": matched.learnings,
+                }
+                if matched
+                else None
+            ),
+        })
+    return result

@@ -89,8 +89,9 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
   const loadData = async () => {
     try {
       const savedRatings = localStorage.getItem('OUTFIT_AI_LOOK_RATINGS');
+      const localRatings: Record<string, LookRating> = savedRatings ? JSON.parse(savedRatings) : {};
       if (savedRatings) {
-        setRatings(JSON.parse(savedRatings));
+        setRatings(localRatings);
       } else {
         setRatings({});
       }
@@ -119,6 +120,26 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
           action: row.action,
         };
       });
+      const serverRatings = history.reduce((acc: Record<string, LookRating>, row: any) => {
+        if (!row.rating) return acc;
+        const items = row.item_ids
+          .map((id: string) => byId.get(id))
+          .filter(Boolean)
+          .map((item: any) => ({ name: item.name, category: item.category, img: item.imageUrl }));
+        const feedback = row.feedback || {};
+        acc[row.id] = {
+          lookId: row.id,
+          lookTitle: `${row.pick_mode === 'safe' ? 'Look 01 / 稳妥' : row.pick_mode === 'fresh' ? 'Look 02 / 新鲜' : 'Look 03 / 突破'} / ${row.occasion || '日常'}`,
+          rating: row.rating,
+          tags: feedback.compliments || [],
+          comment: feedback.sentiment || feedback.didnt_work || '',
+          timestamp: row.date,
+          aiAdjustment: feedback.learnings || '已记录到 AI 品味学习链',
+          lookImage: items[0]?.img,
+        };
+        return acc;
+      }, {});
+      setRatings({ ...localRatings, ...serverRatings });
       setHistoryList(mappedHistory);
       setFavoritesList(mappedHistory.filter((item: any) => item.action === 'saved').map((item) => ({
         id: item.id,

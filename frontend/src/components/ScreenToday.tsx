@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
@@ -178,6 +178,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     stretch: 0
   });
   const [swappingTier, setSwappingTier] = useState<string | null>(null);
+  const [isLoadingRecommendation, setIsLoadingRecommendation] = useState(false);
+  const initialRecommendationStarted = useRef(false);
 
   // Comparison Mode states
   const [isCompareMode, setIsCompareMode] = useState<boolean>(false);
@@ -290,25 +292,26 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
           .map((item: any) => item.id),
         locked_item_ids: [],
       });
-      setLiveLooks(recommendation);
-      localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(recommendation));
+      setLiveLooks((current: any) => {
+        const next = { ...(current || {}), [tier]: recommendation[tier] };
+        localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(next));
+        return next;
+      });
       if (recommendation.weather?.temp !== undefined) {
         setCurrentCity(`${city} / ${Math.round(recommendation.weather.temp)}°C`);
       }
-      (['safe', 'fresh', 'stretch'] as const).forEach((key) => {
-        const look = recommendation[key];
-        LOOK_DETAILS[key] = {
-          id: key,
-          title: look.title,
-          tag: look.tag,
-          imageUrl: look.imageUrl,
-          dateAdded: '今日推荐',
-          type: 'look',
-          description: look.description,
-          lookItems: look.items,
-        };
-      });
-      triggerToast('✨ AI 已根据真实衣橱与 Style DNA 生成三套新搭配！');
+      const look = recommendation[tier];
+      LOOK_DETAILS[tier] = {
+        id: tier,
+        title: look.title,
+        tag: look.tag,
+        imageUrl: look.imageUrl,
+        dateAdded: '今日推荐',
+        type: 'look',
+        description: look.description,
+        lookItems: look.items,
+      };
+      triggerToast(`✨ 已更新${tier === 'safe' ? '稳妥' : tier === 'fresh' ? '新鲜' : '突破'} Look，其余推荐保持不变`);
     } catch (error) {
       triggerToast(error instanceof Error ? error.message : '推荐生成失败');
     } finally {
@@ -316,17 +319,44 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     }
   };
 
+  const loadInitialRecommendation = async () => {
+    setIsLoadingRecommendation(true);
+    try {
+      const references = await api.references();
+      const city = localStorage.getItem('OUTFIT_AI_CITY') || '上海';
+      const recommendation = await api.recommend({
+        occasion: '日常',
+        scene: '日常',
+        city,
+        reference_ids: references
+          .filter((item: any) => item.status === 'ready')
+          .slice(0, 6)
+          .map((item: any) => item.id),
+        locked_item_ids: [],
+      });
+      setLiveLooks(recommendation);
+      localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(recommendation));
+      if (recommendation.weather?.temp !== undefined) {
+        setCurrentCity(`${city} / ${Math.round(recommendation.weather.temp)}°C`);
+      }
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : '今日推荐生成失败');
+    } finally {
+      setIsLoadingRecommendation(false);
+    }
+  };
+
   const loadCityAndFavorites = () => {
     try {
-      const city = localStorage.getItem('OUTFIT_AI_CITY') || 'TOKYO';
+      const city = localStorage.getItem('OUTFIT_AI_CITY') || '上海';
       const cityMap: Record<string, string> = {
-        TOKYO: 'TOKYO / 24°C',
-        SHANGHAI: 'SHANGHAI / 22°C',
-        BEIJING: 'BEIJING / 19°C',
-        PARIS: 'PARIS / 18°C',
-        'NEW YORK': 'NEW YORK / 21°C'
+        TOKYO: '东京',
+        SHANGHAI: '上海',
+        BEIJING: '北京',
+        PARIS: '巴黎',
+        'NEW YORK': '纽约'
       };
-      setCurrentCity(cityMap[city] || 'TOKYO / 24°C');
+      setCurrentCity(cityMap[city] || city);
 
       const favsStr = localStorage.getItem('OUTFIT_AI_FAVORITES');
       if (favsStr) {
@@ -357,6 +387,12 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     } catch (e) {
       console.error(e);
     }
+  }, []);
+
+  useEffect(() => {
+    if (initialRecommendationStarted.current) return;
+    initialRecommendationStarted.current = true;
+    if (!liveLooks) void loadInitialRecommendation();
   }, []);
 
   const triggerToast = (msg: string) => {
@@ -586,6 +622,11 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       </header>
 
       <main className="max-w-md mx-auto">
+        {isLoadingRecommendation && (
+          <div className="mx-6 mt-6 rounded-xl border border-[#162839]/20 bg-[#162839] px-4 py-3 text-xs text-white shadow-sm">
+            正在根据你的真实衣橱、Style DNA 和今日天气生成推荐…
+          </div>
+        )}
         {/* Safe Category */}
         {(() => {
           const varIdx = variantsIdx.safe || 0;

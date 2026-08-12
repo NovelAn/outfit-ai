@@ -8,10 +8,11 @@ from PIL import Image, ImageOps
 from ..schemas import ClothingAttributes, StyleReferenceAnalysis
 from . import minimax_images
 from .minimax_images import MiniMaxResponseError
+from .storage import resolve_storage_path
 
 
 def image_data_url(path: str | Path, *, max_bytes: int | None = None) -> str:
-    path = Path(path)
+    path = resolve_storage_path(path)
     mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
     data = path.read_bytes()
     if max_bytes is not None and len(data) > max_bytes:
