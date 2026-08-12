@@ -278,7 +278,7 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
         )}
 
         {/* Contact Sheet Grid */}
-        <div className="grid grid-cols-3 md:grid-cols-4 gap-2 md:gap-4">
+        <div className="grid grid-cols-3 gap-2">
           {filteredItems.map((item) => {
             const isSelected = selectedIds.includes(item.id);
             return (
@@ -301,7 +301,7 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
                   </div>
                 )}
 
-                <div className="bg-[#f5f3ee] p-1.5 md:p-2.5 md:pb-8 relative contact-shadow border border-[#e4e2dd] overflow-hidden">
+                <div className="bg-[#f5f3ee] p-1.5 relative contact-shadow border border-[#e4e2dd] overflow-hidden">
                   {item.badge && (
                     <div className="absolute top-1 right-1 z-10 bg-[#9a442a] text-white px-1.5 py-0.5 text-[8px] md:text-[10px] font-bold tracking-wide">
                       {item.badge}
@@ -312,16 +312,21 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
                     alt={item.title}
                     className="w-full aspect-[3/4] object-cover group-hover:scale-[1.02] transition-transform duration-300"
                   />
-                  <div className="hidden md:flex absolute bottom-2 left-2.5 right-2.5 flex-wrap gap-1 text-[10px] text-[#43474c] font-mono">
-                    {item.tags.map(t => (
+                  <div className="mt-1.5 min-h-8">
+                    <p className="truncate text-[10px] font-semibold text-[#162839]" title={item.title}>
+                      {item.title}
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-1 text-[9px] text-[#43474c] font-mono">
+                    {item.tags.slice(0, 2).map(t => (
                       <span
                         key={t}
                         onClick={(e) => { e.stopPropagation(); setActiveTag(t); }}
-                        className="hover:text-[#162839] hover:underline"
+                        className="max-w-full truncate rounded bg-[#eae8e3] px-1 py-0.5 hover:text-[#162839] hover:underline"
                       >
                         {t}
                       </span>
                     ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -364,9 +369,9 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
               className="w-full h-auto max-h-[70vh] object-contain mb-4 cursor-zoom-out"
             />
             <h3 className="font-serif-display text-lg text-[#162839] font-bold">{previewItem.title}</h3>
-            <div className="flex gap-2 mt-2 mb-6">
-              {previewItem.tags.map(t => (
-                <span key={t} className="text-xs bg-[#eae8e3] text-[#162839] px-2 py-0.5">{t}</span>
+            <div className="flex flex-wrap gap-1.5 mt-2 mb-6">
+              {previewItem.tags.slice(0, 8).map(t => (
+                <span key={t} className="max-w-full break-words text-xs bg-[#eae8e3] text-[#162839] px-2 py-0.5">{t}</span>
               ))}
             </div>
             <button
