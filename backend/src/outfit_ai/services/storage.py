@@ -11,6 +11,7 @@ from ..config import settings
 MAX_IMAGE_PIXELS = 25_000_000
 _FORMATS = {
     "JPEG": (".jpg", "JPEG"),
+    "MPO": (".jpg", "JPEG"),
     "PNG": (".png", "PNG"),
     "WEBP": (".webp", "WEBP"),
 }
@@ -63,4 +64,18 @@ class LocalStorage:
         return path
 
     def delete(self, path: str) -> None:
-        Path(path).unlink(missing_ok=True)
+        resolve_storage_path(path).unlink(missing_ok=True)
+
+
+def resolve_storage_path(path: str | Path) -> Path:
+    """Resolve paths persisted before a data directory was moved.
+
+    The local database stores absolute paths.  A deployment can move the same
+    files into ``UPLOAD_DIR`` while keeping those rows intact, so fall back to
+    the stored basename when the old absolute path is unavailable.
+    """
+    source = Path(path)
+    if source.exists():
+        return source
+    migrated = Path(settings.upload_dir) / source.name
+    return migrated if migrated.exists() else source

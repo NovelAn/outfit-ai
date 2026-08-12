@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import init_db
-from .routers import feedback, profile, recommend, wardrobe
+from .routers import feedback, inspiration, profile, recommend, style_references, wardrobe
 
 
 @asynccontextmanager
@@ -28,6 +28,8 @@ app.include_router(wardrobe.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 app.include_router(recommend.router, prefix="/api")
 app.include_router(feedback.router, prefix="/api")
+app.include_router(style_references.router, prefix="/api")
+app.include_router(inspiration.router, prefix="/api")
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 app.mount("/media", StaticFiles(directory=settings.upload_dir), name="media")
 

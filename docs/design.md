@@ -1,5 +1,7 @@
 # Outfit-AI · 前端 UI/UX 设计
 
+> **历史文档，已归档。** 当前前端唯一基准是 `/Users/novel/Downloads/outfit-ai-穿搭与灵感.zip`；本文不得用于改写其视觉、页面或交互。
+
 > **方向已锁定（2026-07-27）：Warm Editorial · 移动优先。**
 > 气质参考：`https://getdesign.md/claude/design-md`（Claude 设计系统：terracotta 强调 + 米白底 + 衬线/无衬线配对 + 编辑式留白）。
 > 移动端化：保留气质，版式/布局按手机（最终微信小程序 + App）重做。目标端：微信小程序 / App / H5（uni-app 一套代码）。
@@ -38,7 +40,7 @@
 ### 通用骨架
 - 顶部极简标题栏（Semibold 页名 + 可选右操作）
 - 内容单栏满宽
-- 底部 Tab（4）：**衣橱 / 推荐 / 风格 / 历史**；激活态 terracotta
+- 底部 Tab（4）：**今日 / 衣橱 / 灵感 / 我的**；激活态 terracotta
 - 主操作置拇指区（底部 sticky）
 
 ### wardrobe（衣橱）
@@ -47,12 +49,12 @@
 - 上传中：卡片占位 + `pending→analyzing→ready/failed` 药丸
 - 空态："再加几件适合今天的单品" 暖提示
 
-### profile（风格）
+### 我的
 - **Style DNA**：编辑式排版（颜色季节/偏好/忌讳…），像在读档案
 - **品味备忘录（taste_memo）**：卡片化自然语言档案 + "刷新我的品味" 按钮
 - onboarding：样例图上传 → Style DNA 草稿 → 编辑确认
 
-### recommend（推荐）★
+### 今日 ★
 - 顶部：今日天气/场合/心情 一行摘要
 - 三档**纵向堆叠大卡**：
   - 档位标签 Safe/Fresh/Stretch（Semibold + terracotta 点缀）
@@ -63,6 +65,11 @@
 
 ### history（历史）
 - Look 时间线（日期 + 拼图缩略 + 场合 + 反馈标记）
+
+### 灵感
+- 横向长期参考 Look 胶片，可上传、查看分析状态并选择本次参考
+- 展示当前 Style DNA 摘要，输入季节、场景和可选自然语言要求
+- 每次生成一张独立灵感图，并持续显示“AI 灵感图 · 不代表衣橱已有单品”
 
 ## 4. 关键组件
 - **三档推荐卡**（见 §3 recommend）

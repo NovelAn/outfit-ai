@@ -1,9 +1,10 @@
 import json
-from typing import Annotated
+import re
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import update
+from sqlalchemy import literal_column, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
@@ -11,7 +12,7 @@ from ..config import settings
 from ..db import get_db
 from ..models import Feedback, OutfitHistory, Profile
 from ..schemas import FeedbackIn
-from ..services.history import get_recent_outfits
+from ..services.history import get_history_outfits, get_recent_outfits
 from ..services.taste_memo import FEEDBACK_BATCH_SIZE, refresh
 
 router = APIRouter(tags=["feedback"])
@@ -28,8 +29,18 @@ def feedback(
         history = db.get(OutfitHistory, payload.history_id)
         if not history or history.user_id != settings.user_id:
             raise HTTPException(404, "推荐历史不存在")
-        history.action = payload.action
-        history.wore_it = payload.action == "worn"
+        rating = payload.rating
+        if rating is None and payload.sentiment:
+            match = re.search(r"([1-5])\s*星", payload.sentiment)
+            rating = int(match.group(1)) if match else None
+        if rating is not None:
+            history.user_rating = rating
+        if payload.action == "worn":
+            history.wore_it = True
+            if history.action != "saved":
+                history.action = "worn"
+        elif payload.action is not None:
+            history.action = payload.action
     row = Feedback(
         id=uuid4().hex,
         user_id=settings.user_id,
@@ -60,10 +71,38 @@ def feedback(
 
 
 @router.get("/history")
-def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
-    rows = get_recent_outfits(db, settings.user_id, limit)
-    return [
-        {
+def history(
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    scope: Literal["recent", "archive"] | None = None,
+):
+    rows = (
+        get_history_outfits(db, settings.user_id, scope=scope, limit=limit)
+        if scope
+        else get_recent_outfits(db, settings.user_id, limit)
+    )
+    dates = {row.date for row in rows}
+    feedback_rows = list(
+        db.scalars(
+            select(Feedback)
+            .where(Feedback.user_id == settings.user_id, Feedback.date.in_(dates))
+            .order_by(literal_column("feedback.rowid").desc())
+        )
+    ) if dates else []
+
+    def feedback_for(row: OutfitHistory) -> Feedback | None:
+        target = tuple(sorted(json.loads(row.item_ids_json or "[]")))
+        for candidate in feedback_rows:
+            if candidate.date != row.date:
+                continue
+            if tuple(sorted(json.loads(candidate.items_worn_json or "[]"))) == target:
+                return candidate
+        return None
+
+    result = []
+    for row in rows:
+        matched = feedback_for(row)
+        result.append({
             "id": row.id,
             "date": row.date,
             "item_ids": json.loads(row.item_ids_json),
@@ -74,6 +113,21 @@ def history(db: DbSession, limit: Annotated[int, Query(ge=1, le=100)] = 20):
             "collage_path": row.collage_path,
             "action": row.action,
             "wore_it": row.wore_it,
-        }
-        for row in rows
-    ]
+            "rating": row.user_rating,
+            "feedback": (
+                {
+                    "sentiment": matched.sentiment,
+                    "compliments": json.loads(matched.compliments_json or "[]"),
+                    "didnt_work": matched.didnt_work,
+                    "learnings": matched.learnings,
+                }
+                if matched
+                else None
+            ),
+            "scope": (
+                "archive"
+                if row.action == "saved" or row.wore_it or (row.user_rating or 0) >= 4
+                else "recent"
+            ),
+        })
+    return result

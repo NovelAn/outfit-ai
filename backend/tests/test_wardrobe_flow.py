@@ -25,6 +25,7 @@ def test_upload_analyze_confirm_and_list_flow(monkeypatch, tmp_path) -> None:
         return Session(engine)
 
     monkeypatch.setattr(analysis, "SessionLocal", session_factory)
+    monkeypatch.setattr(analysis, "ensure_background_removed", lambda path: path)
     monkeypatch.setattr(wardrobe, "storage", LocalStorage(tmp_path / "uploads"))
     monkeypatch.setattr(
         analysis,
@@ -106,6 +107,57 @@ def test_storage_uses_detected_format_and_safe_extension(tmp_path) -> None:
     assert path.suffix == ".png"
     with Image.open(path) as saved:
         assert saved.format == "PNG"
+
+
+def test_storage_converts_mpo_jpg_to_standard_jpeg(tmp_path) -> None:
+    image = BytesIO()
+    Image.new("RGB", (10, 10), "blue").save(
+        image,
+        "MPO",
+        save_all=True,
+        append_images=[Image.new("RGB", (10, 10), "red")],
+    )
+    image.seek(0)
+
+    path = LocalStorage(tmp_path).save(
+        UploadFile(image, filename="iphone.jpg")
+    )
+
+    assert path.suffix == ".jpg"
+    with Image.open(path) as saved:
+        assert saved.format == "JPEG"
+        assert getattr(saved, "n_frames", 1) == 1
+
+
+def test_upload_accepts_valid_jpeg_with_generic_browser_mime(
+    monkeypatch, tmp_path
+) -> None:
+    class RecordingDb:
+        def add(self, item):
+            self.item = item
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    image = BytesIO()
+    Image.new("RGB", (10, 10), "blue").save(image, "JPEG")
+    image.seek(0)
+    monkeypatch.setattr(wardrobe, "storage", LocalStorage(tmp_path))
+
+    created = wardrobe.upload(
+        BackgroundTasks(),
+        UploadFile(
+            image,
+            filename="iphone.jpg",
+            headers=Headers({"content-type": "application/octet-stream"}),
+        ),
+        RecordingDb(),
+    )
+
+    assert created["status"] == "pending"
 
 
 def test_storage_rejects_excessive_pixel_count(monkeypatch, tmp_path) -> None:
@@ -190,6 +242,7 @@ def test_wardrobe_http_upload_status_confirm_and_list(monkeypatch, tmp_path) -> 
             yield db
 
     monkeypatch.setattr(analysis, "SessionLocal", session_factory)
+    monkeypatch.setattr(analysis, "ensure_background_removed", lambda path: path)
     monkeypatch.setattr(wardrobe, "storage", LocalStorage(tmp_path / "uploads"))
     monkeypatch.setattr(
         analysis,
@@ -250,6 +303,73 @@ def test_confirm_rejects_unknown_category() -> None:
             wardrobe.confirm("item-1", WardrobePatch(), db)
 
     assert error.value.status_code == 422
+
+
+def test_confirm_maps_ready_hat_to_accessory() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(
+            WardrobeItem(
+                id="item-1",
+                user_id="local",
+                category="hat",
+                image_path="/tmp/item.jpg",
+                status="ready",
+            )
+        )
+        db.commit()
+
+        confirmed = wardrobe.confirm("item-1", WardrobePatch(), db)
+
+    assert confirmed["category"] == "accessory"
+    assert confirmed["confirmed_by_user"] is True
+
+
+def test_worker_sends_background_removed_image_to_vision(monkeypatch, tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'worker.db'}")
+    Base.metadata.create_all(engine)
+
+    def session_factory():
+        return Session(engine)
+
+    source = tmp_path / "shirt.jpg"
+    transparent = tmp_path / "shirt.nobg.png"
+    source.write_bytes(b"source")
+    transparent.write_bytes(b"transparent")
+    with session_factory() as db:
+        db.add(
+            WardrobeItem(
+                id="item-1",
+                user_id="local",
+                image_path=str(source),
+                status="pending",
+            )
+        )
+        db.commit()
+
+    seen_paths = []
+    monkeypatch.setattr(analysis, "SessionLocal", session_factory)
+    monkeypatch.setattr(
+        analysis, "ensure_background_removed", lambda _: transparent
+    )
+
+    def extract(path):
+        seen_paths.append(path)
+        return (
+            ClothingAttributes(
+                name="白衬衫",
+                category="top",
+                primary_color="白色",
+            ),
+            '{"source":"test"}',
+        )
+
+    monkeypatch.setattr(analysis, "extract", extract)
+
+    analysis.analyze_item("item-1")
+
+    assert seen_paths == [transparent]
 
 
 def test_retry_rejects_analyzing_item_even_when_old() -> None:

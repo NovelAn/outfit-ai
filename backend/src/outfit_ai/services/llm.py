@@ -1,9 +1,15 @@
+import json
 from typing import Any
 
 from openai import OpenAI, OpenAIError
 from pydantic import TypeAdapter, ValidationError
 
 from ..config import settings
+from .minimax_images import (
+    MiniMaxAccess,
+    MiniMaxUnavailableError,
+    resolve_minimax_access,
+)
 
 _JSON_OBJECT = TypeAdapter(dict[str, Any])
 
@@ -16,14 +22,16 @@ class LLMResponseError(ValueError):
     pass
 
 
-def require_api_key() -> None:
-    if not settings.minimax_api_key:
-        raise LLMUnavailableError("未配置 MINIMAX_API_KEY")
+def require_api_key() -> MiniMaxAccess:
+    try:
+        return resolve_minimax_access()
+    except MiniMaxUnavailableError as exc:
+        raise LLMUnavailableError(str(exc)) from exc
 
 
 def get_client() -> OpenAI:
-    require_api_key()
-    return OpenAI(api_key=settings.minimax_api_key, base_url=settings.minimax_base_url)
+    access = require_api_key()
+    return OpenAI(api_key=access.api_key, base_url=f"{access.base_url}/v1")
 
 
 def _create_completion(**kwargs):
@@ -49,6 +57,19 @@ def chat_multimodal(
     )
 
 
+def _parse_json_object(content: str) -> dict[str, Any]:
+    decoder = json.JSONDecoder()
+    for start, character in enumerate(content):
+        if character != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(content[start:])
+        except json.JSONDecodeError:
+            continue
+        return _JSON_OBJECT.validate_python(value)
+    return _JSON_OBJECT.validate_json(content.strip())
+
+
 def generate_json(system: str, user: str, schema_hint: str, max_attempts: int = 2) -> dict:
     messages = [
         {"role": "system", "content": system},
@@ -62,9 +83,7 @@ def generate_json(system: str, user: str, schema_hint: str, max_attempts: int = 
         content = ""
         try:
             content = response.choices[0].message.content or ""
-            return _JSON_OBJECT.validate_json(
-                content.removeprefix("```json").removesuffix("```").strip()
-            )
+            return _parse_json_object(content)
         except (AttributeError, IndexError, ValidationError) as exc:
             last_error = str(exc)
             messages.append({"role": "assistant", "content": content})

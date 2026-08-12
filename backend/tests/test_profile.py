@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from outfit_ai.config import settings
 from outfit_ai.db import Base, get_db
 from outfit_ai.main import app
 from outfit_ai.models import Profile
@@ -16,7 +15,16 @@ from outfit_ai.services import taste_memo
 
 
 def test_style_dna_draft_reports_missing_minimax_key(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "minimax_api_key", "")
+    from outfit_ai.services import llm
+    from outfit_ai.services.minimax_images import MiniMaxUnavailableError
+
+    monkeypatch.setattr(
+        llm,
+        "resolve_minimax_access",
+        lambda: (_ for _ in ()).throw(
+            MiniMaxUnavailableError("未配置 MiniMax API Key")
+        ),
+    )
 
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.post(
@@ -25,7 +33,7 @@ def test_style_dna_draft_reports_missing_minimax_key(monkeypatch) -> None:
         )
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "未配置 MINIMAX_API_KEY"
+    assert response.json()["detail"] == "未配置 MiniMax API Key"
 
 
 def test_style_dna_draft_requires_text_or_sample() -> None:
@@ -84,6 +92,92 @@ def test_profile_round_trip_preserves_full_spec_fields() -> None:
     assert output["formulas"] == ["针织衫 + 长裤"]
     assert output["learned_from_feedback"] == ["避免高对比"]
     assert output["budget_top_cents"] == 200000
+
+
+def test_legacy_feedback_array_is_returned_as_learned_from_feedback() -> None:
+    profile = Profile(user_id="local", learned_from_feedback_json='["偏爱天然材质"]')
+
+    output = _out(profile)
+
+    assert output["learned_from_feedback"] == ["偏爱天然材质"]
+
+
+def test_profile_http_round_trip_preserves_style_dna_curation_fields(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'profile.db'}")
+    Base.metadata.create_all(engine)
+
+    def override_db():
+        with Session(engine) as db:
+            yield db
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            saved = client.put(
+                "/api/profile",
+                json={
+                    "recent_style_signals": ["近期尝试低饱和"],
+                    "style_tag_preferences": {
+                        "pinned": ["复古"],
+                        "hidden": ["商务会议"],
+                        "aliases": {"日杂休闲": "日系松弛"},
+                    },
+                    "last_location": {"city": "上海", "latitude": 31.23},
+                },
+            )
+            fetched = client.get("/api/profile")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert saved.status_code == 200
+    assert fetched.status_code == 200
+    assert fetched.json()["recent_style_signals"] == ["近期尝试低饱和"]
+    assert fetched.json()["style_tag_preferences"] == {
+        "pinned": ["复古"],
+        "hidden": ["商务会议"],
+        "aliases": {"日杂休闲": "日系松弛"},
+    }
+    assert fetched.json()["last_location"] == {"city": "上海", "latitude": 31.23}
+
+
+def test_legacy_profile_put_keeps_unmentioned_curation_fields(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'profile.db'}")
+    Base.metadata.create_all(engine)
+
+    def override_db():
+        with Session(engine) as db:
+            yield db
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            client.put(
+                "/api/profile",
+                json={
+                    "recent_style_signals": ["近期尝试低饱和"],
+                    "style_tag_preferences": {"pinned": ["复古"]},
+                    "last_location": {"city": "上海"},
+                },
+            )
+            saved = client.put("/api/profile", json={"city": "杭州"})
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert saved.json()["recent_style_signals"] == ["近期尝试低饱和"]
+    assert saved.json()["style_tag_preferences"]["pinned"] == ["复古"]
+    assert saved.json()["last_location"] == {"city": "上海"}
+
+
+def test_legacy_profile_put_does_not_attach_transient_curation_attrs() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        profile = _save(db, ProfileIn(city="杭州"))
+
+    assert not hasattr(profile, "recent_style_signals")
+    assert not hasattr(profile, "style_tag_preferences")
+    assert not hasattr(profile, "last_location")
 
 
 def test_style_dna_draft_does_not_save_before_user_confirms(monkeypatch) -> None:

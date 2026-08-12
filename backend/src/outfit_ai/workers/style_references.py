@@ -1,0 +1,76 @@
+import json
+
+from sqlalchemy import update
+
+from ..config import settings
+from ..db import SessionLocal
+from ..models import Profile, StyleReference
+from ..schemas import StyleDnaMerge, StyleReferenceAnalysis
+from ..services.profile_state import decode_profile_state, encode_profile_state
+from ..services.style_references import merge_style_dna
+from ..services.vision import analyze_reference
+
+
+def process_reference(reference_id: str) -> None:
+    with SessionLocal() as db:
+        claimed = db.scalar(
+            update(StyleReference)
+            .where(
+                StyleReference.id == reference_id,
+                StyleReference.status == "pending",
+            )
+            .values(
+                status="analyzing",
+                attempt_count=StyleReference.attempt_count + 1,
+            )
+            .returning(StyleReference.id)
+        )
+        db.commit()
+        if not claimed:
+            return
+        reference = db.get(StyleReference, reference_id)
+        if not reference:
+            return
+        try:
+            analysis = None
+            if reference.analysis_json:
+                try:
+                    analysis = StyleReferenceAnalysis.model_validate_json(
+                        reference.analysis_json
+                    )
+                except ValueError:
+                    pass
+            if analysis is None:
+                analysis, raw = analyze_reference(reference.image_path)
+                reference.analysis_json = analysis.model_dump_json()
+                reference.ai_raw_response = raw
+            profile = db.get(Profile, settings.user_id)
+            merged = StyleDnaMerge.model_validate(merge_style_dna(profile, analysis))
+            if not profile:
+                profile = Profile(user_id=settings.user_id)
+                db.add(profile)
+            for field in (
+                "style_keywords",
+                "palette",
+                "preferred_colors",
+                "preferred_styles",
+                "avoids",
+            ):
+                setattr(
+                    profile,
+                    f"{field}_json",
+                    json.dumps(getattr(merged, field), ensure_ascii=False),
+                )
+            state = decode_profile_state(profile.learned_from_feedback_json or "[]")
+            profile.learned_from_feedback_json = encode_profile_state(
+                learnings=state["learnings"],
+                recent_style_signals=merged.recent_style_signals,
+                style_tag_preferences=state["style_tag_preferences"],
+                last_location=state["last_location"],
+            )
+            profile.taste_memo = merged.taste_memo
+            reference.status = "ready"
+        except Exception as exc:
+            reference.ai_raw_response = str(exc)[:500]
+            reference.status = "failed"
+        db.commit()
