@@ -75,6 +75,63 @@ def test_feedback_is_not_deducted_before_background_task_starts() -> None:
         assert len(background_tasks.tasks) == 1
 
 
+def test_feedback_accepts_an_actionless_rating_from_one_to_five() -> None:
+    assert FeedbackIn(history_id="history-1", rating=1).rating == 1
+    rating = FeedbackIn(history_id="history-1", rating=5)
+
+    assert rating.action is None
+    assert rating.rating == 5
+    with pytest.raises(ValueError):
+        FeedbackIn(history_id="history-1", action="saved", rating=0)
+    with pytest.raises(ValueError):
+        FeedbackIn(history_id="history-1", action="saved", rating=6)
+
+
+def test_favorite_and_wear_preserve_saved_history_action() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(
+            OutfitHistory(
+                id="history-1",
+                user_id="local",
+                item_ids_json="[]",
+                pick_mode="safe",
+                action="shown",
+            )
+        )
+        db.commit()
+
+        feedback(FeedbackIn(history_id="history-1", action="saved"), BackgroundTasks(), db)
+        feedback(FeedbackIn(history_id="history-1", action="worn"), BackgroundTasks(), db)
+
+        saved = db.get(OutfitHistory, "history-1")
+        assert saved.action == "saved"
+        assert saved.wore_it is True
+
+
+def test_rating_only_feedback_updates_history_without_changing_favorite() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(
+            OutfitHistory(
+                id="history-1",
+                user_id="local",
+                item_ids_json="[]",
+                pick_mode="safe",
+                action="saved",
+            )
+        )
+        db.commit()
+
+        feedback(FeedbackIn(history_id="history-1", rating=4), BackgroundTasks(), db)
+
+        saved = db.get(OutfitHistory, "history-1")
+        assert saved.action == "saved"
+        assert saved.user_rating == 4
+
+
 def test_manual_memo_refresh_deducts_only_after_success(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
@@ -91,10 +148,7 @@ def test_manual_memo_refresh_deducts_only_after_success(monkeypatch) -> None:
 
     with session_factory() as db:
         db.add(Profile(user_id="local", taste_memo="旧 memo", feedback_since_refresh=3))
-        db.add_all(
-            Feedback(id=f"feedback-{index}", user_id="local")
-            for index in range(3)
-        )
+        db.add_all(Feedback(id=f"feedback-{index}", user_id="local") for index in range(3))
         db.commit()
 
     taste_memo.refresh("local", force=True)
@@ -121,10 +175,7 @@ def test_failed_memo_refresh_leaves_counter_unchanged(monkeypatch) -> None:
     )
     with session_factory() as db:
         db.add(Profile(user_id="local", feedback_since_refresh=8))
-        db.add_all(
-            Feedback(id=f"feedback-{index}", user_id="local")
-            for index in range(8)
-        )
+        db.add_all(Feedback(id=f"feedback-{index}", user_id="local") for index in range(8))
         db.commit()
 
     with pytest.raises(RuntimeError, match="provider failed"):
@@ -220,10 +271,7 @@ def test_memo_refresh_calls_are_serialized_within_process(monkeypatch, tmp_path)
     monkeypatch.setattr(taste_memo, "generate_json", generate_json)
     with session_factory() as db:
         db.add(Profile(user_id="local", taste_memo="旧 memo", feedback_since_refresh=8))
-        db.add_all(
-            Feedback(id=f"feedback-{index}", user_id="local")
-            for index in range(8)
-        )
+        db.add_all(Feedback(id=f"feedback-{index}", user_id="local") for index in range(8))
         db.commit()
 
     threads = [threading.Thread(target=taste_memo.refresh, args=("local",)) for _ in range(2)]
@@ -249,17 +297,12 @@ def test_new_feedback_during_refresh_is_learned_in_second_distinct_batch(
     def add_feedback(start: int, stop: int) -> None:
         with session_factory() as db:
             db.add_all(
-                Feedback(id=f"feedback-{index}", user_id="local")
-                for index in range(start, stop)
+                Feedback(id=f"feedback-{index}", user_id="local") for index in range(start, stop)
             )
             db.execute(
                 update(Profile)
                 .where(Profile.user_id == "local")
-                .values(
-                    feedback_since_refresh=(
-                        Profile.feedback_since_refresh + stop - start
-                    )
-                )
+                .values(feedback_since_refresh=(Profile.feedback_since_refresh + stop - start))
             )
             db.commit()
 
@@ -280,9 +323,7 @@ def test_new_feedback_during_refresh_is_learned_in_second_distinct_batch(
 
     assert len(batches) == 2
     assert set(batches[0]).isdisjoint(batches[1])
-    assert set(batches[0] + batches[1]) == {
-        f"feedback-{index}" for index in range(16)
-    }
+    assert set(batches[0] + batches[1]) == {f"feedback-{index}" for index in range(16)}
     with session_factory() as db:
         profile = db.get(Profile, "local")
         assert profile.feedback_since_refresh == 0

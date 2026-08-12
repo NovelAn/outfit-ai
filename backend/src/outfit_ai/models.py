@@ -108,6 +108,7 @@ class OutfitHistory(Base):
     pick_mode: Mapped[str] = mapped_column(String)
     reason: Mapped[str | None] = mapped_column(Text)
     collage_path: Mapped[str | None] = mapped_column(Text)
+    context_json: Mapped[str | None] = mapped_column(Text)
     action: Mapped[str] = mapped_column(String, default="shown")
     user_rating: Mapped[int | None]
     wore_it: Mapped[bool] = mapped_column(Boolean, default=False)

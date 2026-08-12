@@ -305,6 +305,73 @@ def test_confirm_rejects_unknown_category() -> None:
     assert error.value.status_code == 422
 
 
+def test_confirm_maps_ready_hat_to_accessory() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(
+            WardrobeItem(
+                id="item-1",
+                user_id="local",
+                category="hat",
+                image_path="/tmp/item.jpg",
+                status="ready",
+            )
+        )
+        db.commit()
+
+        confirmed = wardrobe.confirm("item-1", WardrobePatch(), db)
+
+    assert confirmed["category"] == "accessory"
+    assert confirmed["confirmed_by_user"] is True
+
+
+def test_worker_sends_background_removed_image_to_vision(monkeypatch, tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'worker.db'}")
+    Base.metadata.create_all(engine)
+
+    def session_factory():
+        return Session(engine)
+
+    source = tmp_path / "shirt.jpg"
+    transparent = tmp_path / "shirt.nobg.png"
+    source.write_bytes(b"source")
+    transparent.write_bytes(b"transparent")
+    with session_factory() as db:
+        db.add(
+            WardrobeItem(
+                id="item-1",
+                user_id="local",
+                image_path=str(source),
+                status="pending",
+            )
+        )
+        db.commit()
+
+    seen_paths = []
+    monkeypatch.setattr(analysis, "SessionLocal", session_factory)
+    monkeypatch.setattr(
+        analysis, "ensure_background_removed", lambda _: transparent
+    )
+
+    def extract(path):
+        seen_paths.append(path)
+        return (
+            ClothingAttributes(
+                name="白衬衫",
+                category="top",
+                primary_color="白色",
+            ),
+            '{"source":"test"}',
+        )
+
+    monkeypatch.setattr(analysis, "extract", extract)
+
+    analysis.analyze_item("item-1")
+
+    assert seen_paths == [transparent]
+
+
 def test_retry_rejects_analyzing_item_even_when_old() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

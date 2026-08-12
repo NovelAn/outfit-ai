@@ -42,7 +42,7 @@ frontend/src/             # Stitch ZIP 原版 React 前端
   components/ # 今日 / 衣橱 / 灵感 / 灵感库 / 我的
   lib/api.mjs # FastAPI 接线层
 docs/                     # SPEC.md + 当前前端集成文档；旧设计文档已归档
-data/                     # 运行期产物（uploads/、sqlite）—— 不入库
+~/.outfit-ai/             # 默认运行期产物（uploads/、sqlite），跨 worktree 保存
 ```
 
 - 文件高内聚低耦合，200–400 行典型，800 上限。逻辑重的模块留一个 `__main__` 自检。

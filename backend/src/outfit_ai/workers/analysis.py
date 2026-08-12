@@ -30,8 +30,8 @@ def analyze_item(item_id: str) -> None:
         if not item:
             return
         try:
-            ensure_background_removed(item.image_path)
-            attributes, raw = extract(item.image_path)
+            analysis_path = ensure_background_removed(item.image_path)
+            attributes, raw = extract(analysis_path)
             for field in (
                 "name",
                 "category",

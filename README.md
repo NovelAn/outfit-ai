@@ -31,6 +31,8 @@ npm run dev                                    # http://localhost:5173
 
 要求 Node.js 20 及以上。前端开发服务器会把 `/api` 和 `/media` 代理到 `http://localhost:8000`。
 
+本地 SQLite 和上传图片默认保存在 `~/.outfit-ai/outfit_ai.db` 与 `~/.outfit-ai/uploads`，不会随 Git worktree 清理而丢失；可用 `DATABASE_URL`、`UPLOAD_DIR` 覆盖。衣橱批量导入固定同时处理 2 张，单张失败不影响同批其他图片，完成后统一刷新衣橱并显示成功/失败数量。
+
 首次上传真实衣物时，`rembg` 会下载约 176MB 的本地去背景模型到 `~/.u2net/`，可能需要 2–3 分钟；模型缓存后，后续衣物无需重复下载。
 
 ## 部署前准备
@@ -39,30 +41,13 @@ npm run dev                                    # http://localhost:5173
 - 生产图片改存阿里云 OSS/CDN；不要把用户图片打进小程序主包。
 - 微信小程序/App 上线方案需保留当前 React 界面与交互，不回退旧 uni-app 设计。
 
-## 腾讯云一键部署
+生产环境可由平台调度器在本地 06:30 预生成每日三套穿搭：
 
-当前推荐一台 Ubuntu 24.04 LTS 轻量服务器：Docker 运行 FastAPI，Caddy 托管 React 静态资源并负责 HTTPS，SQLite、上传图片和 rembg 模型缓存使用持久化卷。千牛 Playwright MCP 继续运行在本机已登录 Chrome，不放进 Web 容器。
-
-首次腾讯云 Lighthouse 部署已于 2026-08-12 完成；当前先通过服务器公网 IP 的 HTTP 地址验收，正式域名和 HTTPS 后续再配置。
-
-首次部署（服务器已配置 SSH 公钥后）：
-
-```bash
-# 1. 首次只执行一次：初始化 Ubuntu/Docker/UFW
-ssh root@SERVER_IP 'mkdir -p /tmp/outfit-ai-bootstrap'
-rsync -az scripts/ root@SERVER_IP:/tmp/outfit-ai-bootstrap/scripts/
-ssh root@SERVER_IP 'bash /tmp/outfit-ai-bootstrap/scripts/bootstrap-ubuntu.sh'
-
-# 2. 服务器上创建密钥文件（只在服务器填写，不提交）
-scp .env.production.example root@SERVER_IP:/tmp/outfit-ai.env.production.example
-ssh root@SERVER_IP 'mkdir -p /opt/outfit-ai && cp /tmp/outfit-ai.env.production.example /opt/outfit-ai/.env.production'
-# 编辑 /opt/outfit-ai/.env.production，至少填写 MINIMAX_API_KEY 和 DOMAIN
-
-# 3. 本机一条命令构建、同步、启动并检查健康接口
-DEPLOY_HOST=root@SERVER_IP ./scripts/deploy.sh
+```cron
+30 6 * * * cd /app/backend && uv run python -m outfit_ai.precompute_daily
 ```
 
-`DOMAIN=:80` 只适合临时 IP 验收；正式使用应先把域名 A 记录指向服务器，再将 `DOMAIN` 改为域名，Caddy 会自动申请 HTTPS。不要把 `.env.production`、MiniMax Key、`data/` 或浏览器登录状态同步到服务器代码目录。
+项目不安装本地 cron/launchd；休眠中的电脑无法保证 06:30 执行。
 
 ## 借鉴与署名
 

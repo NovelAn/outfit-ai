@@ -5,15 +5,15 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..schemas import RecommendRequest
-from ..services.llm import LLMResponseError, LLMUnavailableError, require_api_key
+from ..services.llm import LLMResponseError, LLMUnavailableError
 from ..services.recommend import recommend
-from ..services.weather import WeatherInputError, WeatherServiceError, get_weather
+from ..services.weather import WeatherData, WeatherInputError, WeatherServiceError, get_weather
 
 router = APIRouter(tags=["recommend"])
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-@router.get("/weather")
+@router.get("/weather", response_model=WeatherData)
 def weather(
     city: str | None = None,
     latitude: float | None = Query(None, ge=-90, le=90),
@@ -30,8 +30,7 @@ def weather(
 @router.post("/recommend")
 def recommendation(payload: RecommendRequest, db: DbSession):
     try:
-        require_api_key()
-        return recommend(db, payload)
+        return recommend(db, payload, history_action="shown")
     except LLMUnavailableError as exc:
         raise HTTPException(503, str(exc)) from exc
     except LLMResponseError as exc:

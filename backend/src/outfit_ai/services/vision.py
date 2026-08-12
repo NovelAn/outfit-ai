@@ -1,5 +1,7 @@
 import base64
+import json
 import mimetypes
+import re
 from io import BytesIO
 from pathlib import Path
 
@@ -37,9 +39,13 @@ def extract(image_path: str | Path) -> tuple[ClothingAttributes, str]:
     raw = minimax_images.describe_image(
         image_path,
         (
-            "识别图片中的主要衣物，只返回 JSON。category 使用英文单数类别。"
+            "识别图片中的主要衣物，只返回一个 JSON 对象，不要输出 JSON Schema 或 Markdown。"
+            "category 只能是 top/bottom/outerwear/dress/shoes/accessory。"
             "除 category 外，所有面向用户的字段必须使用简体中文；品牌名可保留原文。"
-            f"结构必须符合：{ClothingAttributes.model_json_schema()}"
+            "字段：name、category、primary_color、secondary_color、material、fit、"
+            "formality、styles、tags、seasons、occasions、versatility。"
+            "versatility 必须是 0 到 1 的数字；styles、tags、seasons、occasions "
+            "必须是字符串数组；可空字段使用 null。"
         ),
     )
     try:
@@ -50,9 +56,14 @@ def extract(image_path: str | Path) -> tuple[ClothingAttributes, str]:
 
 def _json_content(raw: str) -> str:
     content = raw.strip()
-    if content.startswith("```"):
-        content = content.removeprefix("```json").removeprefix("```")
-        content = content.removesuffix("```").strip()
+    blocks = re.findall(r"```(?:json)?\s*(.*?)```", content, re.IGNORECASE | re.DOTALL)
+    for block in reversed(blocks):
+        candidate = block.strip()
+        try:
+            json.loads(candidate)
+        except ValueError:
+            continue
+        return candidate
     return content
 
 

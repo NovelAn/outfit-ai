@@ -6,12 +6,41 @@ const TIER_META = {
   stretch: { title: "Look 03 / 突破 (STRETCH)", tag: "工装廓形" },
 };
 
+export const PALETTE_HEX = {
+  黑色: "#1B1C19", 白色: "#F7F5EF", 深蓝色: "#162839",
+  浅蓝色: "#A9C7DD", 灰色: "#8A8D91", 米白色: "#EEE8DA",
+  米黄色: "#D8C49A", 卡其色: "#B39B72", 棕色: "#7A5337",
+  绿色: "#647B5B", 红色: "#9A442A", 紫色: "#75627D",
+};
+
+export function paletteHex(name) {
+  return Object.hasOwn(PALETTE_HEX, name) ? PALETTE_HEX[name] : null;
+}
+
+export function visibleStyleTags(tags = [], preferences = {}, limit = 7) {
+  const aliases = preferences.aliases || {};
+  const normalize = (tag) => aliases[tag] || tag;
+  const unique = (values) => [...new Set(values.filter(Boolean))];
+  const normalizedTags = tags.map(normalize);
+  const pinned = unique((preferences.pinned || []).map(normalize));
+  const hidden = new Set((preferences.hidden || []).map(normalize));
+  return unique([
+    ...pinned.filter((tag) => normalizedTags.includes(tag)),
+    ...normalizedTags,
+  ]).filter((tag) => pinned.includes(tag) || !hidden.has(tag)).slice(0, limit);
+}
+
 function apiUrl(path) {
   return `${API_BASE}${path}`;
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(apiUrl(path), options);
+  let response;
+  try {
+    response = await fetch(apiUrl(path), options);
+  } catch (error) {
+    throw new Error("网络连接失败，请检查网络后重试", { cause: error });
+  }
   if (response.ok) {
     return response.status === 204 ? null : response.json();
   }
@@ -50,21 +79,23 @@ export function categoryCode(label) {
 }
 
 export function mapWardrobeItem(item) {
-  const attributes = item.attributes || item;
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const thickness = tags.find((tag) => ["轻薄", "适中", "厚实"].includes(tag)) || "";
   return {
     id: item.id,
     brand: item.brand || "",
     name: item.name || "待确认单品",
     category: categoryLabel(item.category),
     imageUrl: mediaUrl(item.image_url),
-    primaryColor: attributes.primary_color || "",
-    secondaryColor: attributes.secondary_color || "",
-    material: attributes.material || "",
-    fit: attributes.fit || "",
-    styles: attributes.styles || [],
-    tags: attributes.tags || [],
-    seasons: attributes.seasons || [],
-    occasions: attributes.occasions || [],
+    primaryColor: item.primary_color || "",
+    secondaryColor: item.secondary_color || "",
+    material: item.material || "",
+    fit: item.fit || "",
+    styles: Array.isArray(item.styles) ? item.styles : [],
+    tags,
+    seasons: Array.isArray(item.seasons) ? item.seasons : [],
+    occasions: Array.isArray(item.occasions) ? item.occasions : [],
+    thickness,
     ...(item.isNew ? { isNew: true } : {}),
   };
 }
@@ -97,6 +128,8 @@ function mapLook(tier, look) {
     name: item.name || "未命名单品",
     category: categoryLabel(item.category),
     img: mediaUrl(item.image_url),
+    primaryColor: item.primary_color || "",
+    secondaryColor: item.secondary_color || "",
     desc: [item.primary_color, item.category].filter(Boolean).join(" · "),
   }));
   return {
@@ -108,7 +141,48 @@ function mapLook(tier, look) {
     occasionFit: look.occasion_fit || "",
     imageUrl: items[0]?.img || "",
     items,
+    lookItems: items,
   };
+}
+
+export function mapHistoryLook(row, wardrobeById = new Map()) {
+  const items = (row.item_ids || [])
+    .map((id) => wardrobeById.get(id))
+    .filter(Boolean)
+    .map((item) => ({ name: item.name, category: item.category, img: item.imageUrl }));
+  const tier = row.pick_mode === "safe" ? "稳妥" : row.pick_mode === "fresh" ? "新鲜" : "突破";
+  return {
+    id: row.id,
+    historyId: row.id,
+    title: `${tier} / ${row.occasion || "日常"}`,
+    date: row.date,
+    tag: String(row.pick_mode || "").toUpperCase(),
+    imageUrl: items[0]?.img || mediaUrl(row.collage_path),
+    description: row.reason || "",
+    items,
+    lookItems: items,
+    itemIds: row.item_ids || [],
+    action: row.action,
+    rating: row.rating,
+    woreIt: Boolean(row.wore_it),
+    scope: row.scope,
+  };
+}
+
+export async function confirmFeedback(submit, data, onConfirmed, onRollback) {
+  try {
+    const result = await submit(data);
+    onConfirmed?.(result);
+    return result;
+  } catch (error) {
+    onRollback?.(error);
+    throw error;
+  }
+}
+
+export function requireHistoryId(historyId) {
+  if (!historyId) throw new Error("此 Look 尚未生成可反馈的推荐历史");
+  return historyId;
 }
 
 export function mapRecommendation(result) {
@@ -134,6 +208,38 @@ export async function waitForReady(getStatus, { delay = 800, maxAttempts = 375 }
   throw new Error("AI 处理时间较长，任务仍在后台继续，请勿重复上传");
 }
 
+export async function settleInPairs(items, worker) {
+  const results = Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      try {
+        results[index] = { status: "fulfilled", value: await worker(items[index]) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(2, items.length) }, run));
+  return results;
+}
+
+export function createSingleFlight() {
+  let active = false;
+  return async (worker) => {
+    if (active) return false;
+    active = true;
+    try {
+      await worker();
+      return true;
+    } finally {
+      active = false;
+    }
+  };
+}
+
 export const api = {
   wardrobe: async () => (await request("/api/wardrobe/items")).map(mapWardrobeItem),
   wardrobeStatus: (id) => request(`/api/wardrobe/${id}/status`),
@@ -141,6 +247,12 @@ export const api = {
   confirmWardrobe: (id, data) =>
     request(`/api/wardrobe/${id}/confirm`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updateWardrobe: (id, data) =>
+    request(`/api/wardrobe/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }),
@@ -156,15 +268,31 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(profile),
     }),
-  history: () => request("/api/history"),
-  recommend: async (data) =>
-    mapRecommendation(
+  history: ({ scope, limit } = {}) => {
+    const params = new URLSearchParams();
+    if (scope) params.set("scope", scope);
+    if (limit) params.set("limit", String(limit));
+    const query = params.toString();
+    return request(`/api/history${query ? `?${query}` : ""}`);
+  },
+  weather: ({ city, latitude, longitude } = {}) => {
+    const params = new URLSearchParams();
+    if (city) params.set("city", city);
+    if (latitude !== undefined) params.set("latitude", String(latitude));
+    if (longitude !== undefined) params.set("longitude", String(longitude));
+    const query = params.toString();
+    return request(`/api/weather${query ? `?${query}` : ""}`);
+  },
+  recommend: async (data) => {
+    const { force_refresh, ...payload } = data;
+    return mapRecommendation(
       await request("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...payload, ...(force_refresh ? { force_refresh: true } : {}) }),
       }),
-    ),
+    );
+  },
   feedback: (data) =>
     request("/api/feedback", {
       method: "POST",
@@ -181,20 +309,21 @@ export const api = {
         reference_ids: referenceIds,
       }),
     });
-    if (Array.isArray(result.looks) && result.looks.length > 0) {
-      const looks = result.looks.map((look, index) => ({
+    if (Array.isArray(result.looks)) {
+      return result.looks.map((look, index) => ({
         id: look.id || `look-${index + 1}`,
         title: look.title || `Look ${String(index + 1).padStart(2, "0")}`,
         subtitle: look.subtitle || `${season}季${scene}`,
         imageUrl: mediaUrl(look.image_url || look.imageUrl),
       }));
-      return {
-        looks,
-        status: result.status || (looks.length === 3 ? "complete" : "partial"),
-        requestedCount: result.requested_count || 3,
-        generatedCount: result.generated_count || looks.length,
-      };
     }
-    throw new Error("灵感图生成结果为空，请稍后重试");
+    return [
+      {
+        id: "look-1",
+        title: "Look 01 / New Direction",
+        subtitle: `${season}季${scene}`,
+        imageUrl: mediaUrl(result.image_url),
+      },
+    ];
   },
 };

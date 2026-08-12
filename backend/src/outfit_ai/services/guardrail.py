@@ -5,6 +5,25 @@ from typing import Any
 
 from .categories import canonical_category
 
+_SEASON_ALIASES = {
+    "春": "spring",
+    "春季": "spring",
+    "夏": "summer",
+    "夏季": "summer",
+    "秋": "autumn",
+    "秋季": "autumn",
+    "初秋": "autumn",
+    "冬": "winter",
+    "冬季": "winter",
+    "四季": "all",
+    "全年": "all",
+}
+
+
+def canonical_season(season: str) -> str:
+    value = (season or "").strip().lower()
+    return _SEASON_ALIASES.get(value, value)
+
 
 def filter_candidates(
     items: Iterable[Any],
@@ -25,7 +44,7 @@ def filter_candidates(
         if not item.confirmed_by_user or item.status != "ready":
             continue
         locked = item.id in locked_ids
-        seasons = set(json.loads(item.seasons_json or "[]"))
+        seasons = {canonical_season(value) for value in json.loads(item.seasons_json or "[]")}
         wrong_season = seasons and not (accepted_seasons & seasons) and "all" not in seasons
         recently_worn = item.id in recent_item_ids and item.category != "shoes"
         if locked or (not wrong_season and not recently_worn):

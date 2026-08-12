@@ -1,7 +1,11 @@
-from datetime import datetime
-from typing import Literal
+from datetime import date, datetime
+from typing import Literal, TypeAlias
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+OutfitHistoryAction: TypeAlias = Literal[
+    "shown", "saved", "skipped", "worn", "prepared"
+]
 
 
 class ClothingAttributes(BaseModel):
@@ -17,6 +21,23 @@ class ClothingAttributes(BaseModel):
     seasons: list[str] = Field(default_factory=list)
     occasions: list[str] = Field(default_factory=list)
     versatility: float | None = Field(None, ge=0, le=1)
+
+    @field_validator("versatility", mode="before")
+    @classmethod
+    def normalize_semantic_versatility(cls, value):
+        if isinstance(value, bool):
+            raise ValueError("versatility 必须是数值")
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return {
+                "高": 0.85,
+                "high": 0.85,
+                "中": 0.5,
+                "medium": 0.5,
+                "低": 0.25,
+                "low": 0.25,
+            }.get(normalized, value)
+        return value
 
 
 class StyleReferenceAnalysis(BaseModel):
@@ -49,6 +70,7 @@ class StyleReferenceAnalysis(BaseModel):
 
 class StyleDnaMerge(BaseModel):
     style_keywords: list[str] = Field(default_factory=list)
+    recent_style_signals: list[str] = Field(default_factory=list)
     palette: list[str] = Field(default_factory=list)
     preferred_colors: list[str] = Field(default_factory=list)
     preferred_styles: list[str] = Field(default_factory=list)
@@ -58,10 +80,17 @@ class StyleDnaMerge(BaseModel):
 
 class ProposedLook(BaseModel):
     tier: Literal["safe", "fresh", "stretch"]
-    item_ids: list[str] = Field(min_length=1)
+    item_ids: list[str] = Field(min_length=3, max_length=6)
     reason: str
     weather_fit: str
     occasion_fit: str
+
+    @field_validator("item_ids")
+    @classmethod
+    def require_unique_items(cls, item_ids: list[str]) -> list[str]:
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("单套推荐不能包含重复单品")
+        return item_ids
 
 
 class WardrobePatch(BaseModel):
@@ -99,6 +128,11 @@ class ProfileIn(BaseModel):
     budget_bottom_cents: int | None = Field(None, ge=0)
     budget_outerwear_cents: int | None = Field(None, ge=0)
     learned_from_feedback: list[str] = Field(default_factory=list)
+    recent_style_signals: list[str] = Field(default_factory=list)
+    style_tag_preferences: dict = Field(
+        default_factory=lambda: {"pinned": [], "hidden": [], "aliases": {}}
+    )
+    last_location: dict | None = None
     formulas: list[str] = Field(default_factory=list)
     taste_memo: str = ""
 
@@ -119,7 +153,16 @@ class RecommendRequest(BaseModel):
     city: str | None = None
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
+    local_date: date | None = None
     locked_item_ids: list[str] = Field(default_factory=list)
+    force_refresh: bool = False
+    refresh_tier: Literal["safe", "fresh", "stretch"] | None = None
+
+    @model_validator(mode="after")
+    def require_force_refresh_for_tier(self):
+        if self.refresh_tier and not self.force_refresh:
+            raise ValueError("refresh_tier 只能与 force_refresh=true 一起使用")
+        return self
 
 
 class InspirationRequest(BaseModel):
@@ -143,7 +186,8 @@ class StyleDnaDraftRequest(BaseModel):
 class FeedbackIn(BaseModel):
     history_id: str | None = None
     items_worn: list[str] = Field(default_factory=list)
-    action: Literal["shown", "saved", "skipped", "worn"]
+    action: Literal["shown", "saved", "skipped", "worn"] | None = None
+    rating: int | None = Field(None, ge=1, le=5)
     occasion: str | None = None
     occasion_type: str | None = None
     sentiment: str | None = None

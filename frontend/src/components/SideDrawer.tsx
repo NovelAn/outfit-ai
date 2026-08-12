@@ -1,35 +1,40 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId } from '../types';
+import { resolveLocationContext } from '../lib/location.mjs';
 
 interface SideDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
+  locationLabel?: string;
 }
 
 const CITIES = [
-  { name: 'TOKYO', temp: '24°C', label: '东京 / 晴' },
-  { name: 'SHANGHAI', temp: '22°C', label: '上海 / 多云' },
-  { name: 'BEIJING', temp: '19°C', label: '北京 / 晴' },
-  { name: 'PARIS', temp: '18°C', label: '巴黎 / 阴' },
-  { name: 'NEW YORK', temp: '21°C', label: '纽约 / 晴' }
+  '上海', '北京'
 ];
 
 export const SideDrawer: React.FC<SideDrawerProps> = ({
   isOpen,
   onClose,
   currentScreen,
-  onNavigate
+  onNavigate,
+  locationLabel,
 }) => {
-  const [selectedCity, setSelectedCity] = useState('TOKYO');
+  const [selectedCity, setSelectedCity] = useState('');
+  const [manualCity, setManualCity] = useState('');
+  const [locationStatus, setLocationStatus] = useState('');
+  const [isLocating, setIsLocating] = useState(false);
   const [favoritesCount, setFavoritesCount] = useState(0);
   const [ratingsCount, setRatingsCount] = useState(0);
 
   useEffect(() => {
     try {
       const city = localStorage.getItem('OUTFIT_AI_CITY');
-      if (city) setSelectedCity(city);
+      if (city) {
+        setSelectedCity(city);
+        setManualCity(city);
+      }
 
       const favs = localStorage.getItem('OUTFIT_AI_FAVORITES');
       if (favs) {
@@ -49,8 +54,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 
   const handleCityChange = (cityName: string) => {
     setSelectedCity(cityName);
+    setManualCity(cityName);
     try {
       localStorage.setItem('OUTFIT_AI_CITY', cityName);
+      localStorage.setItem('OUTFIT_AI_LOCATION_MODE', 'manual');
       // Dispatch storage event so ScreenToday updates immediately
       window.dispatchEvent(new Event('storage'));
     } catch (e) {
@@ -58,10 +65,42 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     }
   };
 
+  const handleManualCitySubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const cityName = manualCity.trim();
+    if (cityName) handleCityChange(cityName);
+  };
+
+  const handleUseCurrentLocation = async () => {
+    if (isLocating) return;
+    setSelectedCity('');
+    setManualCity('');
+    setLocationStatus('正在获取当前位置…');
+    setIsLocating(true);
+    try {
+      localStorage.removeItem('OUTFIT_AI_CITY');
+      localStorage.removeItem('OUTFIT_AI_LOCATION_MODE');
+      const context = await resolveLocationContext({ storage: localStorage });
+      setLocationStatus(
+        context.source === 'current'
+          ? '已获取当前位置'
+          : context.source === 'cached'
+            ? '定位不可用，已使用上次位置'
+            : '定位失败，请检查浏览器权限或手动输入城市',
+      );
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {
+      console.error(e);
+      setLocationStatus('定位失败，请检查浏览器权限或手动输入城市');
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex animate-fade-in isolate">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
@@ -69,7 +108,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
       />
 
       {/* Drawer Panel */}
-      <div className="relative w-80 max-w-[85vw] bg-[#fbf9f4] text-[#162839] h-full shadow-2xl flex flex-col justify-between p-6 z-10 border-r border-[#162839]/20 overflow-y-auto">
+      <div className="relative w-80 max-w-[85vw] bg-[#fbf9f4] text-[#162839] h-full shadow-2xl flex flex-col justify-between p-6 z-[101] border-r border-[#162839]/20 overflow-y-auto">
         <div>
           {/* Header & Close */}
           <div className="flex justify-between items-center mb-6 pb-4 border-b border-[#c4c6cd]/40">
@@ -101,24 +140,57 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           {/* Location & Weather Selector */}
           <div className="mb-6">
             <label className="block text-[10px] uppercase font-bold tracking-wider text-[#74777d] mb-2">
-              📍 城市与天气匹配 / City & Weather
+              📍 定位与城市 / Location & City
             </label>
+            <p className="text-[10px] text-[#43474c] mb-2">{locationLabel || `手动城市：${selectedCity || '未设置'}`}</p>
+            <p className="text-[10px] text-[#74777d] mb-2">手动城市会覆盖自动定位；点击“自动定位”恢复</p>
             <div className="grid grid-cols-2 gap-1.5">
-              {CITIES.map((c) => (
+              {CITIES.map((city) => (
                 <button
-                  key={c.name}
-                  onClick={() => handleCityChange(c.name)}
+                  key={city}
+                  onClick={() => handleCityChange(city)}
                   className={`text-[11px] p-2 rounded text-left transition-all border flex flex-col justify-between ${
-                    selectedCity === c.name
+                    selectedCity === city
                       ? 'bg-[#162839] text-white border-[#162839] shadow-xs'
                       : 'bg-white text-[#43474c] border-[#c4c6cd]/40 hover:border-[#162839]'
                   }`}
                 >
-                  <span className="font-bold font-mono text-[10px]">{c.name}</span>
-                  <span className="text-[10px] opacity-80">{c.temp}</span>
+                  <span className="font-bold text-[10px]">{city}</span>
                 </button>
               ))}
             </div>
+            <form onSubmit={handleManualCitySubmit} className="mt-2 flex gap-1.5">
+              <input
+                value={manualCity}
+                onChange={(event) => setManualCity(event.target.value)}
+                placeholder="手动输入城市"
+                aria-label="手动输入城市"
+                className="min-w-0 flex-1 rounded border border-[#c4c6cd]/40 bg-white px-2 py-2 text-[11px] text-[#162839] outline-none focus:border-[#162839]"
+              />
+              <button
+                type="submit"
+                className="rounded border border-[#162839] px-2 text-[10px] font-bold text-[#162839] hover:bg-[#162839] hover:text-white"
+              >
+                使用
+              </button>
+            </form>
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={isLocating}
+              className="mt-2 w-full rounded border border-[#c4c6cd]/40 bg-white px-2 py-2 text-left text-[10px] font-bold text-[#43474c] hover:border-[#162839] disabled:cursor-wait disabled:opacity-60"
+            >
+              {isLocating ? '正在定位…' : '自动定位'}
+            </button>
+            {locationStatus && <p className="mt-1 text-[10px] text-[#74777d]">{locationStatus}</p>}
+            <a
+              href="https://www.openstreetmap.org/copyright"
+              target="_blank"
+              rel="noreferrer"
+              className="block mt-2 text-[9px] text-[#74777d] underline"
+            >
+              © OpenStreetMap contributors
+            </a>
           </div>
 
           {/* Main Navigation Links */}
@@ -210,11 +282,13 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
                 AI Engine Active
               </span>
               <span className="text-xs font-bold text-[#f4dfcb]">
-                {Math.min(98, 85 + ratingsCount * 4)}% Match
+                {ratingsCount === 0 ? '正在学习' : `已根据 ${ratingsCount} 次反馈更新`}
               </span>
             </div>
             <p className="text-[11px] text-[#c4c6cd] leading-tight mb-2">
-              基于 {ratingsCount} 次真实反馈评价 & 衣橱基因深度训练
+              {ratingsCount === 0
+                ? '完成穿搭反馈后，AI 会逐步学习你的品味'
+                : `基于 ${ratingsCount} 次真实反馈与衣橱数据持续学习`}
             </p>
             <div className="flex items-center gap-2 text-[10px] text-[#f4dfcb] pt-2 border-t border-white/10 font-mono">
               <span>❤️ 已收藏: {favoritesCount} 套</span>

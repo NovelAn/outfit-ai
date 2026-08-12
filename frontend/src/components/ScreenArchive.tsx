@@ -170,7 +170,7 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
 
       {/* TopAppBar */}
       <header className="bg-[#fbf9f4] border-b border-[#c4c6cd]/40 sticky top-0 z-40">
-        <div className="flex justify-between items-center px-6 h-16 max-w-7xl mx-auto">
+        <div className="flex justify-between items-center px-6 h-16 max-w-lg mx-auto">
           <div className="flex items-center gap-2">
             <button onClick={() => setIsDrawerOpen(true)} className="text-[#162839] hover:opacity-80 flex items-center justify-center p-2 rounded hover:bg-[#f0eee9]" title="打开侧边导航">
               <span className="material-symbols-outlined text-[22px]">menu</span>
@@ -222,7 +222,7 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
       </header>
 
       {/* Main Content Canvas */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 md:px-12 py-6">
+      <main className="flex-1 max-w-lg mx-auto w-full px-4 py-6">
         {/* Header Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4 relative">
           <div>
