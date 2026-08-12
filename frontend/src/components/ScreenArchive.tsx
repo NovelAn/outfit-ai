@@ -378,8 +378,8 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
 
       {/* Lightbox Modal */}
       {previewItem && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm p-3 pt-12 pb-[calc(5.5rem+env(safe-area-inset-bottom))] overflow-hidden">
-          <div className="bg-[#fbf9f4] p-3 max-w-md w-full max-h-[calc(100dvh-7rem)] overflow-y-auto border border-[#162839] relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 pt-20 pb-[calc(7rem+env(safe-area-inset-bottom))] overflow-hidden">
+          <div className="bg-[#fbf9f4] p-3 max-w-md w-full max-h-[calc(100dvh-12rem)] overflow-y-auto border border-[#162839] relative">
             <div
               className="relative h-[45dvh] max-h-72 min-h-40 bg-white flex items-center justify-center mb-3 touch-pan-y"
               onTouchStart={handlePreviewTouchStart}
