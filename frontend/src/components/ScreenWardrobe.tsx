@@ -417,7 +417,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
 
       {/* Item Detail Modal */}
       {selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm p-3 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom))] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm p-3 pt-12 pb-[calc(5.5rem+env(safe-area-inset-bottom))] overflow-hidden">
           <div className="bg-[#fbf9f4] p-4 max-w-sm w-full max-h-[calc(100dvh-7rem)] overflow-y-auto rounded-lg border border-[#162839] relative shadow-2xl">
             <div
               className="w-full h-[30dvh] max-h-60 min-h-36 bg-white p-3 mb-3 flex items-center justify-center rounded touch-pan-y"
