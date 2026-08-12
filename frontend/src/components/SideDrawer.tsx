@@ -300,6 +300,14 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
 
         {/* Footer info */}
         <div className="pt-4 border-t border-[#c4c6cd]/30 text-center">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mb-3 w-full rounded border border-[#162839]/20 bg-white px-3 py-2 text-xs font-semibold text-[#162839] hover:bg-[#f0eee9]"
+          >
+            <span className="material-symbols-outlined mr-1 align-middle text-sm">refresh</span>
+            刷新应用
+          </button>
           <p className="text-[10px] text-[#74777d] font-mono">Outfit-AI v2.4 · Japanese Fashion Tech</p>
         </div>
       </div>
