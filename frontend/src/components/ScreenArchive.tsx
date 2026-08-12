@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ScreenId, InspirationItem } from '../types';
 import { api } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
@@ -111,6 +111,7 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const previewTouchStartX = useRef<number | null>(null);
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
@@ -157,6 +158,23 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
   const filteredItems = activeTag
     ? items.filter(i => i.tags.includes(activeTag))
     : items;
+
+  const handlePreviewTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    previewTouchStartX.current = event.changedTouches[0]?.clientX ?? null;
+  };
+
+  const handlePreviewTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const startX = previewTouchStartX.current;
+    previewTouchStartX.current = null;
+    if (startX === null || !previewItem) return;
+    const deltaX = event.changedTouches[0]?.clientX - startX;
+    if (Math.abs(deltaX) < 48) return;
+    event.preventDefault();
+    const currentIndex = filteredItems.findIndex(item => item.id === previewItem.id);
+    if (currentIndex < 0) return;
+    const nextIndex = Math.max(0, Math.min(filteredItems.length - 1, currentIndex + (deltaX < 0 ? 1 : -1)));
+    if (nextIndex !== currentIndex) setPreviewItem(filteredItems[nextIndex]);
+  };
 
   return (
     <div className="bg-[#fbf9f4] text-[#1b1c19] min-h-screen flex flex-col pb-24 md:pb-0">
@@ -360,20 +378,27 @@ export const ScreenArchive: React.FC<ScreenArchiveProps> = ({ onNavigate }) => {
 
       {/* Lightbox Modal */}
       {previewItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#fbf9f4] p-4 max-w-md w-full border border-[#162839] relative">
-            <img
-              onClick={() => setPreviewItem(null)}
-              src={previewItem.imageUrl}
-              alt={previewItem.title}
-              className="w-full h-auto max-h-[70vh] object-contain mb-4 cursor-zoom-out"
-            />
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm p-3 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] overflow-hidden">
+          <div className="bg-[#fbf9f4] p-3 max-w-md w-full max-h-[calc(100dvh-7rem)] overflow-y-auto border border-[#162839] relative">
+            <div
+              className="relative h-[45dvh] max-h-72 min-h-40 bg-white flex items-center justify-center mb-3 touch-pan-y"
+              onTouchStart={handlePreviewTouchStart}
+              onTouchEnd={handlePreviewTouchEnd}
+            >
+              <img
+                onClick={() => setPreviewItem(null)}
+                src={previewItem.imageUrl}
+                alt={previewItem.title}
+                className="w-full h-full object-contain cursor-zoom-out"
+              />
+            </div>
             <h3 className="font-serif-display text-lg text-[#162839] font-bold">{previewItem.title}</h3>
             <div className="flex flex-wrap gap-1.5 mt-2 mb-6">
               {previewItem.tags.slice(0, 8).map(t => (
                 <span key={t} className="max-w-full break-words text-xs bg-[#eae8e3] text-[#162839] px-2 py-0.5">{t}</span>
               ))}
             </div>
+            <p className="text-[10px] text-[#74777d] text-center mb-2">左右滑动切换灵感图片</p>
             <button
               onClick={() => setPreviewItem(null)}
               className="w-full bg-[#162839] text-white py-2 text-xs font-semibold uppercase tracking-widest"

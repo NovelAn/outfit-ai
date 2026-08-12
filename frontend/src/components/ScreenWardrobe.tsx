@@ -106,12 +106,29 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const previewTouchStartX = useRef<number | null>(null);
 
   const categories = ['全部', '上装', '下装', '鞋履', '配饰'];
 
   const filteredItems = selectedCategory === '全部'
     ? items
     : items.filter(item => item.category === selectedCategory);
+
+  const handlePreviewTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    previewTouchStartX.current = event.changedTouches[0]?.clientX ?? null;
+  };
+
+  const handlePreviewTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const startX = previewTouchStartX.current;
+    previewTouchStartX.current = null;
+    if (startX === null || !selectedItem) return;
+    const deltaX = event.changedTouches[0]?.clientX - startX;
+    if (Math.abs(deltaX) < 48) return;
+    const currentIndex = filteredItems.findIndex(item => item.id === selectedItem.id);
+    if (currentIndex < 0) return;
+    const nextIndex = Math.max(0, Math.min(filteredItems.length - 1, currentIndex + (deltaX < 0 ? 1 : -1)));
+    if (nextIndex !== currentIndex) setSelectedItem(filteredItems[nextIndex]);
+  };
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
@@ -400,17 +417,21 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
 
       {/* Item Detail Modal */}
       {selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-[#fbf9f4] p-6 max-w-sm w-full rounded-lg border border-[#162839] relative shadow-2xl">
-            <div className="w-full aspect-square bg-white p-4 mb-4 flex items-center justify-center rounded">
-              <img src={selectedItem.imageUrl} alt={selectedItem.name} className="max-h-full object-contain" />
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm p-3 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] overflow-hidden">
+          <div className="bg-[#fbf9f4] p-4 max-w-sm w-full max-h-[calc(100dvh-7rem)] overflow-y-auto rounded-lg border border-[#162839] relative shadow-2xl">
+            <div
+              className="w-full h-[30dvh] max-h-60 min-h-36 bg-white p-3 mb-3 flex items-center justify-center rounded touch-pan-y"
+              onTouchStart={handlePreviewTouchStart}
+              onTouchEnd={handlePreviewTouchEnd}
+            >
+              <img src={selectedItem.imageUrl} alt={selectedItem.name} className="max-h-full max-w-full object-contain" />
             </div>
             <span className="text-xs font-mono text-[#9a442a] uppercase font-semibold">{selectedItem.category}</span>
             {selectedItem.brand && (
               <h3 className="font-serif-display text-xl text-[#162839] font-bold mt-1">{selectedItem.brand}</h3>
             )}
-            <p className="text-sm text-[#43474c] mt-1 mb-6">{selectedItem.name}</p>
-            <div className="mb-6 space-y-2 text-[11px] text-[#43474c]">
+            <p className="text-sm text-[#43474c] mt-1 mb-4">{selectedItem.name}</p>
+            <div className="mb-4 space-y-2 text-[11px] text-[#43474c]">
               {[selectedItem.primaryColor, selectedItem.material, selectedItem.fit].filter(Boolean).length > 0 && (
                 <p>{[selectedItem.primaryColor, selectedItem.material, selectedItem.fit].filter(Boolean).join(' · ')}</p>
               )}
@@ -422,6 +443,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                 </div>
               )}
             </div>
+            <p className="text-[10px] text-[#74777d] text-center mb-2">左右滑动切换衣橱单品</p>
             <button
               onClick={() => setSelectedItem(null)}
               className="w-full bg-[#162839] text-white py-2.5 rounded text-xs font-semibold uppercase tracking-widest hover:opacity-90"

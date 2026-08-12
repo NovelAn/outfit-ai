@@ -151,18 +151,18 @@ export const ScreenInspiration: React.FC<ScreenInspirationProps> = ({ onNavigate
         </section>
 
         {/* Long-term Reference Film Strip */}
-        <section className="mb-10 -mx-6 md:mx-0">
-          <div className="flex overflow-x-auto hide-scrollbar gap-6 px-6 md:px-0 pb-4">
+        <section className="mb-8 -mx-6 md:mx-0">
+          <div className="flex overflow-x-auto hide-scrollbar gap-3 px-6 md:px-0 pb-3">
             <div
               onClick={handleUploadInspiration}
-              className="flex-none w-48 md:w-64 aspect-[3/4] border-2 border-dashed border-[#c4c6cd] flex flex-col items-center justify-center text-[#43474c] hover:border-[#162839] transition-colors cursor-pointer bg-[#f5f3ee]"
+              className="flex-none w-32 md:w-48 aspect-[3/4] border-2 border-dashed border-[#c4c6cd] flex flex-col items-center justify-center text-[#43474c] hover:border-[#162839] transition-colors cursor-pointer bg-[#f5f3ee]"
             >
-              <span className="material-symbols-outlined text-[32px] mb-2">add_photo_alternate</span>
-              <span className="text-xs font-semibold uppercase tracking-wider">上传灵感</span>
+              <span className="material-symbols-outlined text-[24px] mb-1">add_photo_alternate</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider">上传灵感</span>
             </div>
 
             {references.slice(0, 2).map((item, index) => (
-              <div key={item.id} className="flex-none w-56 md:w-72 relative group cursor-pointer" onClick={() => onNavigate('archive')}>
+              <div key={item.id} className="flex-none w-36 md:w-56 relative group cursor-pointer" onClick={() => onNavigate('archive')}>
                 <div className="aspect-[3/4] bg-[#f0eee9] overflow-hidden shadow-sm">
                   <img
                     className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
