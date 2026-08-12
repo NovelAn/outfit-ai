@@ -147,7 +147,9 @@ def get_weather(
     if cached and datetime.now() - cached[0] < timedelta(minutes=30):
         return cached[1]
     try:
-        with httpx.Client(timeout=10) as client:
+        # Weather providers are public endpoints; do not inherit a developer's
+        # local SOCKS/HTTP proxy configuration into the backend runtime.
+        with httpx.Client(timeout=10, trust_env=False) as client:
             if latitude is None or longitude is None:
                 if not city:
                     raise WeatherInputError("需要城市或经纬度")

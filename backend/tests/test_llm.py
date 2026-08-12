@@ -62,6 +62,17 @@ def test_generate_json_extracts_object_after_reasoning(monkeypatch) -> None:
 
 def test_text_client_reuses_resolved_mmx_credentials(monkeypatch) -> None:
     captured = {}
+    http_options = {}
+
+    class FakeHttpClient:
+        pass
+
+    http_client = FakeHttpClient()
+    monkeypatch.setattr(
+        llm.httpx,
+        "Client",
+        lambda **kwargs: http_options.update(kwargs) or http_client,
+    )
     monkeypatch.setattr(
         llm,
         "resolve_minimax_access",
@@ -79,7 +90,9 @@ def test_text_client_reuses_resolved_mmx_credentials(monkeypatch) -> None:
     assert captured == {
         "api_key": "file-key",
         "base_url": "https://api.minimaxi.com/v1",
+        "http_client": http_client,
     }
+    assert http_options == {"timeout": 120, "trust_env": False}
 
 
 def test_stylist_sends_text_attributes_and_reference_analysis(monkeypatch) -> None:

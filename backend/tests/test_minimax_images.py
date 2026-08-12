@@ -123,6 +123,7 @@ def test_generate_images_keeps_valid_partial_results(monkeypatch) -> None:
 
 def test_generate_images_accepts_image_urls(monkeypatch) -> None:
     expected = b"downloaded-image"
+    captured = {}
     monkeypatch.setattr(
         minimax_images,
         "_post_json",
@@ -135,6 +136,11 @@ def test_generate_images_accepts_image_urls(monkeypatch) -> None:
         def raise_for_status(self):
             return None
 
-    monkeypatch.setattr(minimax_images.httpx, "get", lambda *args, **kwargs: Response())
+    def fake_get(*args, **kwargs):
+        captured.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(minimax_images.httpx, "get", fake_get)
 
     assert minimax_images.generate_images("一套编辑画报", count=1) == [expected]
+    assert captured == {"timeout": 120, "trust_env": False}

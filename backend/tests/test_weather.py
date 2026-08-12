@@ -59,11 +59,13 @@ def test_weather_returns_local_date_city_and_rain(monkeypatch) -> None:
         },
     }
     reverse = {"features": [{"properties": {"geocoding": {"city": "上海市"}}}]}
-    monkeypatch.setattr(
-        weather.httpx,
-        "Client",
-        lambda **kwargs: FakeClient(forecast, reverse),
-    )
+    client_options = []
+
+    def make_client(**kwargs):
+        client_options.append(kwargs)
+        return FakeClient(forecast, reverse)
+
+    monkeypatch.setattr(weather.httpx, "Client", make_client)
 
     result = weather.get_weather(latitude=31.230, longitude=121.474)
 
@@ -73,6 +75,7 @@ def test_weather_returns_local_date_city_and_rain(monkeypatch) -> None:
     assert result.precipitation_probability_max == 70
     assert result.precipitation_sum == 5.4
     assert result.rain_window == "09:00–10:00"
+    assert client_options == [{"timeout": 10, "trust_env": False}]
 
 
 def test_reverse_city_failure_does_not_fail_weather(monkeypatch) -> None:

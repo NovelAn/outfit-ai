@@ -89,7 +89,7 @@ def _provider_error(status: int, body: dict[str, Any]) -> Exception:
 def _post_json(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     access = resolve_minimax_access()
     try:
-        with httpx.Client(timeout=120) as client:
+        with httpx.Client(timeout=120, trust_env=False) as client:
             response = client.post(
                 f"{access.base_url}{path}",
                 headers={"Authorization": f"Bearer {access.api_key}"},
@@ -167,7 +167,7 @@ def generate_images(prompt: str, *, count: int) -> list[bytes]:
             if not isinstance(url, str) or not url.startswith(("http://", "https://")):
                 continue
             try:
-                response = httpx.get(url, timeout=120)
+                response = httpx.get(url, timeout=120, trust_env=False)
                 response.raise_for_status()
             except httpx.HTTPError:
                 continue

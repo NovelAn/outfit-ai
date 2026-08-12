@@ -1,6 +1,6 @@
 # Outfit-AI · 当前后端与 API 规格
 
-> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-08-04。
+> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-08-12。
 > 配套：[`CLAUDE.md`](../CLAUDE.md)=项目规范（必读）；[`README.md`](../README.md)=概览；[`CURRENT_FRONTEND_INTEGRATION.md`](./frontend/CURRENT_FRONTEND_INTEGRATION.md)=当前前端事实源。
 > 文档不重复——架构/数据/API 只在此处定义，CLAUDE.md 与 README 仅引用。
 
@@ -201,8 +201,8 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 ---
 
 ## 7. 模块规格（文件级，标 port/borrow 来源）
-- `services/minimax_images.py`：读取环境变量或 `~/.mmx/config.json`；调用 Coding Plan VLM 与 `image-01`，校验和解码响应。
-- `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；统一错误处理且不泄漏 Key。
+- `services/minimax_images.py`：读取环境变量或 `~/.mmx/config.json`；调用 Coding Plan VLM 与 `image-01`，校验和解码响应；外部 HTTP 客户端不继承本机 SOCKS/HTTP 代理环境。
+- `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；统一错误处理且不泄漏 Key；OpenAI HTTP 客户端不继承本机 SOCKS/HTTP 代理环境，避免推荐请求在客户端初始化阶段返回 500。
 - `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 prompt 使用短字段模板，`category` 仅允许 `top/bottom/outerwear/dress/shoes/accessory`，`versatility` 要求为 0–1 数字，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；响应兼容纯 JSON、单个或多个 Markdown JSON 代码块，并取最后一个有效 JSON。衣物模型只把 VLM 常见语义值 `高/high`、`中/medium`、`低/low` 分别归一为 `0.85`、`0.5`、`0.25`，未知字符串仍拒绝；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测
@@ -212,7 +212,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - `services/recommend.py`（**新**，编排）：当日完整 recommendation set 复用、prepared 复用/卡片重建或 guardrail→stylist→validator(重试)→返回三卡；prepared 复用阈值为 20km、三个温度带和 50% 降雨概率
 - `precompute_daily.py`：每日 CLI，读取 Profile `last_location` 后强制生成 `prepared` 三档；由生产调度器调用，不安装本地调度
 - `services/taste_memo.py`（**新**）：`refresh(db,user_id)`（旧 memo + 新 feedback → LLM → 新 memo）；`seed(onboarding)`（Style DNA+样例图→初版）
-- `services/weather.py`：`get_weather(city?,latitude?,longitude?)->WeatherData`；输入/解析出的坐标先统一到三位小数，再用于外部请求、缓存和推荐上下文；返回本地日期/时区、当前降水与雨量、当天降水概率/总量，以及未来 12 小时首段 `>=50%` 的连续降雨窗口。手动城市保留用户输入名称；Nominatim 反向结果若为市辖区/县且上级为直辖市则显示上级市名。Open-Meteo 天气缓存 30min；Nominatim 反查城市缓存 24h，反查失败只返回 `city:null`。使用 Nominatim/OpenStreetMap 数据的用户可见界面必须显示 OpenStreetMap attribution。`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
+- `services/weather.py`：`get_weather(city?,latitude?,longitude?)->WeatherData`；输入/解析出的坐标先统一到三位小数，再用于外部请求、缓存和推荐上下文；返回本地日期/时区、当前降水与雨量、当天降水概率/总量，以及未来 12 小时首段 `>=50%` 的连续降雨窗口。手动城市保留用户输入名称；Nominatim 反向结果若为市辖区/县且上级为直辖市则显示上级市名。Open-Meteo 天气缓存 30min；Nominatim 反查城市缓存 24h，反查失败只返回 `city:null`。天气 HTTP 客户端显式 `trust_env=False`，不继承本机 SOCKS/HTTP 代理环境，避免本地代理配置导致推荐接口在天气阶段返回 500。使用 Nominatim/OpenStreetMap 数据的用户可见界面必须显示 OpenStreetMap attribution。`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
 - `services/history.py`：`get_recent_item_ids`（跳 shoes）、`get_recent_outfits(limit=7)`、`get_latest_recommendation_set(local_date)`、`get_prepared_outfits(local_date)`、`get_history_outfits(scope)`、`prune_temporary_history()`、`record_outfit(action, context)`。来源：ai-closet
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。

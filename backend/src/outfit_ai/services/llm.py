@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+import httpx
 from openai import OpenAI, OpenAIError
 from pydantic import TypeAdapter, ValidationError
 
@@ -31,7 +32,11 @@ def require_api_key() -> MiniMaxAccess:
 
 def get_client() -> OpenAI:
     access = require_api_key()
-    return OpenAI(api_key=access.api_key, base_url=f"{access.base_url}/v1")
+    return OpenAI(
+        api_key=access.api_key,
+        base_url=f"{access.base_url}/v1",
+        http_client=httpx.Client(timeout=120, trust_env=False),
+    )
 
 
 def _create_completion(**kwargs):
