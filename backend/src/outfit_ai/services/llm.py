@@ -1,8 +1,10 @@
 import json
+import logging
+from time import monotonic
 from typing import Any
 
 import httpx
-from openai import OpenAI, OpenAIError
+from openai import APIConnectionError, APITimeoutError, OpenAI, OpenAIError, RateLimitError
 from pydantic import TypeAdapter, ValidationError
 
 from ..config import settings
@@ -13,6 +15,8 @@ from .minimax_images import (
 )
 
 _JSON_OBJECT = TypeAdapter(dict[str, Any])
+_LLM_TIMEOUT_SECONDS = 120
+logger = logging.getLogger(__name__)
 
 
 class LLMUnavailableError(RuntimeError):
@@ -35,16 +39,45 @@ def get_client() -> OpenAI:
     return OpenAI(
         api_key=access.api_key,
         base_url=f"{access.base_url}/v1",
-        http_client=httpx.Client(timeout=120, trust_env=False),
+        http_client=httpx.Client(timeout=_LLM_TIMEOUT_SECONDS, trust_env=False),
+        max_retries=0,
     )
 
 
 def _create_completion(**kwargs):
+    started = monotonic()
     try:
-        return get_client().chat.completions.create(**kwargs)
+        response = get_client().chat.completions.create(**kwargs)
+        logger.info(
+            "MiniMax M3 request completed elapsed=%.1fs",
+            monotonic() - started,
+        )
+        return response
+    except (APITimeoutError, APIConnectionError) as exc:
+        logger.warning(
+            "MiniMax M3 request failed elapsed=%.1fs status=%s error=%s",
+            monotonic() - started,
+            getattr(exc, "status_code", None),
+            type(exc).__name__,
+        )
+        raise LLMUnavailableError("MiniMax 响应超时或网络不可达，请稍后重试") from exc
+    except RateLimitError as exc:
+        logger.warning(
+            "MiniMax M3 request failed elapsed=%.1fs status=%s error=%s",
+            monotonic() - started,
+            getattr(exc, "status_code", None),
+            type(exc).__name__,
+        )
+        raise LLMUnavailableError("MiniMax 请求受限，请稍后重试") from exc
     except LLMUnavailableError:
         raise
     except OpenAIError as exc:
+        logger.warning(
+            "MiniMax M3 request failed elapsed=%.1fs status=%s error=%s",
+            monotonic() - started,
+            getattr(exc, "status_code", None),
+            type(exc).__name__,
+        )
         raise LLMUnavailableError("MiniMax 服务调用失败") from exc
 
 

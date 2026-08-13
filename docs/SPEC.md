@@ -172,7 +172,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 
 MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因此未配置 Key 但存在有效 prepared 时仍返回 200，未命中 prepared 时返回 503。
 
-每日预生成入口是 `python -m outfit_ai.precompute_daily`：读取 `last_location` 的坐标（否则 Profile `city`），先校验 MiniMax Key，再强制生成并保存 prepared 三档；没有位置/城市或衣橱不足时以非零退出。项目不安装本地 cron/launchd。
+每日预生成入口是 `python -m outfit_ai.precompute_daily`：读取 `last_location` 的坐标（否则 Profile `city`），先校验 MiniMax Key，再强制生成并保存 prepared 三档；没有位置/城市或衣橱不足时以非零退出。云端 `scripts/deploy.sh` 会安装 `/etc/cron.d/outfit-ai-precompute`，按 `Asia/Shanghai` 每日 06:30 调用该入口，并用 `flock` 防止重复运行；执行日志写入 `/var/log/outfit-ai-precompute.log`。本地开发不安装 cron/launchd。
 
 ### 6.4 style references
 | Method | Path | 说明 | 返回 |
@@ -202,7 +202,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 
 ## 7. 模块规格（文件级，标 port/borrow 来源）
 - `services/minimax_images.py`：读取环境变量或 `~/.mmx/config.json`；调用 Coding Plan VLM 与 `image-01`，校验和解码响应；外部 HTTP 客户端不继承本机 SOCKS/HTTP 代理环境。
-- `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；统一错误处理且不泄漏 Key；OpenAI HTTP 客户端不继承本机 SOCKS/HTTP 代理环境，避免推荐请求在客户端初始化阶段返回 500。
+- `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；OpenAI SDK 关闭隐式重试，单次请求 120 秒超时，并记录不含密钥或上游正文的耗时/错误类型日志；统一错误处理且不泄漏 Key；OpenAI HTTP 客户端不继承本机 SOCKS/HTTP 代理环境，避免推荐请求在客户端初始化阶段返回 500。
 - `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 prompt 使用短字段模板，`category` 仅允许 `top/bottom/outerwear/dress/shoes/accessory`，`versatility` 要求为 0–1 数字，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；响应兼容纯 JSON、单个或多个 Markdown JSON 代码块，并取最后一个有效 JSON。衣物模型只把 VLM 常见语义值 `高/high`、`中/medium`、`低/low` 分别归一为 `0.85`、`0.5`、`0.25`，未知字符串仍拒绝；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测

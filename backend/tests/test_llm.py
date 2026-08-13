@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from _pytest.logging import LogCaptureFixture
 from openai import OpenAIError
 
 from outfit_ai.services import llm, stylist
@@ -91,8 +92,29 @@ def test_text_client_reuses_resolved_mmx_credentials(monkeypatch) -> None:
         "api_key": "file-key",
         "base_url": "https://api.minimaxi.com/v1",
         "http_client": http_client,
+        "max_retries": 0,
     }
     assert http_options == {"timeout": 120, "trust_env": False}
+
+
+def test_provider_failure_logs_elapsed_without_provider_details(
+    monkeypatch, caplog: LogCaptureFixture
+) -> None:
+    class BrokenCompletions:
+        def create(self, **kwargs):
+            raise OpenAIError("secret provider response")
+
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=BrokenCompletions())
+    )
+    monkeypatch.setattr(llm, "get_client", lambda: client)
+
+    with caplog.at_level("WARNING", logger="outfit_ai.services.llm"):
+        with pytest.raises(llm.LLMUnavailableError):
+            llm.chat_multimodal([], tools=[], tool_choice={})
+
+    assert "MiniMax M3 request failed" in caplog.text
+    assert "secret provider response" not in caplog.text
 
 
 def test_stylist_sends_text_attributes_and_reference_analysis(monkeypatch) -> None:
