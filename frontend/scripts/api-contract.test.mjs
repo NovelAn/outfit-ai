@@ -325,6 +325,13 @@ test("keeps mobile header and bottom navigation fixed during scrolling", () => {
   assert.match(nav, /safe-area-inset-bottom/);
 });
 
+test("refreshes Today when a mobile home-screen app resumes", () => {
+  const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
+  assert.match(today, /addEventListener\('pageshow', refreshOnResume\)/);
+  assert.match(today, /addEventListener\('visibilitychange', refreshOnResume\)/);
+  assert.match(today, /lastResumeRefreshRef/);
+});
+
 test("aligns the inspiration archive shell with the mobile navigation width", () => {
   const archive = readFileSync(new URL("../src/components/ScreenArchive.tsx", import.meta.url), "utf8");
   const inspiration = readFileSync(new URL("../src/components/ScreenInspiration.tsx", import.meta.url), "utf8");

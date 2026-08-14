@@ -196,6 +196,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [weatherIsStale, setWeatherIsStale] = useState(false);
   const weatherRef = useRef<any>(null);
   const dailyRefreshRef = useRef<Promise<any> | null>(null);
+  const lastResumeRefreshRef = useRef(0);
   const recommendationRequestRef = useRef(0);
   const swapInFlightRef = useRef(false);
   const [liveLooks, setLiveLooks] = useState<any>(() => {
@@ -438,8 +439,22 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
         loadFavorites();
         void refreshDailyContext();
       };
+      const refreshOnResume = () => {
+        if (document.visibilityState === 'hidden') return;
+        const now = Date.now();
+        if (now - lastResumeRefreshRef.current < 30_000) return;
+        lastResumeRefreshRef.current = now;
+        void refreshDailyContext();
+      };
+      lastResumeRefreshRef.current = Date.now();
       window.addEventListener('storage', handleStorageChange);
-      return () => window.removeEventListener('storage', handleStorageChange);
+      window.addEventListener('pageshow', refreshOnResume);
+      document.addEventListener('visibilitychange', refreshOnResume);
+      return () => {
+        window.removeEventListener('storage', handleStorageChange);
+        window.removeEventListener('pageshow', refreshOnResume);
+        document.removeEventListener('visibilitychange', refreshOnResume);
+      };
     } catch (e) {
       console.error(e);
     }
