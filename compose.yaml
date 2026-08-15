@@ -1,0 +1,51 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend-runtime
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: sqlite:////data/outfit_ai.db
+      UPLOAD_DIR: /data/uploads
+      USER_ID: local
+    expose:
+      - "8000"
+    volumes:
+      - outfit_data:/data
+      - outfit_u2net:/root/.u2net
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend-runtime
+    environment:
+      DOMAIN: ${DOMAIN}
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  outfit_data:
+  outfit_u2net:
+  caddy_data:
+  caddy_config:
