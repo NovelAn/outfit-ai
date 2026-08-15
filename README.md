@@ -6,19 +6,19 @@
 
 ## 页面预览
 
-以下截图来自当前 React 前端的移动端布局。真实衣橱、灵感图片和推荐数据在运行时从本地 SQLite / API 加载。
+以下截图来自当前 React 前端的移动端布局（390 × 844）。真实衣橱、灵感图片和推荐数据在运行时从本地 SQLite / API 加载；截图用于展示界面结构与核心功能，具体内容会随用户数据变化。
 
 <table>
   <tr>
-    <td align="center"><strong>今日推荐</strong><br><img src="docs/screenshots/today.png" width="280" alt="今日推荐页面"></td>
-    <td align="center"><strong>我的衣橱</strong><br><img src="docs/screenshots/wardrobe.png" width="280" alt="衣橱页面"></td>
+    <td align="center"><strong>今日推荐</strong><br><sub>天气、三种风格、逐件穿搭顺序</sub><br><img src="docs/screenshots/today.png" width="280" alt="今日推荐页面"></td>
+    <td align="center"><strong>我的衣橱</strong><br><sub>批量导入、分类浏览、真实单品</sub><br><img src="docs/screenshots/wardrobe.png" width="280" alt="衣橱页面"></td>
   </tr>
   <tr>
-    <td align="center"><strong>长期灵感库</strong><br><img src="docs/screenshots/inspiration.png" width="280" alt="灵感页面"></td>
-    <td align="center"><strong>灵感存档</strong><br><img src="docs/screenshots/archive.png" width="280" alt="灵感存档页面"></td>
+    <td align="center"><strong>长期灵感库</strong><br><sub>灵感上传、Style DNA、AI 生图入口</sub><br><img src="docs/screenshots/inspiration.png" width="280" alt="灵感页面"></td>
+    <td align="center"><strong>灵感存档</strong><br><sub>标签化管理、失败状态、紧凑网格</sub><br><img src="docs/screenshots/archive.png" width="280" alt="灵感存档页面"></td>
   </tr>
   <tr>
-    <td align="center"><strong>我的 Style DNA</strong><br><img src="docs/screenshots/profile.png" width="280" alt="我的页面"></td>
+    <td align="center"><strong>我的 Style DNA</strong><br><sub>色板、风格关键词、AI 品味备忘录</sub><br><img src="docs/screenshots/profile.png" width="280" alt="我的页面"></td>
     <td></td>
   </tr>
 </table>
