@@ -142,6 +142,9 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
   const [items, setItems] = useState<OutfitItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<OutfitItem | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isManaging, setIsManaging] = useState<boolean>(false);
+  const [isBatchDeleteConfirming, setIsBatchDeleteConfirming] = useState<boolean>(false);
   const [editDraft, setEditDraft] = useState<WardrobeEditDraft | null>(null);
   const [isEditingItem, setIsEditingItem] = useState<boolean>(false);
   const [isDeleteConfirming, setIsDeleteConfirming] = useState<boolean>(false);
@@ -169,6 +172,26 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   const filteredItems = selectedCategory === '全部'
     ? items
     : items.filter(item => item.category === selectedCategory);
+
+  const toggleBatchManaging = () => {
+    setIsManaging((current) => !current);
+    setSelectedIds([]);
+    setIsBatchDeleteConfirming(false);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((current) => current.includes(id)
+      ? current.filter((itemId) => itemId !== id)
+      : [...current, id]);
+  };
+
+  const handleItemClick = (item: OutfitItem) => {
+    if (isManaging) {
+      toggleSelect(item.id);
+      return;
+    }
+    setSelectedItem(item);
+  };
 
   const handlePreviewTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
     previewTouchStartX.current = event.changedTouches[0]?.clientX ?? null;
@@ -308,6 +331,23 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
     }
   };
 
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) return;
+    setIsMutatingItem(true);
+    try {
+      await Promise.all(selectedIds.map((id) => api.deleteWardrobe(id)));
+      setItems((current) => current.filter((item) => !selectedIds.includes(item.id)));
+      setSelectedIds([]);
+      setIsManaging(false);
+      setIsBatchDeleteConfirming(false);
+      triggerToast(`已删除 ${selectedIds.length} 件衣橱单品`);
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : '批量删除失败');
+    } finally {
+      setIsMutatingItem(false);
+    }
+  };
+
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBrand || !newName || !newItemFile) {
@@ -386,6 +426,14 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
         </h1>
         <div className="flex items-center gap-3">
           <button
+            onClick={toggleBatchManaging}
+            className={`text-[#162839] hover:opacity-80 transition-opacity flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded ${isManaging ? 'bg-[#162839] text-white' : 'bg-[#f0eee9]'}`}
+            title="批量管理衣橱单品"
+          >
+            <span className="material-symbols-outlined text-[16px]">checklist</span>
+            <span className="hidden sm:inline">批量管理</span>
+          </button>
+          <button
             onClick={handleBatchImportClick}
             className="text-[#9a442a] hover:opacity-80 transition-opacity flex items-center gap-1 text-xs font-semibold bg-[#f4dfcb]/30 px-2.5 py-1 rounded border border-[#9a442a]/20"
             title="批量导入真实衣橱"
@@ -455,7 +503,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
           {categories.map((cat) => (
             <button
               key={cat}
-              onClick={() => setSelectedCategory(cat)}
+              onClick={() => { setSelectedCategory(cat); setSelectedIds([]); }}
               className={`text-xs tracking-wider uppercase shrink-0 transition-colors relative pb-2 ${
                 selectedCategory === cat
                   ? 'text-[#9a442a] font-bold after:content-[""] after:absolute after:bottom-0 after:left-0 after:w-full after:h-[2px] after:bg-[#9a442a]'
@@ -467,14 +515,43 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
           ))}
         </nav>
 
+        {isManaging && (
+          <div className="flex items-center justify-between gap-3 bg-[#f0eee9] px-3 py-2.5 text-xs">
+            <span className="font-semibold text-[#162839]">已选 {selectedIds.length} 件</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedIds(selectedIds.length === filteredItems.length && filteredItems.length > 0 ? [] : filteredItems.map((item) => item.id))}
+                className="text-[#162839] underline underline-offset-2"
+              >
+                {selectedIds.length === filteredItems.length && filteredItems.length > 0 ? '取消全选' : '全选当前分类'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsBatchDeleteConfirming(true)}
+                disabled={selectedIds.length === 0}
+                className="flex items-center gap-1 text-[#9a442a] font-semibold disabled:opacity-40"
+              >
+                <span className="material-symbols-outlined text-[18px]">delete</span>
+                删除 ({selectedIds.length})
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Grid View */}
         <section className="grid grid-cols-3 gap-2 mt-1 pb-6">
           {filteredItems.map((item) => (
             <article
               key={item.id}
-              onClick={() => setSelectedItem(item)}
-              className="flex flex-col items-center gap-1 group cursor-pointer bg-white/60 p-1.5 rounded-md border border-[#e4e2dd]/60 hover:shadow-sm transition-all"
+              onClick={() => handleItemClick(item)}
+              className={`relative flex flex-col items-center gap-1 group cursor-pointer bg-white/60 p-1.5 rounded-md border transition-all ${selectedIds.includes(item.id) ? 'border-[#9a442a] ring-2 ring-[#9a442a]/20' : 'border-[#e4e2dd]/60 hover:shadow-sm'}`}
             >
+              {isManaging && (
+                <span className={`absolute top-2 left-2 z-10 material-symbols-outlined text-[18px] ${selectedIds.includes(item.id) ? 'text-[#9a442a]' : 'text-[#74777d]'}`}>
+                  {selectedIds.includes(item.id) ? 'check_box' : 'check_box_outline_blank'}
+                </span>
+              )}
               <div className="w-full aspect-[4/5] flex items-center justify-center relative overflow-hidden rounded bg-white/40">
                 <img
                   alt={item.name}
@@ -691,6 +768,35 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {isBatchDeleteConfirming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-[#fbf9f4] p-5 max-w-sm w-full rounded-lg border border-[#162839] shadow-2xl">
+            <h3 className="font-serif-display text-lg text-[#162839] font-bold">确认批量删除？</h3>
+            <p className="text-xs text-[#43474c] leading-relaxed mt-2">
+              将删除已选的 {selectedIds.length} 件单品，以及对应原图和去背景图片，此操作无法恢复。
+            </p>
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setIsBatchDeleteConfirming(false)}
+                disabled={isMutatingItem}
+                className="flex-1 border border-[#162839] text-[#162839] py-2.5 rounded text-xs font-semibold disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleBatchDelete()}
+                disabled={isMutatingItem}
+                className="flex-1 bg-[#9a442a] text-white py-2.5 rounded text-xs font-semibold disabled:opacity-50"
+              >
+                {isMutatingItem ? '删除中…' : '确认删除'}
+              </button>
+            </div>
           </div>
         </div>
       )}

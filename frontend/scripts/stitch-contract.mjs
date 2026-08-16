@@ -45,6 +45,9 @@ assert.match(wardrobe, /编辑信息/, "wardrobe details must expose item editin
 assert.match(wardrobe, /删除单品/, "wardrobe details must expose item deletion");
 assert.match(wardrobe, /api\.updateWardrobe\(/, "wardrobe editing must call the update API");
 assert.match(wardrobe, /api\.deleteWardrobe\(/, "wardrobe deletion must call the delete API");
+assert.match(wardrobe, /批量管理/, "wardrobe must expose batch management");
+assert.match(wardrobe, /selectedIds/, "wardrobe batch management must track selected items");
+assert.match(wardrobe, /Promise\.all\(selectedIds\.map/, "wardrobe batch deletion must delete selected items");
 assert.doesNotMatch(today, /TOKYO \/ 24°C/);
 assert.match(today, /resolveLocationContext/);
 assert.match(today, /precipitation_probability_max/);
