@@ -41,6 +41,10 @@ assert.match(wardrobe, /首次处理.*去背景模型/, "wardrobe must explain s
 assert.match(wardrobe, /grid-cols-3/, "mobile wardrobe must show three compact columns");
 assert.match(wardrobe, /aspect-\[4\/5\]/, "wardrobe thumbnails must use a compact fixed ratio");
 assert.match(wardrobe, /settleInPairs\(Array\.from\(files\)/, "wardrobe uploads must limit background-processing concurrency");
+assert.match(wardrobe, /编辑信息/, "wardrobe details must expose item editing");
+assert.match(wardrobe, /删除单品/, "wardrobe details must expose item deletion");
+assert.match(wardrobe, /api\.updateWardrobe\(/, "wardrobe editing must call the update API");
+assert.match(wardrobe, /api\.deleteWardrobe\(/, "wardrobe deletion must call the delete API");
 assert.doesNotMatch(today, /TOKYO \/ 24°C/);
 assert.match(today, /resolveLocationContext/);
 assert.match(today, /precipitation_probability_max/);

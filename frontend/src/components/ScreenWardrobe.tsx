@@ -86,10 +86,66 @@ const MORE_ITEMS: OutfitItem[] = [
   }
 ];
 
+interface WardrobeEditDraft {
+  name: string;
+  category: OutfitItem['category'];
+  primaryColor: string;
+  secondaryColor: string;
+  material: string;
+  thickness: string;
+  fit: string;
+  styles: string;
+  tags: string;
+  seasons: string;
+  occasions: string;
+}
+
+const THICKNESS_TAGS = ['轻薄', '适中', '厚实'];
+
+const labelsFromText = (value: string) => value
+  .split(/[、,，]/)
+  .map((label) => label.trim())
+  .filter(Boolean);
+
+const editDraftFromItem = (item: OutfitItem): WardrobeEditDraft => ({
+  name: item.name,
+  category: item.category,
+  primaryColor: item.primaryColor || '',
+  secondaryColor: item.secondaryColor || '',
+  material: item.material || '',
+  thickness: item.thickness || '',
+  fit: item.fit || '',
+  styles: (item.styles || []).join('、'),
+  tags: (item.tags || []).filter((tag) => !THICKNESS_TAGS.includes(tag)).join('、'),
+  seasons: (item.seasons || []).join('、'),
+  occasions: (item.occasions || []).join('、'),
+});
+
+const payloadFromDraft = (draft: WardrobeEditDraft) => ({
+  name: draft.name.trim(),
+  category: categoryCode(draft.category),
+  primary_color: draft.primaryColor.trim(),
+  secondary_color: draft.secondaryColor.trim(),
+  material: draft.material.trim(),
+  fit: draft.fit.trim(),
+  styles: labelsFromText(draft.styles),
+  tags: [
+    ...labelsFromText(draft.tags).filter((tag) => !THICKNESS_TAGS.includes(tag)),
+    ...(THICKNESS_TAGS.includes(draft.thickness) ? [draft.thickness] : []),
+  ].filter((tag, index, values) => values.indexOf(tag) === index),
+  seasons: labelsFromText(draft.seasons),
+  occasions: labelsFromText(draft.occasions),
+  confirmed_by_user: true,
+});
+
 export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
   const [items, setItems] = useState<OutfitItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<OutfitItem | null>(null);
+  const [editDraft, setEditDraft] = useState<WardrobeEditDraft | null>(null);
+  const [isEditingItem, setIsEditingItem] = useState<boolean>(false);
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState<boolean>(false);
+  const [isMutatingItem, setIsMutatingItem] = useState<boolean>(false);
   const [isAdding, setIsAdding] = useState<boolean>(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [newBrand, setNewBrand] = useState('');
@@ -205,6 +261,50 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
       const url = URL.createObjectURL(file);
       setNewItemFile(file);
       setNewItemImageUrl(url);
+    }
+  };
+
+  const handleEditItem = () => {
+    if (!selectedItem) return;
+    setEditDraft(editDraftFromItem(selectedItem));
+    setIsEditingItem(true);
+    setIsDeleteConfirming(false);
+  };
+
+  const handleSaveItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem || !editDraft || !editDraft.name.trim()) return;
+    setIsMutatingItem(true);
+    try {
+      const updated = await api.updateWardrobe(selectedItem.id, payloadFromDraft(editDraft));
+      const mapped = mapWardrobeItem(updated) as OutfitItem;
+      setItems((current) => current.map((item) => (item.id === mapped.id ? mapped : item)));
+      setSelectedItem(mapped);
+      setEditDraft(null);
+      setIsEditingItem(false);
+      triggerToast('单品信息已更新');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : '单品信息保存失败');
+    } finally {
+      setIsMutatingItem(false);
+    }
+  };
+
+  const handleDeleteItem = async () => {
+    if (!selectedItem) return;
+    setIsMutatingItem(true);
+    try {
+      await api.deleteWardrobe(selectedItem.id);
+      setItems((current) => current.filter((item) => item.id !== selectedItem.id));
+      setSelectedItem(null);
+      setEditDraft(null);
+      setIsEditingItem(false);
+      setIsDeleteConfirming(false);
+      triggerToast('单品及图片已删除');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : '单品删除失败');
+    } finally {
+      setIsMutatingItem(false);
     }
   };
 
@@ -449,13 +549,148 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                 </div>
               )}
             </div>
-            <p className="text-[10px] text-[#74777d] text-center mb-2">左右滑动切换衣橱单品</p>
-            <button
-              onClick={() => setSelectedItem(null)}
-              className="w-full bg-[#162839] text-white py-2.5 rounded text-xs font-semibold uppercase tracking-widest hover:opacity-90"
-            >
-              关闭
-            </button>
+            {isDeleteConfirming ? (
+              <div className="space-y-3">
+                <h3 className="font-serif-display text-lg text-[#162839] font-bold">确认删除单品？</h3>
+                <p className="text-xs text-[#43474c] leading-relaxed">
+                  将删除“{selectedItem.name}”以及原图和去背景图片，此操作无法恢复。
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteConfirming(false)}
+                    disabled={isMutatingItem}
+                    className="flex-1 border border-[#162839] text-[#162839] py-2.5 rounded text-xs font-semibold disabled:opacity-50"
+                  >
+                    取消删除
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteItem()}
+                    disabled={isMutatingItem}
+                    className="flex-1 bg-[#9a442a] text-white py-2.5 rounded text-xs font-semibold disabled:opacity-50"
+                  >
+                    {isMutatingItem ? '删除中…' : '确认删除'}
+                  </button>
+                </div>
+              </div>
+            ) : isEditingItem && editDraft ? (
+              <form onSubmit={handleSaveItem} className="space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-serif-display text-lg text-[#162839] font-bold">编辑信息</h3>
+                  {selectedItem.brand && <span className="text-[#43474c]">{selectedItem.brand}</span>}
+                </div>
+                <label className="block text-[#43474c] font-semibold">
+                  单品名称
+                  <input
+                    value={editDraft.name}
+                    onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
+                    className="mt-1 w-full p-2 border border-[#c4c6cd] rounded bg-white text-[#162839]"
+                    required
+                  />
+                </label>
+                <label className="block text-[#43474c] font-semibold">
+                  分类
+                  <select
+                    value={editDraft.category}
+                    onChange={(e) => setEditDraft({ ...editDraft, category: e.target.value as OutfitItem['category'] })}
+                    className="mt-1 w-full p-2 border border-[#c4c6cd] rounded bg-white text-[#162839]"
+                  >
+                    <option value="上装">上装</option>
+                    <option value="下装">下装</option>
+                    <option value="鞋履">鞋履</option>
+                    <option value="配饰">配饰</option>
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['primaryColor', '主色'],
+                    ['secondaryColor', '辅色'],
+                    ['material', '材质'],
+                    ['fit', '版型'],
+                  ] as const).map(([key, label]) => (
+                    <label key={key} className="block text-[#43474c] font-semibold">
+                      {label}
+                      <input
+                        value={editDraft[key]}
+                        onChange={(e) => setEditDraft({ ...editDraft, [key]: e.target.value })}
+                        className="mt-1 w-full p-2 border border-[#c4c6cd] rounded bg-white text-[#162839]"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <label className="block text-[#43474c] font-semibold">
+                  厚薄度
+                  <select
+                    value={editDraft.thickness}
+                    onChange={(e) => setEditDraft({ ...editDraft, thickness: e.target.value })}
+                    className="mt-1 w-full p-2 border border-[#c4c6cd] rounded bg-white text-[#162839]"
+                  >
+                    <option value="">未设置</option>
+                    {THICKNESS_TAGS.map((value) => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                </label>
+                {([
+                  ['styles', '风格标签'],
+                  ['tags', '其他标签'],
+                  ['seasons', '适用季节'],
+                  ['occasions', '适用场景'],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="block text-[#43474c] font-semibold">
+                    {label}（用顿号分隔）
+                    <input
+                      value={editDraft[key]}
+                      onChange={(e) => setEditDraft({ ...editDraft, [key]: e.target.value })}
+                      className="mt-1 w-full p-2 border border-[#c4c6cd] rounded bg-white text-[#162839]"
+                    />
+                  </label>
+                ))}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setIsEditingItem(false); setEditDraft(null); }}
+                    disabled={isMutatingItem}
+                    className="flex-1 border border-[#162839] text-[#162839] py-2.5 rounded text-xs font-semibold disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isMutatingItem}
+                    className="flex-1 bg-[#162839] text-white py-2.5 rounded text-xs font-semibold disabled:opacity-50"
+                  >
+                    {isMutatingItem ? '保存中…' : '保存修改'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <p className="text-[10px] text-[#74777d] text-center mb-2">左右滑动切换衣橱单品</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleEditItem}
+                    className="flex-1 border border-[#162839] text-[#162839] py-2.5 rounded text-xs font-semibold hover:bg-[#f0eee9]"
+                  >
+                    编辑信息
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteConfirming(true)}
+                    className="flex-1 border border-[#9a442a] text-[#9a442a] py-2.5 rounded text-xs font-semibold hover:bg-[#f4dfcb]/30"
+                  >
+                    删除单品
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedItem(null)}
+                  className="w-full mt-2 bg-[#162839] text-white py-2.5 rounded text-xs font-semibold uppercase tracking-widest hover:opacity-90"
+                >
+                  关闭
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -36,7 +36,7 @@ frontend/index.html
 | 页面 | 源文件 | 用户功能 | 主要后端接口 |
 |---|---|---|---|
 | 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；每套按后端返回的 3–6 件完整展示（含外搭与配饰），手机端按帽子→颈部配饰→外套/叠穿→上装→下装→鞋履→其他配饰的顺序纵向展示；点击任意单品打开详情浮层，显示该单品图片、名称、颜色和品类；“AI 换一换”只替换被点击的 Look，其他卡片保持不变；收藏、打分和反馈仍使用原始 item 顺序 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback` |
-| 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开在顶部安全区与底部导航上沿之间居中的紧凑详情，统一限制图片展示高度，显示图片、名称、分类和已识别标签，并支持左右滑动切换当前分类中的相邻单品。此页面沿用云端已验证的稳定版本，其他页面迭代不会替换它 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm` |
+| 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开在顶部安全区与底部导航上沿之间居中的紧凑详情，统一限制图片展示高度，显示图片、名称、分类和已识别标签，并支持左右滑动切换当前分类中的相邻单品；详情内可编辑识别字段或删除单品，删除前二次确认。 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
 | 灵感 | `ScreenInspiration.tsx` | 移动端内容画布、页眉和底部主导航统一为同一窄版宽度；长期灵感胶片中的上传卡和前两张预览使用紧凑尺寸，减少首屏占用；单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 移动端内容画布与底部主导航统一为同一窄版宽度；三列紧凑缩略图浏览；卡片标签显示在图片下方且最多显示 2 个，避免文字覆盖图片；点击图片打开在顶部安全区与底部导航上沿之间居中的紧凑预览，最多显示 8 个标签并自动换行；预览支持左右滑动切换当前筛选列表中的相邻图片；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
 | 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；分别读取 `recent` 和 `archive` 推荐历史。历史、收藏和评分的 AI 品味备忘录按已解析到的单品渲染缩略图网格（完整 Look 为 3–6 件）；仅当零件单品都无法解析时，旧记录才回退其单张拼图，并可收藏、评分或标记穿过 | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history?scope=`、`POST /api/feedback` |
@@ -51,6 +51,8 @@ frontend/index.html
 | `uploadWardrobe(file)` | `POST /api/wardrobe/upload` | 上传真实衣物 |
 | `wardrobeStatus(id)` | `GET /api/wardrobe/{id}/status` | 轮询识图状态 |
 | `confirmWardrobe(id,data)` | `POST /api/wardrobe/{id}/confirm` | 确认 AI 属性及用户修改 |
+| `updateWardrobe(id,data)` | `PATCH /api/wardrobe/{id}` | 保存用户在衣橱详情中修改的名称、分类、颜色、材质、版型及标签 |
+| `deleteWardrobe(id)` | `DELETE /api/wardrobe/{id}` | 删除单品记录、原图和去背景图；前端删除前要求用户确认 |
 | `references()` | `GET /api/style-references` | 读取长期参考 Look |
 | `uploadReference(file)` | `POST /api/style-references/upload` | 上传完整参考 Look，不去背景 |
 | `referenceStatus(id)` | `GET /api/style-references/{id}/status` | 轮询 VLM 分析与 Style DNA 合并状态 |
@@ -70,7 +72,7 @@ frontend/index.html
 
 衣橱展示层把 `outerwear` 归入“上装”、`dress` 归入“下装”，并单列 `accessory` 为“配饰”；后端保留稳定英文类别码，并在确认时将 VLM 常见别名（如 `hat`、`cap`、`baseball cap`）容错归入 `accessory`。VLM 实际读取 rembg 生成的透明 `.nobg.png`；返回的衣物名称、颜色、材质、版型、风格、标签、季节和场景使用简体中文，品牌名和内部 `category` 除外。
 
-衣橱单品详情浮层沿用云端稳定版，仅展示图片、名称、分类和已识别标签；本轮同步不改动衣橱页面交互。后端仍保留单品更新/删除接口，待单独确认交互方案后再开放入口，避免 Mac 端实验性改版覆盖当前稳定页面。
+衣橱单品详情浮层展示图片、名称、分类和已识别标签，并提供“编辑信息”和“删除单品”入口。编辑沿用后端 PATCH 接口保存用户修正；删除会二次确认，同时删除数据库记录、原图和去背景图。左右滑动预览仍只切换当前分类列表，不会触发修改或删除。
 
 我的页面的色板仅使用统一的名称映射：黑色 `#1B1C19`、白色 `#F7F5EF`、深蓝色 `#162839`、浅蓝色 `#A9C7DD`、灰色 `#8A8D91`、米白色 `#EEE8DA`、米黄色 `#D8C49A`、卡其色 `#B39B72`、棕色 `#7A5337`、绿色 `#647B5B`、红色 `#9A442A`、紫色 `#75627D`。未知颜色只显示文字和中性描边底色，绝不按数组位置猜测颜色。
 
