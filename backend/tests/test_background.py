@@ -1,4 +1,6 @@
 from io import BytesIO
+from threading import Event, Thread
+from time import sleep
 from types import SimpleNamespace
 
 from PIL import Image
@@ -35,6 +37,42 @@ def test_background_removal_is_idempotent(monkeypatch, tmp_path) -> None:
     assert calls == [b"source"]
     with Image.open(first) as image:
         assert image.mode == "RGBA"
+
+
+def test_background_removal_serializes_model_initialization(monkeypatch, tmp_path) -> None:
+    first_source = tmp_path / "first.jpg"
+    second_source = tmp_path / "second.jpg"
+    first_source.write_bytes(b"first")
+    second_source.write_bytes(b"second")
+    first_entered = Event()
+    second_started = Event()
+    release_first = Event()
+    entered = []
+
+    def remove(data):
+        entered.append(data)
+        if data == b"first":
+            first_entered.set()
+            assert release_first.wait(1)
+        return _png_bytes()
+
+    monkeypatch.setattr(background, "_remove", remove)
+    first = Thread(target=background.ensure_background_removed, args=(first_source,))
+    second = Thread(
+        target=lambda: (second_started.set(), background.ensure_background_removed(second_source))
+    )
+
+    first.start()
+    assert first_entered.wait(1)
+    second.start()
+    assert second_started.wait(1)
+    sleep(0.1)
+    assert entered == [b"first"]
+
+    release_first.set()
+    first.join(1)
+    second.join(1)
+    assert entered == [b"first", b"second"]
 
 
 def test_display_path_uses_transparent_image_only_when_ready(tmp_path) -> None:

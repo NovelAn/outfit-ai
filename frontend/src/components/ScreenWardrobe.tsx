@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScreenId, OutfitItem } from '../types';
-import { api, categoryCode, mapWardrobeItem, waitForReady } from '../lib/api.mjs';
+import { api, categoryCode, mapWardrobeItem, settleInPairs, waitForReady } from '../lib/api.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -162,19 +162,25 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
     setIsExtracting(true);
 
     try {
-      const extracted = await Promise.all(
-        Array.from(files).map(async (file) => {
-          const uploaded = await api.uploadWardrobe(file);
-          const ready = await waitForReady(() => api.wardrobeStatus(uploaded.id));
-          const confirmed = await api.confirmWardrobe(uploaded.id, {
-            ...(ready.attributes || {}),
-            confirmed_by_user: true,
-          });
-          return { ...mapWardrobeItem(confirmed), isNew: true } as OutfitItem;
-        }),
+      const results = await settleInPairs(Array.from(files), async (file) => {
+        const uploaded = await api.uploadWardrobe(file);
+        const ready = await waitForReady(() => api.wardrobeStatus(uploaded.id));
+        const confirmed = await api.confirmWardrobe(uploaded.id, {
+          ...(ready.attributes || {}),
+          confirmed_by_user: true,
+        });
+        return { ...mapWardrobeItem(confirmed), isNew: true } as OutfitItem;
+      });
+      const extracted = results.flatMap((result) =>
+        result.status === 'fulfilled' ? [result.value] : [],
       );
+      const failed = results.length - extracted.length;
       setItems((current) => [...extracted, ...current]);
-      triggerToast(`✨ AI 已成功从 ${count} 张真实照片中提取、去背景并分类！`);
+      triggerToast(
+        failed === 0
+          ? `✨ AI 已成功从 ${count} 张真实照片中提取、去背景并分类！`
+          : `✨ 已完成 ${extracted.length} 张，${failed} 张识别失败，请稍后重试`,
+      );
     } catch (error) {
       triggerToast(error instanceof Error ? error.message : '批量识别失败');
     } finally {

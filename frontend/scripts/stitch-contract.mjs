@@ -40,6 +40,7 @@ assert.match(
 assert.match(wardrobe, /首次处理.*去背景模型/, "wardrobe must explain slow first-time setup");
 assert.match(wardrobe, /grid-cols-3/, "mobile wardrobe must show three compact columns");
 assert.match(wardrobe, /aspect-\[4\/5\]/, "wardrobe thumbnails must use a compact fixed ratio");
+assert.match(wardrobe, /settleInPairs\(Array\.from\(files\)/, "wardrobe uploads must limit background-processing concurrency");
 assert.doesNotMatch(today, /TOKYO \/ 24°C/);
 assert.match(today, /resolveLocationContext/);
 assert.match(today, /precipitation_probability_max/);

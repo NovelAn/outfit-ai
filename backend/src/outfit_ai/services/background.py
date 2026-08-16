@@ -1,10 +1,15 @@
 from io import BytesIO
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from PIL import Image
 
 from .storage import resolve_storage_path
+
+_REMBG_LOCK = Lock()
+# ponytail: one-process lock prevents rembg's first-use model download from racing;
+# use a shared file/lease if the API ever runs with multiple worker processes.
 
 
 def background_path(path: str | Path) -> Path:
@@ -19,19 +24,20 @@ def _remove(data: bytes) -> Any:
 
 
 def ensure_background_removed(path: str | Path) -> Path:
-    source = resolve_storage_path(path)
-    target = background_path(source)
-    if target.exists():
-        return target
+    with _REMBG_LOCK:
+        source = resolve_storage_path(path)
+        target = background_path(source)
+        if target.exists():
+            return target
 
-    result = _remove(source.read_bytes())
-    output = BytesIO()
-    with Image.open(BytesIO(bytes(result))) as image:
-        image.convert("RGBA").save(output, "PNG", optimize=True)
-    temporary = target.with_suffix(".tmp")
-    temporary.write_bytes(output.getvalue())
-    temporary.replace(target)
-    return target
+        result = _remove(source.read_bytes())
+        output = BytesIO()
+        with Image.open(BytesIO(bytes(result))) as image:
+            image.convert("RGBA").save(output, "PNG", optimize=True)
+        temporary = target.with_suffix(".tmp")
+        temporary.write_bytes(output.getvalue())
+        temporary.replace(target)
+        return target
 
 
 def display_image_path(item) -> Path:
