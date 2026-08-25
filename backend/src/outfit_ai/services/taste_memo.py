@@ -12,7 +12,7 @@ from ..schemas import ProfileIn
 from .llm import LLMResponseError, chat_multimodal, generate_json
 from .prompt_builder import style_dna_messages
 
-FEEDBACK_BATCH_SIZE = 8
+FEEDBACK_BATCH_SIZE = 4
 # ponytail: process-local lock + SQLite rowid watermark fallback; multiple workers need
 # a durable claim/watermark and feedback.created_at.
 _REFRESH_LOCK = threading.Lock()

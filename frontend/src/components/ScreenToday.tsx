@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
-import { api, confirmFeedback, requireHistoryId } from '../lib/api.mjs';
+import { api, confirmFeedback, feedbackLearningNote, requireHistoryId } from '../lib/api.mjs';
 import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
-import { orderLookItems } from '../lib/look-layout.mjs';
+import { lookStackLayout, orderLookItems } from '../lib/look-layout.mjs';
 import { displayWeatherForRecommendation, lookFeedbackKey } from '../lib/today-state.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
+export type LookTier = 'safe' | 'fresh' | 'stretch';
+
 interface ScreenTodayProps {
   onNavigate: (screen: ScreenId) => void;
+  expandedLooks: Record<LookTier, boolean>;
+  onLookExpandedChange: (tier: LookTier, expanded: boolean) => void;
 }
 
 const FEEDBACK_TAG_OPTIONS = [
@@ -159,22 +163,56 @@ const EMPTY_LOOKS: Record<'safe' | 'fresh' | 'stretch', any> = {
   stretch: { title: 'Look 03 / 突破 (STRETCH)', tag: '工装廓形', description: '等待从真实衣橱生成', imageUrl: '', items: EMPTY_ITEMS },
 };
 
-const LookItems = ({ items = [], onSelect }: { items: any[]; onSelect: (item: any) => void }) => {
+const LookItems = ({ items = [], expanded, onExpandedChange, onSelect }: {
+  items: any[];
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  onSelect: (item: any) => void;
+}) => {
   const visualItems = orderLookItems(items);
+  const layout = lookStackLayout(visualItems.length, expanded);
 
-  return <div className="look-flow flex min-h-[470px] w-full max-w-[300px] flex-col items-center gap-2">
-    {visualItems.map((item, index) => (
-      <React.Fragment key={item.id || `${item.name}-${index}`}>
-        <button
-          onClick={() => onSelect(item)}
-          className="flex h-[132px] w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#c4c6cd]/50 bg-white p-3 text-left shadow-[0_4px_12px_rgba(22,40,57,0.05)] transition-colors hover:border-[#9a442a]/50"
-        >
-          <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
-          <span className="sr-only">{item.name}</span>
-        </button>
-        {index < visualItems.length - 1 && <span aria-hidden="true" className="h-3 w-px bg-[#9a442a]/35" />}
-      </React.Fragment>
-    ))}
+  return <div className="look-flow flex w-full max-w-[300px] flex-col items-center">
+    <div
+      className="relative w-full transition-[height] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+      style={{ height: layout.height }}
+    >
+      {visualItems.map((item, index) => (
+        <React.Fragment key={item.id || `${item.name}-${index}`}>
+          <button
+            onClick={() => expanded ? onSelect(item) : onExpandedChange(true)}
+            aria-label={!expanded && index === 0 ? '展开完整搭配' : item.name}
+            aria-hidden={!expanded && index > 0}
+            tabIndex={expanded || index === 0 ? 0 : -1}
+            style={{
+              zIndex: visualItems.length - index,
+              transform: `translateY(${layout.offsets[index]}px) rotate(${layout.rotations[index]}deg) scale(${expanded ? 1 : 1 - index * 0.025})`,
+              transitionDelay: `${(expanded ? index : visualItems.length - index - 1) * 70}ms`,
+            }}
+            className={`absolute inset-x-0 top-0 flex h-[132px] w-full items-center justify-center overflow-hidden rounded-xl border border-[#c4c6cd]/50 bg-white p-3 text-left shadow-[0_8px_20px_rgba(22,40,57,0.10)] transition-[transform,border-color] duration-700 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:border-[#9a442a]/50 motion-reduce:transition-none ${!expanded && index > 0 ? 'pointer-events-none' : ''}`}
+          >
+            <img className="h-full w-full object-contain" src={item.img} alt={item.name} />
+            <span className="sr-only">{item.name}</span>
+          </button>
+          {index < visualItems.length - 1 && (
+            <span
+              aria-hidden="true"
+              className={`absolute left-1/2 h-3 w-px -translate-x-1/2 bg-[#9a442a]/35 transition-opacity duration-300 ${expanded ? 'opacity-100' : 'opacity-0'}`}
+              style={{ top: layout.offsets[index] + 136 }}
+            />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+    {expanded && (
+      <button
+        type="button"
+        onClick={() => onExpandedChange(false)}
+        className="mt-4 rounded-full border border-[#162839]/30 bg-white/70 px-4 py-1.5 text-[11px] font-bold text-[#162839] transition-colors hover:bg-[#162839] hover:text-white"
+      >
+        收起搭配
+      </button>
+    )}
   </div>;
 };
 
@@ -186,7 +224,7 @@ const toModalItem = (item: any) => ({
   desc: item.desc,
 });
 
-export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
+export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLooks, onLookExpandedChange }) => {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [activeModalItem, setActiveModalItem] = useState<ReturnType<typeof toModalItem> | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -306,6 +344,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
   const [currentStars, setCurrentStars] = useState<number>(5);
   const [selectedTags, setSelectedTags] = useState<string[]>(['🎨 色彩搭配好']);
   const [commentText, setCommentText] = useState<string>('');
+  const [customTagText, setCustomTagText] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const applyRecommendation = (
@@ -548,22 +587,20 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
     }
   };
 
+  const addCustomTag = () => {
+    const tag = customTagText.trim();
+    if (!tag) return;
+    if (!selectedTags.includes(tag)) setSelectedTags([...selectedTags, tag]);
+    setCustomTagText('');
+  };
+
   const submitRating = async () => {
     if (!activeRatingModal) return;
 
     const id = activeRatingModal.id;
     const lookTitle = activeRatingModal.title;
 
-    let aiAdjustment = '已优化款式推荐权重';
-    if (selectedTags.includes('👔 过于正式') || selectedTags.includes('☕ 缺松弛感')) {
-      aiAdjustment = '已调高【松弛休假风】权重 +15%，减少工整正装推荐';
-    } else if (selectedTags.includes('🧥 想看叠穿')) {
-      aiAdjustment = '已新增【秋冬质感叠穿】层次构图指导';
-    } else if (selectedTags.includes('🌿 偏好天然织物')) {
-      aiAdjustment = '已将【棉麻与天然羊毛】列为优先提取面料';
-    } else {
-      aiAdjustment = '已将此类精纺干练配色沉淀至你的核心品味 DNA';
-    }
+    const aiAdjustment = '已记录反馈，等待品味学习进度';
 
     const newRating: LookRating = {
       lookId: id,
@@ -590,7 +627,16 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       setRatings(updated);
       localStorage.setItem('OUTFIT_AI_LOOK_RATINGS', JSON.stringify(updated));
       setActiveRatingModal(null);
-      triggerToast(`✨ AI 基因库已吸收你的评价！${aiAdjustment}`);
+      triggerToast('反馈已记录');
+      void api.profile().then((serverProfile) => {
+        const note = feedbackLearningNote(serverProfile);
+        setRatings((prev) => {
+          const next = { ...prev, [id]: { ...newRating, aiAdjustment: note } };
+          localStorage.setItem('OUTFIT_AI_LOOK_RATINGS', JSON.stringify(next));
+          return next;
+        });
+        triggerToast(`✨ ${note}`);
+      }).catch(() => undefined);
     };
     try {
       await confirmFeedback(api.feedback, {
@@ -606,6 +652,18 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       return;
     }
   };
+
+  const recentTags: string[] = [];
+  const seenTags = new Set<string>();
+  Object.values(ratings).forEach((rating) => {
+    (rating.tags || []).forEach((tag) => {
+      if (tag && !seenTags.has(tag)) {
+        seenTags.add(tag);
+        recentTags.push(tag);
+      }
+    });
+  });
+  const tagOptions = [...new Set([...recentTags, ...selectedTags, ...FEEDBACK_TAG_OPTIONS])];
 
   return (
     <div className={`min-h-screen bg-[#fbf9f4] text-[#1b1c19] pb-[100px] ${isCompareMode ? 'pt-[250px]' : 'pt-[132px]'}`}>
@@ -770,7 +828,12 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentSafe.items} onSelect={(item) => setActiveModalItem(toModalItem(item))} />
+              <LookItems
+                items={currentSafe.items}
+                expanded={expandedLooks.safe}
+                onExpandedChange={(expanded) => onLookExpandedChange('safe', expanded)}
+                onSelect={(item) => setActiveModalItem(toModalItem(item))}
+              />
 
               <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -864,7 +927,12 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentFresh.items} onSelect={(item) => setActiveModalItem(toModalItem(item))} />
+              <LookItems
+                items={currentFresh.items}
+                expanded={expandedLooks.fresh}
+                onExpandedChange={(expanded) => onLookExpandedChange('fresh', expanded)}
+                onSelect={(item) => setActiveModalItem(toModalItem(item))}
+              />
 
               <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -958,7 +1026,12 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              <LookItems items={currentStretch.items} onSelect={(item) => setActiveModalItem(toModalItem(item))} />
+              <LookItems
+                items={currentStretch.items}
+                expanded={expandedLooks.stretch}
+                onExpandedChange={(expanded) => onLookExpandedChange('stretch', expanded)}
+                onSelect={(item) => setActiveModalItem(toModalItem(item))}
+              />
 
               <div className="mt-6 text-center max-w-[280px]">
                 <p className="font-serif-display text-[14px] text-[#162839] font-medium leading-relaxed">
@@ -1009,7 +1082,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       {/* Item Detail Modal */}
       {activeModalItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-[#fbf9f4] p-6 max-w-sm w-full rounded-lg border border-[#162839] shadow-2xl relative">
+          <div className="look-pop bg-[#fbf9f4] p-6 max-w-sm w-full rounded-lg border border-[#162839] shadow-2xl relative">
             <div className="w-full aspect-square mb-4 rounded-lg border border-[#c4c6cd]/40 bg-white flex items-center justify-center overflow-hidden">
               {activeModalItem.imageUrl ? (
                 <img src={activeModalItem.imageUrl} alt={activeModalItem.title} className="h-full w-full object-contain p-3" />
@@ -1036,7 +1109,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
       {/* Look Rating & AI Learning Modal */}
       {activeRatingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-[#fbf9f4] p-6 max-w-sm w-full rounded-lg border border-[#162839] shadow-2xl relative">
+          <div className="look-pop bg-[#fbf9f4] p-6 max-w-sm w-full rounded-lg border border-[#162839] shadow-2xl relative">
             <div className="flex justify-between items-center mb-3">
               <span className="text-[10px] bg-[#9a442a] text-white px-2 py-0.5 rounded font-mono font-semibold uppercase tracking-widest">
                 AI Taste Learning
@@ -1079,7 +1152,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
             <div className="mb-4">
               <label className="block text-[11px] text-[#43474c] font-semibold mb-1.5">快速审美反馈标签</label>
               <div className="flex flex-wrap gap-1.5">
-                {FEEDBACK_TAG_OPTIONS.map((tag) => {
+                {tagOptions.map((tag) => {
                   const isSelected = selectedTags.includes(tag);
                   return (
                     <button
@@ -1095,9 +1168,31 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate }) => {
                       {tag}
                     </button>
                   );
-                })}
+                  })}
+                </div>
+                <div className="mt-2 flex gap-1.5">
+                  <input
+                    type="text"
+                    value={customTagText}
+                    onChange={(e) => setCustomTagText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addCustomTag();
+                      }
+                    }}
+                    placeholder="自定义标签，回车添加"
+                    className="min-w-0 flex-1 px-2 py-1 text-xs border border-[#c4c6cd] rounded bg-white text-[#162839] focus:outline-none focus:border-[#162839]"
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomTag}
+                    className="px-2.5 py-1 text-[11px] font-semibold border border-[#162839]/40 rounded text-[#162839] hover:bg-[#162839] hover:text-white transition-colors"
+                  >
+                    添加
+                  </button>
+                </div>
               </div>
-            </div>
 
             {/* Text Comment */}
             <div className="mb-5">

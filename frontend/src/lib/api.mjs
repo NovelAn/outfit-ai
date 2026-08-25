@@ -78,6 +78,16 @@ export function categoryCode(label) {
   return { 上装: "top", 下装: "bottom", 鞋履: "shoes", 配饰: "accessory" }[label] || "top";
 }
 
+// Keep in sync with backend outfit_ai.services.taste_memo.FEEDBACK_BATCH_SIZE.
+export const FEEDBACK_BATCH_SIZE = 4;
+
+export function feedbackLearningNote(profile) {
+  const since = profile?.feedback_since_refresh ?? 0;
+  if (since >= FEEDBACK_BATCH_SIZE) return "已记录，正在触发 AI 品味备忘录刷新";
+  if (since > 0) return `已记录，累计 ${since}/${FEEDBACK_BATCH_SIZE} 条反馈后刷新品味备忘录`;
+  return profile?.taste_memo_updated_at ? "已记录，将并入下一批品味学习" : "已记录，AI 品味备忘录仍在学习中";
+}
+
 export function mapWardrobeItem(item) {
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const thickness = tags.find((tag) => ["轻薄", "适中", "厚实"].includes(tag)) || "";

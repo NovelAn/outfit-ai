@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import * as profileApi from "../src/lib/api.mjs";
-import { orderLookItems } from "../src/lib/look-layout.mjs";
+import { lookStackLayout, orderLookItems } from "../src/lib/look-layout.mjs";
 import { displayWeatherForRecommendation, lookFeedbackKey } from "../src/lib/today-state.mjs";
 import {
   api,
@@ -359,6 +359,19 @@ test("orders visual items from head to foot while preserving API feedback order"
   assert.deepEqual(items.map((item) => item.id), [
     "bag", "shoes", "top", "scarf", "hat", "coat", "bottom",
   ]);
+});
+
+test("stacks a Look compactly before expanding it into dressing order", () => {
+  assert.deepEqual(lookStackLayout(3, false), {
+    height: 164,
+    offsets: [0, 10, 20],
+    rotations: [-3, 2, -1],
+  });
+  assert.deepEqual(lookStackLayout(3, true), {
+    height: 436,
+    offsets: [0, 152, 304],
+    rotations: [-1, 1, -1],
+  });
 });
 
 test("keys Today feedback by history identity and preserves freshly fetched weather", () => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId, LookRating, FavoriteLook, HistoryLook } from '../types';
-import { api, confirmFeedback, mapHistoryLook, paletteHex, requireHistoryId, visibleStyleTags } from '../lib/api.mjs';
+import { api, confirmFeedback, feedbackLearningNote, FEEDBACK_BATCH_SIZE, mapHistoryLook, paletteHex, requireHistoryId, visibleStyleTags } from '../lib/api.mjs';
+import { orderLookItems } from '../lib/look-layout.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -14,13 +15,55 @@ const EMPTY_TAG_PREFERENCES = { pinned: [], hidden: [], aliases: {} };
 
 const uniqueTags = (tags: string[]) => [...new Set(tags.filter(Boolean))];
 
-const TotalLookThumbnails = ({ items, fallback, alt }: { items?: { name: string; img: string }[]; fallback?: string; alt: string }) => (
-  items?.length ? (
-    <div className="grid w-14 shrink-0 grid-cols-3 gap-0.5 rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] p-0.5">
-      {items.map((item, index) => <img key={`${item.name}-${index}`} src={item.img} alt={item.name} className="aspect-square w-full rounded-sm object-cover" />)}
-    </div>
-  ) : fallback ? <img src={fallback} alt={alt} className="w-14 h-18 object-cover rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0" /> : <div aria-label={alt} className="w-14 h-18 rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0" />
-);
+const TotalLookThumbnails = ({ items, fallback, alt }: { items?: { name: string; img: string }[]; fallback?: string; alt: string }) => {
+  const [isZoomed, setIsZoomed] = useState(false);
+  const zoomItems = items?.length ? items : (fallback ? [{ name: alt, img: fallback }] : []);
+  const openZoom = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setIsZoomed(true);
+  };
+  return (
+    <>
+      {items?.length ? (
+        <button
+          type="button"
+          onClick={openZoom}
+          title="点击放大查看完整 Look"
+          className="grid w-14 shrink-0 grid-cols-3 gap-0.5 rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] p-0.5 cursor-zoom-in"
+        >
+          {items.map((item, index) => <img key={`${item.name}-${index}`} src={item.img} alt={item.name} className="aspect-square w-full rounded-sm object-cover" />)}
+        </button>
+      ) : fallback ? (
+        <button type="button" onClick={openZoom} title="点击放大查看完整 Look" className="cursor-zoom-in">
+          <img src={fallback} alt={alt} className="w-14 h-18 object-cover rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0" />
+        </button>
+      ) : (
+        <div aria-label={alt} className="w-14 h-18 rounded-md border border-[#c4c6cd]/30 bg-[#f5f3ee] shrink-0" />
+      )}
+      {isZoomed && (
+        <div
+          role="dialog"
+          aria-label={`${alt} 放大视图`}
+          className="fixed inset-0 z-[90] overflow-y-auto bg-black/85 p-4 animate-fade-in"
+          onClick={() => setIsZoomed(false)}
+        >
+          <div className="mx-auto flex h-[calc(100svh-2rem)] w-full max-w-[260px] flex-col items-center justify-center gap-2">
+            {orderLookItems(zoomItems).map((item, index) => (
+              <div
+                key={`${item.name}-${index}`}
+                className="look-pop flex min-h-0 w-full max-h-[19svh] flex-1 items-center justify-center rounded-xl border border-white/20 bg-white p-2"
+                style={{ animationDelay: `${index * 80}ms` }}
+              >
+                <img src={item.img} alt={item.name} className="h-full min-h-0 w-full object-contain" />
+              </div>
+            ))}
+            <p className="shrink-0 text-center text-[10px] text-white/70">按穿搭顺序从上至下 · 点击任意位置返回</p>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
 
 export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
   const [styleId, setStyleId] = useState('894-FX-21');
@@ -67,7 +110,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
         rating: item.rating!,
         tags: [],
         timestamp: item.date,
-        aiAdjustment: '已同步到 AI 品味备忘录',
+        aiAdjustment: feedbackLearningNote(loadedProfile),
         lookImage: item.imageUrl,
         lookItems: item.lookItems,
       }]));
@@ -362,7 +405,11 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
           </div>
 
           <div className="pt-1 text-[10px] text-[#43474c] font-medium">
-            {ratingCount === 0 ? "正在学习" : `已根据 ${ratingCount} 次反馈更新`}
+            {profile?.taste_memo_updated_at
+              ? `品味备忘录更新于 ${new Date(profile.taste_memo_updated_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · 待学习 ${profile?.feedback_since_refresh ?? 0}/${FEEDBACK_BATCH_SIZE} 条反馈`
+              : (profile?.feedback_since_refresh ?? 0) > 0
+                ? `已记录 ${profile?.feedback_since_refresh ?? 0}/${FEEDBACK_BATCH_SIZE} 条反馈，累计后刷新品味备忘录`
+                : '正在学习'}
           </div>
         </section>
 
@@ -550,7 +597,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
 
       {/* Editing Specific Rating Modal */}
       {editingRating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
           <div className="bg-[#fbf9f4] p-4 max-w-xs w-full border border-[#162839] relative rounded-xl shadow-xl max-h-[85vh] flex flex-col">
             <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#c4c6cd]/40">
               <h3 className="text-xs font-bold text-[#162839]">修改评分与微调意见</h3>
@@ -778,7 +825,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
                           rating: hist.rating || 5,
                           tags: [],
                           timestamp: hist.date,
-                          aiAdjustment: '已同步到 AI 品味备忘录',
+                          aiAdjustment: feedbackLearningNote(profile),
                           lookImage: hist.imageUrl,
                           lookItems: hist.lookItems,
                         })} className="text-[9px] text-[#162839] border border-[#162839]/30 px-1.5 py-0.5 rounded">{hist.rating ? `${hist.rating}★` : '评分'}</button>

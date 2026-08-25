@@ -68,10 +68,10 @@ def test_feedback_is_not_deducted_before_background_task_starts() -> None:
     background_tasks = BackgroundTasks()
 
     with Session(engine) as db:
-        for _ in range(8):
+        for _ in range(4):
             feedback(FeedbackIn(action="shown"), background_tasks, db)
 
-        assert db.get(Profile, "local").feedback_since_refresh == 8
+        assert db.get(Profile, "local").feedback_since_refresh == 4
         assert len(background_tasks.tasks) == 1
 
 

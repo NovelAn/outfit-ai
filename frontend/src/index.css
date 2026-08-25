@@ -59,3 +59,34 @@
 .contact-shadow {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
+
+/* iOS Safari zooms the whole page when focusing form fields under 16px. */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+@keyframes look-enter {
+  from { opacity: 0; transform: translateY(22px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes look-pop {
+  0% { opacity: 0; transform: scale(0.9) translateY(12px); }
+  55% { opacity: 1; transform: scale(1.03) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.look-anim { animation: look-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.look-pop { animation: look-pop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.look-tilt-left { transform: rotate(-2deg) translateX(-6px); transition: transform 0.3s ease; }
+.look-tilt-right { transform: rotate(2deg) translateX(6px); transition: transform 0.3s ease; }
+.look-tilt-left:hover, .look-tilt-right:hover { transform: rotate(0deg) translateX(0) scale(1.02); }
+
+@media (prefers-reduced-motion: reduce) {
+  .look-anim,
+  .look-pop {
+    animation: none;
+  }
+}

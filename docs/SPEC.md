@@ -87,7 +87,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 4.3 品味备忘录（taste memo）—— "越用越懂"的载体（services/taste_memo.py）
 - **是什么**：LLM 维护的自然语言档案，记录"我对你品味的理解"。段落：偏好的颜色/调色板、偏好的版型/廓形、常用搭配公式、忌讳项、近期想突破的方向、从反馈学到的东西。
 - **存哪**：`profile.taste_memo`(Text) + `taste_memo_updated_at` + `feedback_since_refresh`(计数器)。`feedback` 表与 `outfit_history.action` 是刷新输入。
-- **怎么更新**：触发式——`POST /api/feedback` 时 `feedback_since_refresh += 1`，到 **8** 触发一次 LLM 刷新（读旧 memo + 新反馈 → 输出新 memo），`BackgroundTasks` 执行，刷新后计数清零。另有 `POST /api/profile/taste-memo/refresh` 手动触发。v0 不上 cron。
+- **怎么更新**：触发式——`POST /api/feedback` 时 `feedback_since_refresh += 1`，到 **4** 触发一次 LLM 刷新（读旧 memo + 新反馈 → 输出新 memo），`BackgroundTasks` 执行，刷新后计数清零。另有 `POST /api/profile/taste-memo/refresh` 手动触发。v0 不上 cron。
 - **冷启动**：onboarding 由 Style DNA + 风格样例图 LLM 生成初版 memo。
 - **版本**：v0 直接覆盖更新；旧版归档留作后期"风格漂移"分析（YAGNI，先不做）。
 
@@ -194,7 +194,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 | POST | `/api/feedback` | body `{history_id?,items_worn:[],action?:shown/saved/skipped/worn,rating?:1..5,occasion?,occasion_type?,sentiment?,compliments?:[],didnt_work?,learnings?}`；可仅提交 rating；有 `history_id` 时 rating/action 与 feedback 同一事务提交。`worn` 只置 `wore_it=true`，不会覆盖既有 `saved`，后续收藏、取消或评分也不会清除穿着标记 | 200 `{ok:true}` |
 | GET | `/api/history?limit=20&scope=recent|archive` | 不传 scope 保持旧版最近记录兼容；`recent` 为临时记录，`archive` 为收藏、穿过或评分至少 4 的记录；每项返回 `scope` 和 `rating` | 200 `[OutfitHistory]` |
 
-页面上对既有 Look 的收藏、取消收藏、穿过和评分必须带该 Look 的 `history_id`；客户端只能在上表返回 200 后更新显示状态。没有 `history_id` 的本地后备卡不可提交持久反馈。每个成功提交仍会令 `feedback_since_refresh` 增加，到 8 后异步刷新 taste memo。
+页面上对既有 Look 的收藏、取消收藏、穿过和评分必须带该 Look 的 `history_id`；客户端只能在上表返回 200 后更新显示状态。没有 `history_id` 的本地后备卡不可提交持久反馈。每个成功提交仍会令 `feedback_since_refresh` 增加，到 4 后异步刷新 taste memo。
 
 `recent` 精确定义为非 `saved`、未穿过，且未评分或评分低于 4；`archive` 精确定义为 `saved`、已穿过或评分至少 4。每次成功生成新推荐时，仅清理早于本地 14 天的 `recent` 临时 history；收藏、穿过和高评分的存档永不因这项运行期清理删除。失败的 LLM 生成不会写入新组或触发清理。
 

@@ -20,6 +20,9 @@ for (const screen of ["ScreenToday", "ScreenWardrobe", "ScreenInspiration", "Scr
   assert.match(app, new RegExp(screen), `missing Stitch screen: ${screen}`);
 }
 assert.match(app, /currentScreen === 'archive'/, "inspiration archive must remain a separate screen");
+assert.match(app, /expandedLooks/, "Look expansion state must survive tab navigation in app memory");
+assert.match(app, /onLookExpandedChange/, "Today must update app-owned Look expansion state");
+assert.doesNotMatch(app, /OUTFIT_AI_EXPANDED_LOOKS|sessionStorage/, "Look expansion must reset after reopening the app");
 assert.deepEqual(
   [...nav.matchAll(/id: '(today|wardrobe|inspiration|profile)'/g)].map((match) => match[1]),
   ["today", "wardrobe", "inspiration", "profile"],
@@ -65,7 +68,10 @@ assert.match(profile, /coreTags\s*=\s*visibleStyleTags\(profile\?\.style_keyword
 assert.match(profile, /recent_style_signals/, "profile must render recent style signals separately");
 assert.match(profile, /管理标签/, "profile must expose tag management");
 assert.match(profile, /正在学习/, "profile must use evidence-based cold-start learning copy");
-assert.match(profile, /已根据/, "profile must describe the feedback evidence used");
+assert.match(profile, /品味备忘录更新于|累计后刷新品味备忘录/, "profile must describe server-backed memo learning progress");
+assert.match(profile, /orderLookItems/, "profile thumbnails must zoom in head-to-toe outfit order");
+assert.match(today, /自定义标签/, "today feedback must allow custom tags");
+assert.match(today, /expandedLooks/, "Today must render app-owned Look expansion state");
 assert.doesNotMatch(profile, /85\s*\+\s*ratingCount\s*\*\s*4/, "profile must not calculate a fake match percentage");
 
 console.log("Stitch visual contract passed: five screens and original design dependencies preserved");

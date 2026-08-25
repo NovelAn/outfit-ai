@@ -15,3 +15,14 @@ export const orderLookItems = (items = []) =>
     .map((item, index) => ({ item, index }))
     .sort((left, right) => presentationRank(left.item) - presentationRank(right.item) || left.index - right.index)
     .map(({ item }) => item);
+
+const STACK_ROTATIONS = [-3, 2, -1, 3, -2, 1];
+
+export const lookStackLayout = (count, expanded) => ({
+  height: count === 0 ? 0 : expanded ? count * 152 - 20 : 164,
+  offsets: Array.from({ length: count }, (_, index) => expanded ? index * 152 : index * 10),
+  rotations: Array.from(
+    { length: count },
+    (_, index) => expanded ? (index % 2 ? 1 : -1) : STACK_ROTATIONS[index % STACK_ROTATIONS.length],
+  ),
+});
