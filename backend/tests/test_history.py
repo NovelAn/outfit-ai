@@ -12,8 +12,8 @@ from outfit_ai.services import history as history_service
 from outfit_ai.services.history import (
     get_item_usage_stats,
     get_prepared_outfits,
-    get_recent_look_keys,
     get_recent_item_ids,
+    get_recent_look_keys,
     get_recent_outfits,
     record_outfit,
 )

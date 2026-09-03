@@ -241,16 +241,18 @@ def recommend(
             db.commit()
             return reused
     require_api_key()
+    recommendation_date = getattr(weather, "local_date", local_date)
+    usage_stats = get_item_usage_stats(
+        db,
+        settings.user_id,
+        local_date=recommendation_date,
+    )
     candidates = filter_candidates(
         items,
         season=request.season or _season(weather.temp),
         locked_ids=set(request.locked_item_ids),
         recent_item_ids=get_recent_item_ids(db, settings.user_id, skip_shoes=False),
-        usage_stats=get_item_usage_stats(
-            db,
-            settings.user_id,
-            local_date=getattr(weather, "local_date", local_date),
-        ),
+        usage_stats=usage_stats,
     )
     unavailable_locked = set(request.locked_item_ids) - {item.id for item in candidates}
     if unavailable_locked:
@@ -262,11 +264,6 @@ def recommend(
         canonical_category(value) for value in categories.values()
     }:
         raise ValueError("已确认衣橱不足：至少需要上装、下装和鞋履")
-    usage_stats = get_item_usage_stats(
-        db,
-        settings.user_id,
-        local_date=getattr(weather, "local_date", local_date),
-    )
     recent = get_recent_outfits(db, settings.user_id)
     recent_looks = []
     for outfit in recent:
@@ -278,7 +275,6 @@ def recommend(
             continue
         if isinstance(item_ids, list):
             recent_looks.append([item_id for item_id in item_ids if isinstance(item_id, str)])
-    recommendation_date = getattr(weather, "local_date", local_date)
     recent_look_keys = get_recent_look_keys(
         db,
         settings.user_id,

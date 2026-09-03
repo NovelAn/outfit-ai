@@ -69,7 +69,9 @@ def filter_candidates(
     for item in items:
         if not item.confirmed_by_user or item.status != "ready":
             continue
-        seasons = _season_values({canonical_season(value) for value in _json_list(item.seasons_json)})
+        seasons = _season_values(
+            {canonical_season(value) for value in _json_list(item.seasons_json)}
+        )
         wrong_season = bool(seasons) and not (accepted_seasons & seasons) and "all" not in seasons
         if not wrong_season:
             candidates.append(item)
@@ -94,19 +96,26 @@ def select_coverage_targets(
 ) -> list[str]:
     locked_ids = locked_ids or set()
     occupied_ids = occupied_ids or set()
-    available = [item for item in candidates if item.id not in locked_ids and item.id not in occupied_ids]
+    available = [
+        item
+        for item in candidates
+        if item.id not in locked_ids and item.id not in occupied_ids
+    ]
     available.sort(key=lambda item: _usage_sort_key(item, usage_stats))
     selected: list[Any] = []
     for item in available:
         if len(selected) >= count:
             break
-        if selected and canonical_category(item.category) == canonical_category(selected[0].category):
+        if selected and canonical_category(item.category) == canonical_category(
+            selected[0].category
+        ):
             different_category = next(
                 (
                     candidate
                     for candidate in available
                     if candidate not in selected
-                    and canonical_category(candidate.category) != canonical_category(selected[0].category)
+                    and canonical_category(candidate.category)
+                    != canonical_category(selected[0].category)
                 ),
                 None,
             )

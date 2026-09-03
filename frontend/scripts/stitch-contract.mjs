@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-const [app, nav, html, pkg, inspiration, archive, wardrobe, today, drawer, profile] = await Promise.all([
+const [app, nav, html, pkg, inspiration, archive, wardrobe, wardrobeFilters, today, drawer, profile] = await Promise.all([
   read("src/App.tsx"),
   read("src/components/BottomNav.tsx"),
   read("index.html"),
@@ -11,6 +11,7 @@ const [app, nav, html, pkg, inspiration, archive, wardrobe, today, drawer, profi
   read("src/components/ScreenInspiration.tsx"),
   read("src/components/ScreenArchive.tsx"),
   read("src/components/ScreenWardrobe.tsx"),
+  read("src/lib/wardrobe-filters.mjs"),
   read("src/components/ScreenToday.tsx"),
   read("src/components/SideDrawer.tsx"),
   read("src/components/ScreenProfile.tsx"),
@@ -51,6 +52,13 @@ assert.match(wardrobe, /api\.deleteWardrobe\(/, "wardrobe deletion must call the
 assert.match(wardrobe, /批量管理/, "wardrobe must expose batch management");
 assert.match(wardrobe, /selectedIds/, "wardrobe batch management must track selected items");
 assert.match(wardrobe, /Promise\.all\(selectedIds\.map/, "wardrobe batch deletion must delete selected items");
+assert.match(wardrobe, /四季/, "wardrobe must expose the all-season shortcut");
+for (const label of ["春", "夏", "秋", "冬", "轻薄", "适中", "厚实"]) {
+  assert.match(`${wardrobe}\n${wardrobeFilters}`, new RegExp(label), `wardrobe must expose label: ${label}`);
+}
+assert.match(wardrobe, /filterWardrobeItems/, "wardrobe must use combined filters");
+assert.match(wardrobe, /没有符合当前筛选条件的单品/, "wardrobe must expose the no-results state");
+assert.match(wardrobe, /清除筛选/, "wardrobe must expose filter clearing");
 assert.doesNotMatch(today, /TOKYO \/ 24°C/);
 assert.match(today, /resolveLocationContext/);
 assert.match(today, /precipitation_probability_max/);

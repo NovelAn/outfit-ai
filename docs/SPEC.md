@@ -60,9 +60,10 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 [推荐请求: occasion, scene?, mood?, season?, style_note?, reference_ids?, city?, locked_item_ids?]
    │
    ▼ STAGE 1 · 硬护栏（规则，确定、便宜）  services/guardrail.py
-   │   confirmed items → 天气/季节过滤(Open-Meteo) → locked 强制保留
-   │   → 近期重复规避(最近 item_id，跳过 shoes) → 随机保留合格候选
-   │   （不按闲置率或利用率排序；凑不齐 top+bottom+shoes → 明确报错）
+   │   confirmed items → 天气/季节/手动覆盖过滤(Open-Meteo) → locked 强制保留
+   │   → 按使用次数、最近使用时间和未使用优先级确定候选顺序
+   │   → 计算 Safe/Fresh/Stretch 的低暴露覆盖目标
+   │   （不随机截断；凑不齐 top+bottom+shoes → 明确报错）
    ▼ STAGE 2 · 文本造型师（LLM 品味）     services/stylist.py
    │   输入：候选单品的已验证属性 / Style DNA / 品味备忘录 /
    │        参考 Look 分析 / 天气+季节+场景+心情 / 最近 Look / [LOCKED] 标注
@@ -81,7 +82,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - 结构化输出：**tool use** 强制 schema（`tool_choice` 强制调 `propose_looks` 或单卡刷新时的 `propose_one_look`），解析 `tool_calls[0].function.arguments` → Pydantic。
 - tool schema：普通请求使用 `propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；单卡刷新使用 `propose_one_look(look:{tier,item_ids,reason,weather_fit,occasion_fit})`，且 tier 必须与请求一致。
 - 图像分工：真实衣物和参考 Look 先由 MiniMax VLM 提取结构化属性；M3 只读取这些文本属性，不重复消耗识图额度。
-- system prompt：造型师人格 + 硬规则（只用给定单品、三档各一、不重复近期 Look、locked 必含）。
+- system prompt：造型师人格 + 硬规则（只用给定单品、三档各一、不重复近期 Look、locked 必含）；Safe 优先低风险与高利用率，Fresh 至少使用一个天气有效的低暴露单品，Stretch 使用不同的低暴露单品并明确说明突破点。
 - 失败重试：Stage 3 不过 → 错误回灌再调一次；两次失败抛错给前端。
 
 ### 4.3 品味备忘录（taste memo）—— "越用越懂"的载体（services/taste_memo.py）
@@ -196,7 +197,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 
 页面上对既有 Look 的收藏、取消收藏、穿过和评分必须带该 Look 的 `history_id`；客户端只能在上表返回 200 后更新显示状态。没有 `history_id` 的本地后备卡不可提交持久反馈。每个成功提交仍会令 `feedback_since_refresh` 增加，到 4 后异步刷新 taste memo。
 
-`recent` 精确定义为非 `saved`、未穿过，且未评分或评分低于 4；`archive` 精确定义为 `saved`、已穿过或评分至少 4。每次成功生成新推荐时，仅清理早于本地 14 天的 `recent` 临时 history；收藏、穿过和高评分的存档永不因这项运行期清理删除。失败的 LLM 生成不会写入新组或触发清理。
+`recent` 精确定义为非 `saved`、未穿过，且未评分或评分低于 4；`archive` 精确定义为 `saved`、已穿过或评分至少 4。普通推荐历史不再因生成新推荐而清理，历史记录用于长期覆盖率、重复 Look 和品味学习；`action=prepared` 的每日预生成内部记录不计入单品使用暴露。失败的 LLM 生成不会写入新组或触发任何历史变化。
 
 ---
 
@@ -205,7 +206,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；OpenAI SDK 关闭隐式重试，单次请求 120 秒超时，并记录不含密钥或上游正文的耗时/错误类型日志；统一错误处理且不泄漏 Key；OpenAI HTTP 客户端不继承本机 SOCKS/HTTP 代理环境，避免推荐请求在客户端初始化阶段返回 500。
 - `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 prompt 使用短字段模板，`category` 仅允许 `top/bottom/outerwear/dress/shoes/accessory`，`versatility` 要求为 0–1 数字，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；响应兼容纯 JSON、单个或多个 Markdown JSON 代码块，并取最后一个有效 JSON。衣物模型只把 VLM 常见语义值 `高/high`、`中/medium`、`低/low` 分别归一为 `0.85`、`0.5`、`0.25`，未知字符串仍拒绝；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
 - `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟；同一 API 进程会串行化 rembg 初始化，避免批量上传时重复并发下载模型。
-- `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气季节过滤、locked 强留、近期重复规避、随机候选）。纯规则、可单测
+- `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气/季节过滤、用户确认覆盖、locked 约束、确定性利用率排序）；`select_coverage_targets()` 为 Fresh/Stretch 选择低暴露覆盖目标。纯规则、可单测
 - `services/stylist.py`：`propose(...) -> list[Look]`；`propose_tier(...) -> Look`（M3 文本属性 + 参考分析，tool use；单卡刷新只调用目标档）
 - `services/profile_state.py`：profile JSON 封套的兼容解码/编码，以及 pin、hide、alias 后的有效 Style DNA 关键词；有效关键词最多 7 个，alias 归一化后应用 hidden，冲突时 pinned 优先保留。
 - `services/validator.py`（**新**）：`validate_looks(looks, candidate_ids)->(ok, error)`（item_id 真实、3–6 件、无重复、含 top+bottom+shoes）。来源：ai-closet 校验链，port 为内部自检 + `tests/test_validation.py`
@@ -213,7 +214,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - `precompute_daily.py`：每日 CLI，读取 Profile `last_location` 后强制生成 `prepared` 三档；由生产调度器调用，不安装本地调度
 - `services/taste_memo.py`（**新**）：`refresh(db,user_id)`（旧 memo + 新 feedback → LLM → 新 memo）；`seed(onboarding)`（Style DNA+样例图→初版）
 - `services/weather.py`：`get_weather(city?,latitude?,longitude?)->WeatherData`；输入/解析出的坐标先统一到三位小数，再用于外部请求、缓存和推荐上下文；返回本地日期/时区、当前降水与雨量、当天降水概率/总量，以及未来 12 小时首段 `>=50%` 的连续降雨窗口。手动城市保留用户输入名称；Nominatim 反向结果若为市辖区/县且上级为直辖市则显示上级市名。Open-Meteo 天气缓存 30min；Nominatim 反查城市缓存 24h，反查失败只返回 `city:null`。天气 HTTP 客户端显式 `trust_env=False`，不继承本机 SOCKS/HTTP 代理环境，避免本地代理配置导致推荐接口在天气阶段返回 500。使用 Nominatim/OpenStreetMap 数据的用户可见界面必须显示 OpenStreetMap attribution。`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
-- `services/history.py`：`get_recent_item_ids`（跳 shoes）、`get_recent_outfits(limit=7)`、`get_latest_recommendation_set(local_date)`、`get_prepared_outfits(local_date)`、`get_history_outfits(scope)`、`prune_temporary_history()`、`record_outfit(action, context)`。来源：ai-closet
+- `services/history.py`：`get_item_usage_stats`（按历史 Look 统计使用次数和最近使用日期）、`get_recent_look_keys`（30 天精确 Look 去重）、`get_recent_item_ids`、`get_recent_outfits(limit=7)`、`get_latest_recommendation_set(local_date)`、`get_prepared_outfits(local_date)`、`get_history_outfits(scope)`、`record_outfit(action, context)`。来源：ai-closet
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。
 - `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。造型师收到的长期档案只包括应用 pin/hide/alias 后的有效关键词、最近风格信号和 `taste_memo`。来源：ai-closet 结构（适配 chat completions）
@@ -229,7 +230,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - 数据层：五张 SQLite 表和索引已实现，由 `init_db()` 初始化。
 - 真实衣物：上传、rembg、VLM、轮询、确认、列表、用户可编辑属性和删除已实现；删除会清理数据库记录、原图与 `.nobg` 图片。当前 schema 不新增厚薄度列，前端把 `轻薄`、`适中`、`厚实` 作为受控标签保存。
 - 长期灵感：参考 Look 上传、VLM 分析、M3 合并 Style DNA、列表、重试、删除已实现。
-- 推荐：天气、候选硬护栏、M3 Safe/Fresh/Stretch、单卡 `refresh_tier`、item_id 校验、历史记录已实现；衣橱识图返回的中文季节标签会在候选过滤时归一化为内部英文季节值。
+- 推荐：天气与季节硬边界、手动季节/厚薄覆盖、历史利用率覆盖、30 天精确 Look 去重、Safe/Fresh/Stretch 三档边界、M3 造型、单卡 `refresh_tier`、item_id 校验和历史记录已实现；衣橱识图返回的季节标签会在候选过滤时归一化，用户确认值优先。
 - 独立灵感：M3 提示词与 `image-01` 三图生成已实现。
 - 反馈：收藏/跳过/穿着/评分、历史与 taste memo 批量刷新已实现。
 - 前端：Stitch React 五页和统一 API 接线已实现，详见当前前端事实源。

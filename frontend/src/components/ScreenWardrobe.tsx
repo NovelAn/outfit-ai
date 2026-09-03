@@ -1,6 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScreenId, OutfitItem } from '../types';
 import { api, categoryCode, mapWardrobeItem, settleInPairs, waitForReady } from '../lib/api.mjs';
+import {
+  filterWardrobeItems,
+  normalizeSeasonValues,
+  SEASON_OPTIONS,
+  THICKNESS_OPTIONS,
+  toggleFilterValue,
+} from '../lib/wardrobe-filters.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -96,7 +103,7 @@ interface WardrobeEditDraft {
   fit: string;
   styles: string;
   tags: string;
-  seasons: string;
+  seasons: string[];
   occasions: string;
 }
 
@@ -117,7 +124,7 @@ const editDraftFromItem = (item: OutfitItem): WardrobeEditDraft => ({
   fit: item.fit || '',
   styles: (item.styles || []).join('、'),
   tags: (item.tags || []).filter((tag) => !THICKNESS_TAGS.includes(tag)).join('、'),
-  seasons: (item.seasons || []).join('、'),
+  seasons: normalizeSeasonValues(item.seasons || []),
   occasions: (item.occasions || []).join('、'),
 });
 
@@ -133,13 +140,15 @@ const payloadFromDraft = (draft: WardrobeEditDraft) => ({
     ...labelsFromText(draft.tags).filter((tag) => !THICKNESS_TAGS.includes(tag)),
     ...(THICKNESS_TAGS.includes(draft.thickness) ? [draft.thickness] : []),
   ].filter((tag, index, values) => values.indexOf(tag) === index),
-  seasons: labelsFromText(draft.seasons),
+  seasons: draft.seasons,
   occasions: labelsFromText(draft.occasions),
   confirmed_by_user: true,
 });
 
 export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const [selectedSeasons, setSelectedSeasons] = useState<string[]>([]);
+  const [selectedThicknesses, setSelectedThicknesses] = useState<string[]>([]);
   const [items, setItems] = useState<OutfitItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<OutfitItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -169,9 +178,22 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
 
   const categories = ['全部', '上装', '下装', '鞋履', '配饰'];
 
-  const filteredItems = selectedCategory === '全部'
-    ? items
-    : items.filter(item => item.category === selectedCategory);
+  const filteredItems = filterWardrobeItems(items, {
+    category: selectedCategory,
+    seasons: selectedSeasons,
+    thicknesses: selectedThicknesses,
+  });
+  const hasActiveFilters =
+    selectedCategory !== '全部' ||
+    (selectedSeasons.length > 0 && selectedSeasons.length < SEASON_OPTIONS.length) ||
+    selectedThicknesses.length > 0;
+
+  const clearFilters = () => {
+    setSelectedCategory('全部');
+    setSelectedSeasons([]);
+    setSelectedThicknesses([]);
+    setSelectedIds([]);
+  };
 
   const toggleBatchManaging = () => {
     setIsManaging((current) => !current);
@@ -515,6 +537,57 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
           ))}
         </nav>
 
+        <section className="space-y-2" aria-label="衣橱组合筛选">
+          <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
+            <span className="text-[10px] text-[#74777d] shrink-0">季节</span>
+            {['四季', ...SEASON_OPTIONS].map((season) => {
+              const selected = season === '四季'
+                ? selectedSeasons.length === SEASON_OPTIONS.length
+                : selectedSeasons.includes(season);
+              return (
+                <button
+                  key={season}
+                  type="button"
+                  onClick={() => {
+                    setSelectedSeasons(toggleFilterValue(selectedSeasons, season, SEASON_OPTIONS));
+                    setSelectedIds([]);
+                  }}
+                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] ${selected ? 'border-[#9a442a] bg-[#f4dfcb]/50 text-[#9a442a] font-semibold' : 'border-[#c4c6cd] text-[#43474c]'}`}
+                >
+                  {season}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
+            <span className="text-[10px] text-[#74777d] shrink-0">厚薄</span>
+            {THICKNESS_OPTIONS.map((thickness) => {
+              const selected = selectedThicknesses.includes(thickness);
+              return (
+                <button
+                  key={thickness}
+                  type="button"
+                  onClick={() => {
+                    setSelectedThicknesses(toggleFilterValue(selectedThicknesses, thickness, THICKNESS_OPTIONS));
+                    setSelectedIds([]);
+                  }}
+                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] ${selected ? 'border-[#9a442a] bg-[#f4dfcb]/50 text-[#9a442a] font-semibold' : 'border-[#c4c6cd] text-[#43474c]'}`}
+                >
+                  {thickness}
+                </button>
+              );
+            })}
+          </div>
+          {hasActiveFilters && (
+            <div className="flex items-center justify-between text-[10px] text-[#74777d]">
+              <span>已组合筛选，显示 {filteredItems.length} 件</span>
+              <button type="button" onClick={clearFilters} className="text-[#9a442a] underline underline-offset-2">
+                清除筛选
+              </button>
+            </div>
+          )}
+        </section>
+
         {isManaging && (
           <div className="flex items-center justify-between gap-3 bg-[#f0eee9] px-3 py-2.5 text-xs">
             <span className="font-semibold text-[#162839]">已选 {selectedIds.length} 件</span>
@@ -524,7 +597,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                 onClick={() => setSelectedIds(selectedIds.length === filteredItems.length && filteredItems.length > 0 ? [] : filteredItems.map((item) => item.id))}
                 className="text-[#162839] underline underline-offset-2"
               >
-                {selectedIds.length === filteredItems.length && filteredItems.length > 0 ? '取消全选' : '全选当前分类'}
+                {selectedIds.length === filteredItems.length && filteredItems.length > 0 ? '取消全选' : '全选当前筛选结果'}
               </button>
               <button
                 type="button"
@@ -572,10 +645,18 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
               <span className="text-[10px] leading-tight text-[#43474c] text-center line-clamp-2">{item.name}</span>
             </article>
           ))}
+          {filteredItems.length === 0 && (
+            <div className="col-span-3 rounded-md border border-dashed border-[#c4c6cd] px-4 py-10 text-center text-xs text-[#74777d]">
+              <p>没有符合当前筛选条件的单品</p>
+              <button type="button" onClick={clearFilters} className="mt-2 text-[#9a442a] underline underline-offset-2">
+                清除筛选
+              </button>
+            </div>
+          )}
         </section>
 
         {/* Load More (Lazy Loading) Button */}
-        {hasMore && selectedCategory === '全部' && (
+        {hasMore && selectedCategory === '全部' && !hasActiveFilters && (
           <div className="flex justify-center pt-2 pb-12">
             <button
               onClick={handleLoadMore}
@@ -704,13 +785,12 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                     className="mt-1 w-full p-2 border border-[#c4c6cd] rounded bg-white text-[#162839]"
                   >
                     <option value="">未设置</option>
-                    {THICKNESS_TAGS.map((value) => <option key={value} value={value}>{value}</option>)}
+                    {THICKNESS_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}
                   </select>
                 </label>
                 {([
                   ['styles', '风格标签'],
                   ['tags', '其他标签'],
-                  ['seasons', '适用季节'],
                   ['occasions', '适用场景'],
                 ] as const).map(([key, label]) => (
                   <label key={key} className="block text-[#43474c] font-semibold">
@@ -722,6 +802,28 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                     />
                   </label>
                 ))}
+                <fieldset className="block text-[#43474c] font-semibold">
+                  <legend>适用季节（可多选）</legend>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditDraft({ ...editDraft, seasons: toggleFilterValue(editDraft.seasons, '四季', SEASON_OPTIONS) })}
+                      className={`rounded-full border px-2 py-1 text-[10px] ${editDraft.seasons.length === SEASON_OPTIONS.length ? 'border-[#9a442a] bg-[#f4dfcb]/50 text-[#9a442a]' : 'border-[#c4c6cd]'}`}
+                    >
+                      四季
+                    </button>
+                    {SEASON_OPTIONS.map((season) => (
+                      <button
+                        key={season}
+                        type="button"
+                        onClick={() => setEditDraft({ ...editDraft, seasons: toggleFilterValue(editDraft.seasons, season, SEASON_OPTIONS) })}
+                        className={`rounded-full border px-2 py-1 text-[10px] ${editDraft.seasons.includes(season) ? 'border-[#9a442a] bg-[#f4dfcb]/50 text-[#9a442a]' : 'border-[#c4c6cd]'}`}
+                      >
+                        {season}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
                 <div className="flex gap-2 pt-1">
                   <button
                     type="button"
