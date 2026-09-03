@@ -73,7 +73,44 @@ def _prepared_rows(*, latitude: float = 31.230, longitude: float = 121.474) -> l
     ]
 
 
-def _looks() -> list[ProposedLook]:
+def _looks(coverage_targets: dict[str, str] | None = None) -> list[ProposedLook]:
+    if coverage_targets:
+        targets = {
+            "fresh": coverage_targets.get("fresh", "top-2"),
+            "stretch": coverage_targets.get("stretch", "bottom-2"),
+        }
+        pools = {
+            category: [f"{category}-{index}" for index in (1, 2, 3)]
+            for category in ("top", "bottom", "shoes")
+        }
+        used: set[str] = set()
+
+        def build(tier: str, target: str | None = None) -> ProposedLook:
+            item_ids: list[str] = []
+            for category, pool in pools.items():
+                if target and target.startswith(f"{category}-"):
+                    item_id = target
+                else:
+                    item_id = next(
+                        item_id
+                        for item_id in pool
+                        if item_id not in used and item_id not in targets.values()
+                    )
+                item_ids.append(item_id)
+            used.update(item_ids)
+            return ProposedLook(
+                tier=tier,
+                item_ids=item_ids,
+                reason=f"{tier} reason",
+                weather_fit="适合",
+                occasion_fit="日常",
+            )
+
+        return [
+            build("safe"),
+            build("fresh", targets["fresh"]),
+            build("stretch", targets["stretch"]),
+        ]
     return [
         ProposedLook(
             tier=tier,
@@ -173,7 +210,11 @@ def test_force_refresh_creates_a_new_recommendation_set(monkeypatch) -> None:
     monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
     monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
     monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
-    monkeypatch.setattr(recommend_service, "propose", lambda *args, **kwargs: _looks())
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: _looks(kwargs.get("coverage_targets")),
+    )
     with Session(engine) as db:
         db.add_all(
             _recommendation_items()
@@ -212,7 +253,7 @@ def test_refresh_tier_generates_only_target_and_keeps_other_history(monkeypatch)
     )
     target = ProposedLook(
         tier="safe",
-        item_ids=["top-2", "bottom-2", "shoes-2"],
+        item_ids=["top-1", "bottom-1", "shoes-1"],
         reason="换一套更利落的安全牌",
         weather_fit="适合",
         occasion_fit="日常",
@@ -249,7 +290,7 @@ def test_refresh_tier_generates_only_target_and_keeps_other_history(monkeypatch)
         assert result["fresh"]["history_id"] == before["fresh"]
         assert result["stretch"]["history_id"] == before["stretch"]
         assert result["safe"]["history_id"] != before["safe"]
-        assert result["safe"]["items"][0]["id"] == "top-2"
+        assert result["safe"]["items"][0]["id"] == "top-1"
         assert len(list(db.scalars(select(OutfitHistory)))) == 4
 
 
@@ -435,7 +476,7 @@ def test_recommend_regenerates_for_malformed_prepared_weather_context(monkeypatc
     monkeypatch.setattr(
         recommend_service,
         "propose",
-        lambda *args, **kwargs: calls.append(1) or _looks(),
+        lambda *args, **kwargs: calls.append(1) or _looks(kwargs.get("coverage_targets")),
     )
 
     with Session(engine) as db:
@@ -456,7 +497,11 @@ def test_recommend_preserves_saved_coordinates_for_city_only_request(monkeypatch
     Base.metadata.create_all(engine)
     monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
     monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
-    monkeypatch.setattr(recommend_service, "propose", lambda *args, **kwargs: _looks())
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: _looks(kwargs.get("coverage_targets")),
+    )
 
     with Session(engine) as db:
         db.add_all(_recommendation_items())
@@ -509,7 +554,7 @@ def test_recommend_regenerates_when_prepared_context_is_invalid(
     monkeypatch.setattr(
         recommend_service,
         "propose",
-        lambda *args, **kwargs: calls.append(1) or _looks(),
+        lambda *args, **kwargs: calls.append(1) or _looks(kwargs.get("coverage_targets")),
     )
 
     with Session(engine) as db:
@@ -535,16 +580,6 @@ def test_recommend_accepts_category_aliases_and_records_three_looks(monkeypatch)
         _item("shoes-2", "shoe"),
         _item("shoes-3", "sneakers"),
     ]
-    looks = [
-        ProposedLook(
-            tier=tier,
-            item_ids=[f"top-{index}", f"bottom-{index}", f"shoes-{index}"],
-            reason=f"{tier} reason",
-            weather_fit="适合",
-            occasion_fit="合适",
-        )
-        for index, tier in enumerate(("safe", "fresh", "stretch"), 1)
-    ]
     monkeypatch.setattr(
         recommend_service,
         "get_weather",
@@ -558,7 +593,7 @@ def test_recommend_accepts_category_aliases_and_records_three_looks(monkeypatch)
 
     def fake_propose(*args, **kwargs):
         captured.update(kwargs)
-        return looks
+        return _looks(kwargs.get("coverage_targets"))
 
     monkeypatch.setattr(recommend_service, "propose", fake_propose)
 
@@ -630,6 +665,60 @@ def test_recommend_rejects_unavailable_locked_item_before_calling_stylist(
                 db,
                 RecommendRequest(city="上海", locked_item_ids=["missing-locked"]),
             )
+
+
+def test_recommend_passes_usage_targets_and_recent_looks_to_stylist(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    captured = {}
+
+    def fake_propose(*args, **kwargs):
+        captured.update(kwargs)
+        captured["recent_looks"] = args[5]
+        return _looks(kwargs["coverage_targets"])
+
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "propose", fake_propose)
+
+    with Session(engine) as db:
+        db.add_all(_recommendation_items())
+        db.commit()
+        recommend_service.recommend(db, RecommendRequest(city="上海"))
+
+    assert isinstance(captured["usage_stats"], dict)
+    assert set(captured["coverage_targets"]) == {"fresh", "stretch"}
+    assert isinstance(captured["recent_looks"], list)
+
+
+def test_recommend_does_not_prune_old_ordinary_history(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: _looks(kwargs.get("coverage_targets")),
+    )
+
+    with Session(engine) as db:
+        db.add_all(_recommendation_items())
+        db.add(
+            OutfitHistory(
+                id="old-history",
+                user_id="local",
+                date=date(2026, 1, 1),
+                item_ids_json='["top-1"]',
+                pick_mode="safe",
+                action="shown",
+            )
+        )
+        db.commit()
+
+        recommend_service.recommend(db, RecommendRequest(city="上海"))
+
+        assert db.get(OutfitHistory, "old-history") is not None
 
 
 def test_recommend_http_reuses_prepared_without_minimax_key(monkeypatch, tmp_path) -> None:
@@ -720,16 +809,6 @@ def test_recommend_feedback_history_http_loop(monkeypatch, tmp_path) -> None:
         _item("shoes-2", "shoes"),
         _item("shoes-3", "shoes"),
     ]
-    looks = [
-        ProposedLook(
-            tier=tier,
-            item_ids=[f"top-{index}", f"bottom-{index}", f"shoes-{index}"],
-            reason=f"{tier} reason",
-            weather_fit="适合",
-            occasion_fit="合适",
-        )
-        for index, tier in enumerate(("safe", "fresh", "stretch"), 1)
-    ]
     with Session(engine) as db:
         db.add_all(items)
         db.commit()
@@ -748,7 +827,11 @@ def test_recommend_feedback_history_http_loop(monkeypatch, tmp_path) -> None:
             model_dump=lambda: {"temp": 20, "condition": "晴"},
         ),
     )
-    monkeypatch.setattr(recommend_service, "propose", lambda *args, **kwargs: looks)
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: _looks(kwargs.get("coverage_targets")),
+    )
     app.dependency_overrides[get_db] = override_db
     try:
         with TestClient(app) as client:

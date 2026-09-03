@@ -86,3 +86,83 @@ def test_rejects_look_that_omits_locked_item() -> None:
     assert not ok
     assert "safe" in error
     assert "locked-jacket" in error
+
+
+def test_requires_fresh_and_stretch_coverage_targets() -> None:
+    categories = {
+        "top-1": "top",
+        "top-2": "top",
+        "top-3": "top",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["top-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["top-2", "bottom-2", "shoes-2"]),
+        _look("stretch", ["top-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(
+        looks,
+        categories,
+        coverage_targets={"fresh": "unused-top", "stretch": "unused-bottom"},
+    )
+
+    assert not ok
+    assert "unused-top" in error
+
+
+def test_rejects_recent_exact_look() -> None:
+    categories = {
+        "top-1": "top",
+        "top-2": "top",
+        "top-3": "top",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["top-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["top-2", "bottom-2", "shoes-2"]),
+        _look("stretch", ["top-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(
+        looks,
+        categories,
+        recent_look_keys={("bottom-1", "shoes-1", "top-1")},
+    )
+
+    assert not ok
+    assert "30" in error
+
+
+def test_rejects_avoidable_core_overlap_when_three_candidates_exist() -> None:
+    categories = {
+        "top-1": "top",
+        "top-2": "top",
+        "top-3": "top",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["top-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["top-1", "bottom-2", "shoes-2"]),
+        _look("stretch", ["top-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories)
+
+    assert not ok
+    assert "上装" in error

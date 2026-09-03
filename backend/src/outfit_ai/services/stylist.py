@@ -46,6 +46,8 @@ def propose(
     style_note: str | None = None,
     season: str | None = None,
     scene: str | None = None,
+    usage_stats: dict[str, dict[str, object]] | None = None,
+    coverage_targets: dict[str, str] | None = None,
 ) -> list[ProposedLook]:
     content = stylist_context(
         candidates,
@@ -58,12 +60,17 @@ def propose(
         style_note=style_note,
         season=season,
         scene=scene,
+        usage_stats=usage_stats,
+        coverage_targets=coverage_targets,
     )
     if correction:
         content += f"\n上次结果错误，请修正：{correction}"
     response = chat_multimodal(
         [
-            {"role": "system", "content": stylist_system(locked_ids)},
+            {
+                "role": "system",
+                "content": stylist_system(locked_ids, coverage_targets=coverage_targets),
+            },
             {"role": "user", "content": content},
         ],
         tools=[_LOOKS_SCHEMA],
@@ -91,6 +98,8 @@ def propose_tier(
     style_note: str | None = None,
     season: str | None = None,
     scene: str | None = None,
+    usage_stats: dict[str, dict[str, object]] | None = None,
+    coverage_targets: dict[str, str] | None = None,
 ) -> ProposedLook:
     content = stylist_context(
         candidates,
@@ -103,13 +112,15 @@ def propose_tier(
         style_note=style_note,
         season=season,
         scene=scene,
+        usage_stats=usage_stats,
+        coverage_targets=coverage_targets,
     )
     content += f"\n这次只替换 {tier} 档，返回一个 tier 为 {tier} 的 look。"
     if correction:
         content += f"\n上次结果错误，请修正：{correction}"
     response = chat_multimodal(
         [
-            {"role": "system", "content": stylist_system(locked_ids, tier)},
+            {"role": "system", "content": stylist_system(locked_ids, tier, coverage_targets)},
             {"role": "user", "content": content},
         ],
         tools=[_SINGLE_LOOK_SCHEMA],

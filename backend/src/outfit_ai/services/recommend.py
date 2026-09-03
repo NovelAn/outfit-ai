@@ -12,13 +12,14 @@ from ..models import Profile, WardrobeItem
 from ..schemas import RecommendRequest
 from .background import display_image_path
 from .categories import canonical_category
-from .guardrail import filter_candidates
+from .guardrail import filter_candidates, select_coverage_targets
 from .history import (
+    get_item_usage_stats,
     get_latest_recommendation_set,
     get_prepared_outfits,
     get_recent_item_ids,
+    get_recent_look_keys,
     get_recent_outfits,
-    prune_temporary_history,
     record_outfit,
 )
 from .llm import require_api_key
@@ -244,7 +245,12 @@ def recommend(
         items,
         season=request.season or _season(weather.temp),
         locked_ids=set(request.locked_item_ids),
-        recent_item_ids=get_recent_item_ids(db, settings.user_id),
+        recent_item_ids=get_recent_item_ids(db, settings.user_id, skip_shoes=False),
+        usage_stats=get_item_usage_stats(
+            db,
+            settings.user_id,
+            local_date=getattr(weather, "local_date", local_date),
+        ),
     )
     unavailable_locked = set(request.locked_item_ids) - {item.id for item in candidates}
     if unavailable_locked:
@@ -256,8 +262,38 @@ def recommend(
         canonical_category(value) for value in categories.values()
     }:
         raise ValueError("已确认衣橱不足：至少需要上装、下装和鞋履")
+    usage_stats = get_item_usage_stats(
+        db,
+        settings.user_id,
+        local_date=getattr(weather, "local_date", local_date),
+    )
     recent = get_recent_outfits(db, settings.user_id)
-    recent_looks = [json.loads(outfit.item_ids_json) for outfit in recent]
+    recent_looks = []
+    for outfit in recent:
+        if outfit.action == "prepared":
+            continue
+        try:
+            item_ids = json.loads(outfit.item_ids_json or "[]")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(item_ids, list):
+            recent_looks.append([item_id for item_id in item_ids if isinstance(item_id, str)])
+    recommendation_date = getattr(weather, "local_date", local_date)
+    recent_look_keys = get_recent_look_keys(
+        db,
+        settings.user_id,
+        local_date=recommendation_date,
+    )
+    coverage_target_ids = select_coverage_targets(
+        candidates,
+        usage_stats,
+        locked_ids=set(request.locked_item_ids),
+        count=2,
+    )
+    coverage_targets = {
+        tier: item_id
+        for tier, item_id in zip(("fresh", "stretch"), coverage_target_ids, strict=False)
+    }
     references = get_reference_analyses(db, request.reference_ids)
     scene = request.scene or request.occasion
 
@@ -265,6 +301,22 @@ def recommend(
         base_items = {item.id: item for item in items}
         base_cards = {history.pick_mode: _card(history, base_items) for history in current_set}
         if all(base_cards.get(tier) is not None for tier in ("safe", "fresh", "stretch")):
+            occupied_ids = {
+                item["id"]
+                for tier, card in base_cards.items()
+                if tier != request.refresh_tier
+                for item in card["items"]
+            }
+            refresh_targets = select_coverage_targets(
+                candidates,
+                usage_stats,
+                locked_ids=set(request.locked_item_ids),
+                occupied_ids=occupied_ids,
+                count=1,
+            )
+            refresh_coverage_targets = (
+                {request.refresh_tier: refresh_targets[0]} if refresh_targets else {}
+            )
             error = ""
             for _ in range(2):
                 target = propose_tier(
@@ -281,12 +333,17 @@ def recommend(
                     style_note=request.style_note,
                     season=request.season or _season(weather.temp),
                     scene=scene,
+                    usage_stats=usage_stats,
+                    coverage_targets=refresh_coverage_targets,
                 )
                 if target.tier != request.refresh_tier:
                     ok, error = False, f"返回 tier 必须为 {request.refresh_tier}"
                 else:
                     ok, error = validate_look(
-                        target, categories, locked_ids=set(request.locked_item_ids)
+                        target,
+                        categories,
+                        locked_ids=set(request.locked_item_ids),
+                        coverage_target=refresh_coverage_targets.get(request.refresh_tier),
                     )
                 if ok:
                     break
@@ -325,9 +382,6 @@ def recommend(
             history.date = getattr(weather, "local_date", local_date)
             result = {"weather": weather.model_dump(), **base_cards}
             result[target.tier] = _card(history, base_items)
-            prune_temporary_history(
-                db, settings.user_id, local_today=getattr(weather, "local_date", local_date)
-            )
             db.commit()
             return result
 
@@ -346,9 +400,15 @@ def recommend(
             style_note=request.style_note,
             season=request.season or _season(weather.temp),
             scene=scene,
+            usage_stats=usage_stats,
+            coverage_targets=coverage_targets,
         )
         ok, error = validate_looks(
-            looks, categories, locked_ids=set(request.locked_item_ids)
+            looks,
+            categories,
+            locked_ids=set(request.locked_item_ids),
+            coverage_targets=coverage_targets,
+            recent_look_keys=recent_look_keys,
         )
         if ok:
             break
@@ -401,9 +461,6 @@ def recommend(
             "occasion_fit": look.occasion_fit,
             "pick_mode": look.tier,
         }
-    prune_temporary_history(
-        db, settings.user_id, local_today=getattr(weather, "local_date", date.today())
-    )
     db.commit()
     return result
 

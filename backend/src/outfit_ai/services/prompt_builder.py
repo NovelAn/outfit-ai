@@ -27,20 +27,44 @@ def style_dna_messages(samples: list[str], text: str) -> list[dict[str, Any]]:
     ]
 
 
-def stylist_system(locked_ids: set[str], tier: str | None = None) -> str:
+def stylist_system(
+    locked_ids: set[str],
+    tier: str | None = None,
+    coverage_targets: dict[str, str] | None = None,
+) -> str:
     locked = ", ".join(sorted(locked_ids)) or "无"
+    coverage_targets = coverage_targets or {}
     target = f"只生成 {tier} 这一档，不要生成其它档位；" if tier else ""
     output = (
         "必须给出 safe、fresh、stretch 各一套；"
         if not tier
         else f"必须给出 tier 为 {tier} 的一套；"
     )
+    coverage = "；".join(
+        f"{name} 档必须包含 {item_id}（低曝光覆盖目标）"
+        for name, item_id in coverage_targets.items()
+        if item_id
+    )
     return (
         "你是一位克制、懂个人风格的造型师。只能使用候选 item_id；"
         f"{target}{output}每套 3–6 件，必须包含 top、bottom、shoes。"
         "天气需要时可加叠穿，配饰可选；不要为了凑数量加入无作用的单品。"
-        f"锁定单品必须出现：{locked}。"
+        "Safe：天气合适、符合长期 Style DNA，优先熟悉耐穿的组合，不强制冷门单品。"
+        "Fresh：必须包含指定低曝光单品，并在颜色、廓形、层次或鞋型中改变"
+        "一个主要维度，仍在 Style DNA 内。"
+        "Stretch：必须包含另一指定低曝光单品，并比 Fresh 在颜色、廓形或"
+        "搭配公式上形成更明显的突破，同时保持天气安全。"
+        "季节资格是硬边界，不能用锁定或风格突破绕过；reason 必须具体说明三档差异。"
+        f"锁定单品必须出现：{locked}。{coverage}"
     )
+
+
+def _json_list(value: str | None) -> list:
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def stylist_context(
@@ -55,7 +79,11 @@ def stylist_context(
     style_note: str | None = None,
     season: str | None = None,
     scene: str | None = None,
+    usage_stats: dict[str, dict[str, object]] | None = None,
+    coverage_targets: dict[str, str] | None = None,
 ) -> str:
+    usage_stats = usage_stats or {}
+    coverage_targets = coverage_targets or {}
     items = [
         {
             "id": item.id,
@@ -66,10 +94,16 @@ def stylist_context(
             "material": item.material,
             "fit": item.fit,
             "formality": item.formality,
-            "styles": json.loads(item.style_json or "[]"),
-            "tags": json.loads(item.tags_json or "[]"),
-            "seasons": json.loads(item.seasons_json or "[]"),
-            "occasions": json.loads(item.occasions_json or "[]"),
+            "styles": _json_list(item.style_json),
+            "tags": _json_list(item.tags_json),
+            "seasons": _json_list(item.seasons_json),
+            "occasions": _json_list(item.occasions_json),
+            "usage_count": usage_stats.get(item.id, {}).get("count", 0),
+            "last_seen": usage_stats.get(item.id, {}).get("last_seen"),
+            "unseen": item.id not in usage_stats,
+            "coverage_targets": [
+                tier for tier, target in coverage_targets.items() if target == item.id
+            ],
         }
         for item in candidates
     ]
@@ -83,7 +117,7 @@ def stylist_context(
             "items": items,
             "style_dna": {
                 "keywords": active_style_keywords(
-                    json.loads(profile.style_keywords_json or "[]") if profile else [],
+                    _json_list(profile.style_keywords_json) if profile else [],
                     state["style_tag_preferences"],
                 ),
                 "recent_style_signals": state["recent_style_signals"],

@@ -174,6 +174,16 @@ def test_validator_allows_three_to_six_items_and_prompt_describes_optional_piece
     assert "配饰" in prompt
 
 
+def test_stylist_prompt_defines_three_tier_boundaries_and_targets() -> None:
+    prompt = stylist_system(
+        set(), coverage_targets={"fresh": "unused-top", "stretch": "unused-bottom"}
+    )
+
+    assert "Safe" in prompt and "Fresh" in prompt and "Stretch" in prompt
+    assert "低曝光" in prompt
+    assert "unused-top" in prompt and "unused-bottom" in prompt
+
+
 def test_validator_rejects_looks_outside_three_to_six_items_or_with_duplicates() -> None:
     categories = {
         "top": "top",
