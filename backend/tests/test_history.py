@@ -10,14 +10,16 @@ from outfit_ai.routers.feedback import history
 from outfit_ai.schemas import ProposedLook
 from outfit_ai.services import history as history_service
 from outfit_ai.services.history import (
+    get_item_usage_stats,
     get_prepared_outfits,
+    get_recent_look_keys,
     get_recent_item_ids,
     get_recent_outfits,
     record_outfit,
 )
 
 
-def test_recent_item_ids_skip_all_shoe_aliases() -> None:
+def test_recent_item_ids_include_all_category_aliases() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
@@ -46,7 +48,71 @@ def test_recent_item_ids_skip_all_shoe_aliases() -> None:
         )
         db.commit()
 
-        assert get_recent_item_ids(db, "local") == {"top-1"}
+        assert get_recent_item_ids(db, "local") == {"top-1", "boot-1", "sneaker-1"}
+
+
+def test_usage_stats_ignore_prepared_rows() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add_all(
+            [
+                OutfitHistory(
+                    id="prepared",
+                    user_id="local",
+                    item_ids_json='["top-1"]',
+                    pick_mode="safe",
+                    action="prepared",
+                    date=date(2026, 8, 1),
+                ),
+                OutfitHistory(
+                    id="visible",
+                    user_id="local",
+                    item_ids_json='["top-1", "shoe-1"]',
+                    pick_mode="fresh",
+                    action="shown",
+                    date=date(2026, 8, 2),
+                ),
+            ]
+        )
+        db.commit()
+
+        stats = get_item_usage_stats(db, "local", local_date=date(2026, 8, 2))
+
+        assert stats["top-1"]["count"] == 1
+        assert stats["shoe-1"]["count"] == 1
+        assert stats["top-1"]["recent"] is True
+
+
+def test_recent_look_keys_cover_the_last_thirty_days_only() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add_all(
+            [
+                OutfitHistory(
+                    id="inside",
+                    user_id="local",
+                    date=date(2026, 8, 1),
+                    item_ids_json='["b", "a"]',
+                    pick_mode="safe",
+                    action="shown",
+                ),
+                OutfitHistory(
+                    id="outside",
+                    user_id="local",
+                    date=date(2026, 6, 30),
+                    item_ids_json='["d", "c"]',
+                    pick_mode="safe",
+                    action="shown",
+                ),
+            ]
+        )
+        db.commit()
+
+        assert get_recent_look_keys(db, "local", local_date=date(2026, 8, 1)) == {
+            ("a", "b")
+        }
 
 
 def test_same_day_history_uses_latest_sqlite_row_first() -> None:

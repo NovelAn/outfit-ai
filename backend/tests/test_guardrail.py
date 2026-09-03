@@ -20,7 +20,7 @@ def _item(item_id: str, category: str, seasons: str, *, locked: bool = False):
     )
 
 
-def test_filters_wrong_season_and_recent_items_but_keeps_locked() -> None:
+def test_filters_wrong_season_but_keeps_recent_items_as_low_priority() -> None:
     items = [
         _item("summer-top", "top", '["summer"]'),
         _item("winter-top", "top", '["winter"]'),
@@ -31,11 +31,11 @@ def test_filters_wrong_season_and_recent_items_but_keeps_locked() -> None:
     result = filter_candidates(
         items,
         season="summer",
-        locked_ids={"winter-top"},
+        locked_ids=set(),
         recent_item_ids={"recent-bottom", "recent-shoes"},
     )
 
-    assert {item.id for item in result} == {"summer-top", "winter-top", "recent-shoes"}
+    assert {item.id for item in result} == {"summer-top", "recent-bottom", "recent-shoes"}
 
 
 def test_locked_items_are_not_dropped_by_candidate_limit() -> None:
@@ -86,7 +86,7 @@ def test_normalizes_chinese_season_labels_from_vision() -> None:
     assert {item.id for item in result} == {"summer-top", "all-shoes"}
 
 
-def test_candidate_cap_keeps_required_categories_when_available() -> None:
+def test_candidate_selection_returns_all_eligible_items_without_random_cap() -> None:
     items = [
         *[_item(f"top-{index}", "top", '["summer"]') for index in range(4)],
         _item("bottom-1", "skirt", '["summer"]'),
@@ -101,7 +101,37 @@ def test_candidate_cap_keeps_required_categories_when_available() -> None:
         limit=3,
     )
 
-    assert {item.category for item in result} == {"top", "skirt", "boots"}
+    assert len(result) == 6
+
+
+def test_candidate_selection_handles_empty_or_bad_seasons() -> None:
+    items = [_item("empty", "top", "[]"), _item("bad", "top", "not-json")]
+
+    result = filter_candidates(items, season="summer", locked_ids=set(), recent_item_ids=set())
+
+    assert {item.id for item in result} == {"empty", "bad"}
+
+
+def test_candidate_selection_prioritizes_targets_then_lower_exposure() -> None:
+    items = [
+        _item("often", "top", '["summer"]'),
+        _item("seldom", "top", '["summer"]'),
+        _item("unseen", "top", '["summer"]'),
+    ]
+
+    result = filter_candidates(
+        items,
+        season="summer",
+        locked_ids=set(),
+        recent_item_ids=set(),
+        usage_stats={
+            "often": {"count": 8, "last_seen": "2026-08-01"},
+            "seldom": {"count": 1, "last_seen": "2026-08-02"},
+        },
+        coverage_target_ids={"unseen"},
+    )
+
+    assert [item.id for item in result] == ["unseen", "seldom", "often"]
 
 
 def test_validator_allows_three_to_six_items_and_prompt_describes_optional_pieces() -> None:

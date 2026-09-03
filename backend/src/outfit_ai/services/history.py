@@ -33,6 +33,14 @@ def _context(row: OutfitHistory) -> dict[str, object]:
     return context if isinstance(context, dict) else {}
 
 
+def _item_ids(row: OutfitHistory) -> list[str]:
+    try:
+        values = json.loads(row.item_ids_json or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [value for value in values if isinstance(value, str)] if isinstance(values, list) else []
+
+
 def _is_prepared(row: OutfitHistory) -> bool:
     return row.action == "prepared" or _context(row).get("prepared") is True
 
@@ -129,10 +137,15 @@ def prune_temporary_history(
 
 
 def get_recent_item_ids(
-    db: Session, user_id: str, *, limit: int = 3, skip_shoes: bool = True
+    db: Session, user_id: str, *, limit: int = 3, skip_shoes: bool = False
 ) -> set[str]:
     outfits = get_recent_outfits(db, user_id, limit)
-    ids = {item_id for outfit in outfits for item_id in json.loads(outfit.item_ids_json)}
+    ids = {
+        item_id
+        for outfit in outfits
+        if outfit.action != "prepared"
+        for item_id in _item_ids(outfit)
+    }
     if not skip_shoes or not ids:
         return ids
     shoes = {
@@ -141,6 +154,58 @@ def get_recent_item_ids(
         if canonical_category(item.category) == "shoes"
     }
     return ids - shoes
+
+
+def get_item_usage_stats(
+    db: Session,
+    user_id: str,
+    *,
+    local_date: date | None = None,
+    lookback_days: int = 30,
+) -> dict[str, dict[str, object]]:
+    """Rebuild visible item exposure from history without a stats table."""
+    today = local_date or date.today()
+    recent_start = today - timedelta(days=lookback_days)
+    stats: dict[str, dict[str, object]] = {}
+    rows = db.scalars(
+        select(OutfitHistory)
+        .where(OutfitHistory.user_id == user_id)
+        .order_by(OutfitHistory.date.asc(), literal_column("outfit_history.rowid").asc())
+    )
+    for row in rows:
+        if row.action == "prepared":
+            continue
+        for item_id in set(_item_ids(row)):
+            item_stats = stats.setdefault(
+                item_id, {"count": 0, "last_seen": None, "recent": False}
+            )
+            item_stats["count"] = int(item_stats["count"]) + 1
+            item_stats["last_seen"] = row.date
+            item_stats["recent"] = bool(row.date and row.date >= recent_start and row.date <= today)
+    return stats
+
+
+def get_recent_look_keys(
+    db: Session,
+    user_id: str,
+    *,
+    local_date: date,
+    lookback_days: int = 30,
+) -> set[tuple[str, ...]]:
+    start = local_date - timedelta(days=lookback_days - 1)
+    rows = db.scalars(
+        select(OutfitHistory).where(
+            OutfitHistory.user_id == user_id,
+            OutfitHistory.date >= start,
+            OutfitHistory.date <= local_date,
+            OutfitHistory.action != "prepared",
+        )
+    )
+    return {
+        tuple(sorted(item_ids))
+        for row in rows
+        if (item_ids := _item_ids(row))
+    }
 
 
 def get_prepared_outfits(
