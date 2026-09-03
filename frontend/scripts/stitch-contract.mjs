@@ -80,6 +80,10 @@ assert.match(profile, /品味备忘录更新于|累计后刷新品味备忘录/,
 assert.match(profile, /orderLookItems/, "profile thumbnails must zoom in head-to-toe outfit order");
 assert.match(today, /自定义标签/, "today feedback must allow custom tags");
 assert.match(today, /expandedLooks/, "Today must render app-owned Look expansion state");
+assert.ok(
+  today.indexOf("收起搭配") < today.indexOf("className=\"relative w-full transition-[height]"),
+  "the collapse control must render above the expanded Look items",
+);
 assert.doesNotMatch(profile, /85\s*\+\s*ratingCount\s*\*\s*4/, "profile must not calculate a fake match percentage");
 
 console.log("Stitch visual contract passed: five screens and original design dependencies preserved");

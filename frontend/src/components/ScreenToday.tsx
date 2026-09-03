@@ -173,6 +173,15 @@ const LookItems = ({ items = [], expanded, onExpandedChange, onSelect }: {
   const layout = lookStackLayout(visualItems.length, expanded);
 
   return <div className="look-flow flex w-full max-w-[300px] flex-col items-center">
+    {expanded && (
+      <button
+        type="button"
+        onClick={() => onExpandedChange(false)}
+        className="mb-4 rounded-full border border-[#162839]/30 bg-white/70 px-4 py-1.5 text-[11px] font-bold text-[#162839] transition-colors hover:bg-[#162839] hover:text-white"
+      >
+        收起搭配
+      </button>
+    )}
     <div
       className="relative w-full transition-[height] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
       style={{ height: layout.height }}
@@ -204,15 +213,6 @@ const LookItems = ({ items = [], expanded, onExpandedChange, onSelect }: {
         </React.Fragment>
       ))}
     </div>
-    {expanded && (
-      <button
-        type="button"
-        onClick={() => onExpandedChange(false)}
-        className="mt-4 rounded-full border border-[#162839]/30 bg-white/70 px-4 py-1.5 text-[11px] font-bold text-[#162839] transition-colors hover:bg-[#162839] hover:text-white"
-      >
-        收起搭配
-      </button>
-    )}
   </div>;
 };
 
