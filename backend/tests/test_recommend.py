@@ -13,6 +13,7 @@ from outfit_ai.main import app
 from outfit_ai.models import OutfitHistory, StyleReference, WardrobeItem
 from outfit_ai.schemas import ProposedLook, RecommendRequest
 from outfit_ai.services import recommend as recommend_service
+from outfit_ai.services.llm import LLMResponseError
 from outfit_ai.services.profile_state import decode_profile_state, encode_profile_state
 
 
@@ -321,6 +322,58 @@ def test_refresh_tier_failure_does_not_write_history(monkeypatch) -> None:
             )
 
         assert len(list(db.scalars(select(OutfitHistory)))) == count_before
+
+
+def test_refresh_tier_retries_when_model_omits_tool_call(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    weather = SimpleNamespace(
+        temp=20,
+        condition="晴",
+        city="上海",
+        local_date=date.today(),
+        timezone="Asia/Shanghai",
+        model_dump=lambda: {},
+    )
+    target = ProposedLook(
+        tier="safe",
+        item_ids=["top-1", "bottom-1", "shoes-1"],
+        reason="换一套安全牌",
+        weather_fit="适合",
+        occasion_fit="日常",
+    )
+    calls = []
+
+    def flaky_propose_tier(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise LLMResponseError("造型师未返回有效的 propose_one_look 工具调用")
+        return target
+
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: weather)
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service, "propose", lambda *args, **kwargs: pytest.fail("must not generate")
+    )
+    monkeypatch.setattr(recommend_service, "propose_tier", flaky_propose_tier)
+
+    with Session(engine) as db:
+        db.add_all(
+            _recommendation_items()
+            + _same_day_set_rows("current-set", created_at="2026-08-09T06:30:00+08:00")
+        )
+        db.commit()
+
+        result = recommend_service.recommend(
+            db,
+            RecommendRequest(
+                city="上海", local_date=date.today(), force_refresh=True, refresh_tier="safe"
+            ),
+        )
+
+        assert len(calls) == 2
+        assert result["safe"]["items"][0]["id"] == "top-1"
 
 
 def test_same_day_reuse_skips_latest_prepared_group_before_weather(monkeypatch) -> None:

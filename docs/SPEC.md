@@ -83,7 +83,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - tool schema：普通请求使用 `propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；单卡刷新使用 `propose_one_look(look:{tier,item_ids,reason,weather_fit,occasion_fit})`，且 tier 必须与请求一致；`reason` 为一句话搭配思路，长度 1–50 个字符，偶发超长输入会在校验前压缩为完整首句或带省略号的短句。
 - 图像分工：真实衣物和参考 Look 先由 MiniMax VLM 提取结构化属性；M3 只读取这些文本属性，不重复消耗识图额度。
 - system prompt：造型师人格 + 硬规则（只用给定单品、三档各一、不重复近期 Look、locked 必含）；Safe 优先低风险与高利用率，Fresh 至少使用一个天气有效的低暴露单品，Stretch 使用不同的低暴露单品并明确说明突破点。候选充足时三档不共用任意单品，并由校验器检查颜色、版型或风格标签差异，避免只做配饰替换。候选上下文单独提供 `thickness`：高温高湿优先轻薄，低温优先适中或厚实，轻薄单品只有在叠穿成立时才使用；缺失厚薄标签不视为适中。
-- 失败重试：Stage 3 不过 → 错误回灌再调一次；两次失败抛错给前端。
+- 失败重试：Stage 3 校验不过或 M3 未返回有效工具调用 → 错误回灌再调一次；两次失败抛错给前端。每日预生成对超时/网络异常额外整体重试一次并回滚事务。
 
 ### 4.3 品味备忘录（taste memo）—— "越用越懂"的载体（services/taste_memo.py）
 - **是什么**：LLM 维护的自然语言档案，记录"我对你品味的理解"。段落：偏好的颜色/调色板、偏好的版型/廓形、常用搭配公式、忌讳项、近期想突破的方向、从反馈学到的东西。

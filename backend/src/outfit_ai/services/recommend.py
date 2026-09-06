@@ -22,7 +22,7 @@ from .history import (
     get_recent_outfits,
     record_outfit,
 )
-from .llm import require_api_key
+from .llm import LLMResponseError, require_api_key
 from .profile_state import decode_profile_state, save_last_location
 from .style_references import get_reference_analyses
 from .stylist import propose, propose_tier
@@ -333,32 +333,36 @@ def recommend(
             )
             error = ""
             for _ in range(2):
-                target = propose_tier(
-                    candidates,
-                    profile,
-                    weather.model_dump(),
-                    request.occasion,
-                    request.mood,
-                    recent_looks,
-                    set(request.locked_item_ids),
-                    request.refresh_tier,
-                    error,
-                    references=references,
-                    style_note=request.style_note,
-                    season=request.season or _season(weather.temp),
-                    scene=scene,
-                    usage_stats=usage_stats,
-                    coverage_targets=refresh_coverage_targets,
-                )
-                if target.tier != request.refresh_tier:
-                    ok, error = False, f"返回 tier 必须为 {request.refresh_tier}"
-                else:
-                    ok, error = validate_look(
-                        target,
-                        categories,
-                        locked_ids=set(request.locked_item_ids),
-                        coverage_target=refresh_coverage_targets.get(request.refresh_tier),
+                try:
+                    target = propose_tier(
+                        candidates,
+                        profile,
+                        weather.model_dump(),
+                        request.occasion,
+                        request.mood,
+                        recent_looks,
+                        set(request.locked_item_ids),
+                        request.refresh_tier,
+                        error,
+                        references=references,
+                        style_note=request.style_note,
+                        season=request.season or _season(weather.temp),
+                        scene=scene,
+                        usage_stats=usage_stats,
+                        coverage_targets=refresh_coverage_targets,
                     )
+                except LLMResponseError as exc:
+                    ok, error = False, str(exc)
+                else:
+                    if target.tier != request.refresh_tier:
+                        ok, error = False, f"返回 tier 必须为 {request.refresh_tier}"
+                    else:
+                        ok, error = validate_look(
+                            target,
+                            categories,
+                            locked_ids=set(request.locked_item_ids),
+                            coverage_target=refresh_coverage_targets.get(request.refresh_tier),
+                        )
                 if ok:
                     break
             else:
@@ -401,30 +405,34 @@ def recommend(
 
     error = ""
     for _ in range(2):
-        looks = propose(
-            candidates,
-            profile,
-            weather.model_dump(),
-            request.occasion,
-            request.mood,
-            recent_looks,
-            set(request.locked_item_ids),
-            error,
-            references=references,
-            style_note=request.style_note,
-            season=request.season or _season(weather.temp),
-            scene=scene,
-            usage_stats=usage_stats,
-            coverage_targets=coverage_targets,
-        )
-        ok, error = validate_looks(
-            looks,
-            categories,
-            locked_ids=set(request.locked_item_ids),
-            coverage_targets=coverage_targets,
-            recent_look_keys=recent_look_keys,
-            candidate_attributes=candidate_attributes,
-        )
+        try:
+            looks = propose(
+                candidates,
+                profile,
+                weather.model_dump(),
+                request.occasion,
+                request.mood,
+                recent_looks,
+                set(request.locked_item_ids),
+                error,
+                references=references,
+                style_note=request.style_note,
+                season=request.season or _season(weather.temp),
+                scene=scene,
+                usage_stats=usage_stats,
+                coverage_targets=coverage_targets,
+            )
+        except LLMResponseError as exc:
+            ok, error = False, str(exc)
+        else:
+            ok, error = validate_looks(
+                looks,
+                categories,
+                locked_ids=set(request.locked_item_ids),
+                coverage_targets=coverage_targets,
+                recent_look_keys=recent_look_keys,
+                candidate_attributes=candidate_attributes,
+            )
         if ok:
             break
     else:
