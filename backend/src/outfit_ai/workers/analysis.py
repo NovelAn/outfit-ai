@@ -8,6 +8,8 @@ from ..services.background import ensure_background_removed
 from ..services.categories import canonical_category
 from ..services.vision import extract
 
+THICKNESS_TAGS = {"轻薄", "适中", "厚实"}
+
 
 def analyze_item(item_id: str) -> None:
     with SessionLocal() as db:
@@ -44,13 +46,19 @@ def analyze_item(item_id: str) -> None:
             ):
                 setattr(item, field, getattr(attributes, field))
             item.category = canonical_category(attributes.category)
+            tags = [tag for tag in attributes.tags if tag not in THICKNESS_TAGS]
+            thickness = attributes.thickness or next(
+                (tag for tag in attributes.tags if tag in THICKNESS_TAGS), None
+            )
+            if thickness:
+                tags.append(thickness)
             for source, target in (
                 ("styles", "style_json"),
-                ("tags", "tags_json"),
                 ("seasons", "seasons_json"),
                 ("occasions", "occasions_json"),
             ):
                 setattr(item, target, json.dumps(getattr(attributes, source), ensure_ascii=False))
+            item.tags_json = json.dumps(tags, ensure_ascii=False)
             item.ai_raw_response = raw
             item.status = "ready"
         except Exception as exc:

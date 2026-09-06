@@ -1,3 +1,4 @@
+import sys
 from io import BytesIO
 from threading import Event, Thread
 from time import sleep
@@ -18,6 +19,25 @@ def test_background_path_is_deterministic(tmp_path) -> None:
     source = tmp_path / "item.jpg"
 
     assert background.background_path(source) == tmp_path / "item.nobg.png"
+
+
+def test_remove_reuses_a_named_lightweight_u2net_session(monkeypatch) -> None:
+    calls = []
+    session = object()
+    fake_rembg = SimpleNamespace(
+        new_session=lambda model: calls.append(("new_session", model)) or session,
+        remove=lambda data, session: calls.append(("remove", data, session)) or _png_bytes(),
+    )
+    monkeypatch.setitem(sys.modules, "rembg", fake_rembg)
+    background._rembg_session.cache_clear()
+
+    assert background._remove(b"source") == _png_bytes()
+    assert background._remove(b"again") == _png_bytes()
+    assert calls == [
+        ("new_session", "u2net"),
+        ("remove", b"source", session),
+        ("remove", b"again", session),
+    ]
 
 
 def test_background_removal_is_idempotent(monkeypatch, tmp_path) -> None:

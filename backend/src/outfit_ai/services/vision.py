@@ -42,8 +42,10 @@ def extract(image_path: str | Path) -> tuple[ClothingAttributes, str]:
             "识别图片中的主要衣物，只返回一个 JSON 对象，不要输出 JSON Schema 或 Markdown。"
             "category 只能是 top/bottom/outerwear/dress/shoes/accessory。"
             "除 category 外，所有面向用户的字段必须使用简体中文；品牌名可保留原文。"
-            "字段：name、category、primary_color、secondary_color、material、fit、"
+            "字段：name、category、primary_color、secondary_color、material、thickness、fit、"
             "formality、styles、tags、seasons、occasions、versatility。"
+            "thickness 只能是轻薄、适中、厚实之一；仅凭图片无法可靠判断时使用 null。"
+            "厚薄度单独填写 thickness，不要把厚薄度重复放进 tags。"
             "versatility 必须是 0 到 1 的数字；styles、tags、seasons、occasions "
             "必须是字符串数组；可空字段使用 null。"
         ),

@@ -17,6 +17,19 @@ export function normalizeSeasonValues(values = []) {
   return normalized.includes("四季") ? [...SEASON_OPTIONS] : [...new Set(normalized)];
 }
 
+export function wardrobeInfoTags(item = {}) {
+  const seasons = normalizeSeasonValues(item.seasons || []);
+  return [
+    ...seasons,
+    ...(seasons.length > 0 && item.thickness ? ["·"] : []),
+    item.thickness || "",
+  ].filter(Boolean);
+}
+
+export function wardrobeFeatureTags(item = {}) {
+  return (item.tags || []).filter((tag) => !THICKNESS_OPTIONS.includes(tag));
+}
+
 export function filterWardrobeItems(
   items,
   { category = "全部", seasons = [], thicknesses = [] } = {},

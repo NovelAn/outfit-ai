@@ -1,6 +1,6 @@
 # Outfit-AI · 当前后端与 API 规格
 
-> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-08-12。
+> 本文件是**当前后端构建的唯一真相源**：架构、数据模型、API 契约、模块规格与边界。最后核对：2026-09-04。
 > 配套：[`CLAUDE.md`](../CLAUDE.md)=项目规范（必读）；[`README.md`](../README.md)=概览；[`CURRENT_FRONTEND_INTEGRATION.md`](./frontend/CURRENT_FRONTEND_INTEGRATION.md)=当前前端事实源。
 > 文档不重复——架构/数据/API 只在此处定义，CLAUDE.md 与 README 仅引用。
 
@@ -80,9 +80,9 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 4.2 文本造型师调用契约（services/stylist.py）
 - 模型：MiniMax-M3；通过 OpenAI SDK 调用 `/v1/chat/completions`。
 - 结构化输出：**tool use** 强制 schema（`tool_choice` 强制调 `propose_looks` 或单卡刷新时的 `propose_one_look`），解析 `tool_calls[0].function.arguments` → Pydantic。
-- tool schema：普通请求使用 `propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；单卡刷新使用 `propose_one_look(look:{tier,item_ids,reason,weather_fit,occasion_fit})`，且 tier 必须与请求一致。
+- tool schema：普通请求使用 `propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；单卡刷新使用 `propose_one_look(look:{tier,item_ids,reason,weather_fit,occasion_fit})`，且 tier 必须与请求一致；`reason` 为一句话搭配思路，长度 1–50 个字符，偶发超长输入会在校验前压缩为完整首句或带省略号的短句。
 - 图像分工：真实衣物和参考 Look 先由 MiniMax VLM 提取结构化属性；M3 只读取这些文本属性，不重复消耗识图额度。
-- system prompt：造型师人格 + 硬规则（只用给定单品、三档各一、不重复近期 Look、locked 必含）；Safe 优先低风险与高利用率，Fresh 至少使用一个天气有效的低暴露单品，Stretch 使用不同的低暴露单品并明确说明突破点。
+- system prompt：造型师人格 + 硬规则（只用给定单品、三档各一、不重复近期 Look、locked 必含）；Safe 优先低风险与高利用率，Fresh 至少使用一个天气有效的低暴露单品，Stretch 使用不同的低暴露单品并明确说明突破点。候选充足时三档不共用任意单品，并由校验器检查颜色、版型或风格标签差异，避免只做配饰替换。候选上下文单独提供 `thickness`：高温高湿优先轻薄，低温优先适中或厚实，轻薄单品只有在叠穿成立时才使用；缺失厚薄标签不视为适中。
 - 失败重试：Stage 3 不过 → 错误回灌再调一次；两次失败抛错给前端。
 
 ### 4.3 品味备忘录（taste memo）—— "越用越懂"的载体（services/taste_memo.py）
@@ -173,7 +173,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 
 MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因此未配置 Key 但存在有效 prepared 时仍返回 200，未命中 prepared 时返回 503。
 
-每日预生成入口是 `python -m outfit_ai.precompute_daily`：读取 `last_location` 的坐标（否则 Profile `city`），先校验 MiniMax Key，再强制生成并保存 prepared 三档；没有位置/城市或衣橱不足时以非零退出。云端 `scripts/deploy.sh` 会安装 `/etc/cron.d/outfit-ai-precompute`，按 `Asia/Shanghai` 每日 06:30 调用该入口，并用 `flock` 防止重复运行；执行日志写入 `/var/log/outfit-ai-precompute.log`。本地开发不安装 cron/launchd。
+每日预生成入口是 `python -m outfit_ai.precompute_daily`：读取 `last_location` 的坐标（否则 Profile `city`），先校验 MiniMax Key，再强制生成并保存 prepared 三档；超时、网络异常或模型工具调用异常最多重试 1 次，每次失败先回滚事务，只有成功结果才写入推荐组；没有位置/城市或衣橱不足时以非零退出且不重试。云端 `scripts/deploy.sh` 会安装 `/etc/cron.d/outfit-ai-precompute`，按 `Asia/Shanghai` 每日 06:30 调用该入口，并用 `flock` 防止运行重叠；执行日志写入 `/var/log/outfit-ai-precompute.log`。本地开发不安装 cron/launchd。
 
 ### 6.4 style references
 | Method | Path | 说明 | 返回 |
@@ -204,12 +204,12 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 ## 7. 模块规格（文件级，标 port/borrow 来源）
 - `services/minimax_images.py`：读取环境变量或 `~/.mmx/config.json`；调用 Coding Plan VLM 与 `image-01`，校验和解码响应；外部 HTTP 客户端不继承本机 SOCKS/HTTP 代理环境。
 - `services/llm.py`：MiniMax-M3 tool use 结构化文本生成；普通 JSON 调用兼容纯 JSON、Markdown 代码块及 `<think>` 等前置文本，再由 Pydantic 校验；OpenAI SDK 关闭隐式重试，单次请求 120 秒超时，并记录不含密钥或上游正文的耗时/错误类型日志；统一错误处理且不泄漏 Key；OpenAI HTTP 客户端不继承本机 SOCKS/HTTP 代理环境，避免推荐请求在客户端初始化阶段返回 500。
-- `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 prompt 使用短字段模板，`category` 仅允许 `top/bottom/outerwear/dress/shoes/accessory`，`versatility` 要求为 0–1 数字，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；响应兼容纯 JSON、单个或多个 Markdown JSON 代码块，并取最后一个有效 JSON。衣物模型只把 VLM 常见语义值 `高/high`、`中/medium`、`低/low` 分别归一为 `0.85`、`0.5`、`0.25`，未知字符串仍拒绝；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
-- `services/background.py`：真实衣物先用 rembg 生成透明 PNG；参考 Look 不去背景。首次运行会把约 176MB 的 U²-Net 模型下载并缓存到 `~/.u2net/`，因此首件衣物可能需要 2–3 分钟；同一 API 进程会串行化 rembg 初始化，避免批量上传时重复并发下载模型。
+- `services/vision.py`：VLM 提取 `ClothingAttributes` 和 `StyleReferenceAnalysis`；衣物 prompt 使用短字段模板，`category` 仅允许 `top/bottom/outerwear/dress/shoes/accessory`，`thickness` 仅允许 `轻薄/适中/厚实` 或 `null`，`versatility` 要求为 0–1 数字，其余面向用户的衣物属性使用简体中文（品牌名可保留原文）；响应兼容纯 JSON、单个或多个 Markdown JSON 代码块，并取最后一个有效 JSON。衣物模型只把 VLM 常见语义值 `高/high`、`中/medium`、`低/low` 分别归一为 `0.85`、`0.5`、`0.25`，未知字符串仍拒绝；参考 Look 使用短 JSON 模板并拒绝全空分析。来源：Hangar schema + ai-closet 重试
+- `services/background.py`：真实衣物先用 rembg 显式复用 `u2net` 生成透明 PNG；参考 Look 不去背景。模型缓存到 `~/.u2net/`，同一 API 进程只初始化一个会话并串行处理，避免误触发约 1GB 的 Bria 默认模型或批量上传时重复下载。
 - `services/guardrail.py`：`filter_candidates(items,season,locked_ids,recent_item_ids,limit=15)->list[Item]`（天气/季节过滤、用户确认覆盖、locked 约束、确定性利用率排序）；`select_coverage_targets()` 为 Fresh/Stretch 选择低暴露覆盖目标。纯规则、可单测
 - `services/stylist.py`：`propose(...) -> list[Look]`；`propose_tier(...) -> Look`（M3 文本属性 + 参考分析，tool use；单卡刷新只调用目标档）
 - `services/profile_state.py`：profile JSON 封套的兼容解码/编码，以及 pin、hide、alias 后的有效 Style DNA 关键词；有效关键词最多 7 个，alias 归一化后应用 hidden，冲突时 pinned 优先保留。
-- `services/validator.py`（**新**）：`validate_looks(looks, candidate_ids)->(ok, error)`（item_id 真实、3–6 件、无重复、含 top+bottom+shoes）。来源：ai-closet 校验链，port 为内部自检 + `tests/test_validation.py`
+- `services/validator.py`（**新**）：`validate_looks(looks, candidate_ids)->(ok, error)`（item_id 真实、3–6 件、无重复、含 top+bottom+shoes；候选充足时三档不共用任意单品，并检查颜色、版型或风格标签差异）。来源：ai-closet 校验链，port 为内部自检 + `tests/test_validation.py`
 - `services/recommend.py`（**新**，编排）：当日完整 recommendation set 复用、prepared 复用/卡片重建或 guardrail→stylist→validator(重试)→返回三卡；prepared 复用阈值为 20km、三个温度带和 50% 降雨概率
 - `precompute_daily.py`：每日 CLI，读取 Profile `last_location` 后强制生成 `prepared` 三档；由生产调度器调用，不安装本地调度
 - `services/taste_memo.py`（**新**）：`refresh(db,user_id)`（旧 memo + 新 feedback → LLM → 新 memo）；`seed(onboarding)`（Style DNA+样例图→初版）
@@ -218,7 +218,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
 - `services/storage.py`：`Storage` Protocol + `LocalStorage`；按图片字节识别真实格式，iPhone MPO/JPG 读取主画面并重编码为标准 JPEG。
 - `services/prompt_builder.py`：Style DNA 草稿、造型师 system/user、memo 刷新 prompts。造型师收到的长期档案只包括应用 pin/hide/alias 后的有效关键词、最近风格信号和 `taste_memo`。来源：ai-closet 结构（适配 chat completions）
-- `workers/analysis.py`：真实衣物 BackgroundTask（pending→analyzing→rembg→以 `.nobg.png` 调用 VLM→ready/failed）；类别确认会将常见模型别名归一化，例如 `hat`、`cap`、`baseball cap` 归入 `accessory`。
+- `workers/analysis.py`：真实衣物 BackgroundTask（pending→analyzing→rembg→以 `.nobg.png` 调用 VLM→ready/failed）；AI 返回的厚薄度会写入 `tags_json`，并清理重复的厚薄标签；类别确认会将常见模型别名归一化，例如 `hat`、`cap`、`baseball cap` 归入 `accessory`。
 - `workers/style_references.py`：参考 Look BackgroundTask（VLM 分析→M3 合并 Style DNA→ready/failed）；重试只复用有效非空分析，旧空缓存会重新调用 VLM。合并结果的核心关键词最多 7 个（仅可复用且有证据的风格概念，不含单件、场景或季节），最近信号最多 3 个，色板最多 5 个且仅可使用 `黑色、白色、深蓝色、浅蓝色、灰色、米白色、米黄色、卡其色、棕色、绿色、红色、紫色`；alias 先归一化标签，再应用 hidden，最后保留 pin（`pinned > hidden`）。
 - `routers/{wardrobe,profile,recommend,feedback,style_references,inspiration}.py`：见 §6
 - `main.py`：FastAPI app、CORS、lifespan `init_db()`、挂载 routers、静态托管 `/media`→upload_dir
@@ -228,7 +228,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 ## 8. 当前实现状态
 
 - 数据层：五张 SQLite 表和索引已实现，由 `init_db()` 初始化。
-- 真实衣物：上传、rembg、VLM、轮询、确认、列表、用户可编辑属性和删除已实现；删除会清理数据库记录、原图与 `.nobg` 图片。当前 schema 不新增厚薄度列，前端把 `轻薄`、`适中`、`厚实` 作为受控标签保存。
+- 真实衣物：上传、rembg、VLM、轮询、确认、列表、用户可编辑属性和删除已实现；AI 识图会初步返回 `轻薄`、`适中`、`厚实` 或空值，后台统一写入 `tags_json`，用户仍可在详情中手动修正；删除会清理数据库记录、原图与 `.nobg` 图片。当前 schema 不新增厚薄度列，前端把三档厚薄度作为受控标签保存。既有单品不自动回补厚薄度。
 - 长期灵感：参考 Look 上传、VLM 分析、M3 合并 Style DNA、列表、重试、删除已实现。
 - 推荐：天气与季节硬边界、手动季节/厚薄覆盖、历史利用率覆盖、30 天精确 Look 去重、Safe/Fresh/Stretch 三档边界、M3 造型、单卡 `refresh_tier`、item_id 校验和历史记录已实现；衣橱识图返回的季节标签会在候选过滤时归一化，用户确认值优先。
 - 独立灵感：M3 提示词与 `image-01` 三图生成已实现。

@@ -1,4 +1,5 @@
 import sys
+from time import sleep
 
 from .config import settings
 from .db import SessionLocal
@@ -8,6 +9,26 @@ from .services.llm import LLMResponseError, LLMUnavailableError, require_api_key
 from .services.profile_state import decode_profile_state
 from .services.recommend import recommend
 from .services.weather import WeatherServiceError
+
+_PRECOMPUTE_MAX_ATTEMPTS = 2
+_PRECOMPUTE_RETRY_DELAY_SECONDS = 15
+
+
+def _recommend_with_retry(db, request):
+    # ponytail: cap at two attempts to limit scheduler latency and provider load.
+    for attempt in range(1, _PRECOMPUTE_MAX_ATTEMPTS + 1):
+        try:
+            return recommend(db, request, history_action="prepared")
+        except (LLMUnavailableError, LLMResponseError) as exc:
+            db.rollback()
+            if attempt == _PRECOMPUTE_MAX_ATTEMPTS:
+                raise
+            print(
+                f"每日预生成第 {attempt}/{_PRECOMPUTE_MAX_ATTEMPTS} 次失败，"
+                f"{_PRECOMPUTE_RETRY_DELAY_SECONDS} 秒后重试：{exc}",
+                file=sys.stderr,
+            )
+            sleep(_PRECOMPUTE_RETRY_DELAY_SECONDS)
 
 
 def main() -> int:
@@ -32,7 +53,7 @@ def main() -> int:
             return 1
         try:
             require_api_key()
-            result = recommend(
+            result = _recommend_with_retry(
                 db,
                 RecommendRequest(
                     city=city,
@@ -40,7 +61,6 @@ def main() -> int:
                     longitude=longitude,
                     force_refresh=True,
                 ),
-                history_action="prepared",
             )
         except (LLMUnavailableError, LLMResponseError, ValueError, WeatherServiceError) as exc:
             print(f"每日预生成失败：{exc}", file=sys.stderr)

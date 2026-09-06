@@ -36,6 +36,8 @@ def test_upload_analyze_confirm_and_list_flow(monkeypatch, tmp_path) -> None:
                 category="sweater",
                 primary_color="黑色",
                 styles=["极简"],
+                thickness="厚实",
+                tags=["针织", "厚实"],
                 seasons=["winter"],
             ),
             '{"source":"test"}',
@@ -61,6 +63,7 @@ def test_upload_analyze_confirm_and_list_flow(monkeypatch, tmp_path) -> None:
         assert status["status"] == "ready"
         assert status["attempt_count"] == 1
         assert status["name"] == "黑色针织衫"
+        assert status["tags"] == ["针织", "厚实"]
 
         wardrobe.patch(
             created["id"],
@@ -252,7 +255,9 @@ def test_wardrobe_http_upload_status_confirm_and_list(monkeypatch, tmp_path) -> 
                 name="黑色针织衫",
                 category="sweater",
                 primary_color="黑色",
+                thickness="厚实",
                 styles=["极简"],
+                tags=["针织", "厚实"],
                 seasons=["winter"],
             ),
             '{"source":"test"}',
@@ -280,6 +285,7 @@ def test_wardrobe_http_upload_status_confirm_and_list(monkeypatch, tmp_path) -> 
     assert uploaded.status_code == 201
     assert status.json()["status"] == "ready"
     assert status.json()["attributes"]["category"] == "top"
+    assert status.json()["attributes"]["tags"] == ["针织", "厚实"]
     assert confirmed.json()["confirmed_by_user"] is True
     assert [item["id"] for item in listed.json()] == [item_id]
 

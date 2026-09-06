@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   filterWardrobeItems,
+  wardrobeFeatureTags,
+  wardrobeInfoTags,
   toggleFilterValue,
 } from "../src/lib/wardrobe-filters.mjs";
 
@@ -43,4 +45,18 @@ test("season shortcut selects all seasons without storing a fifth value", () => 
   assert.deepEqual(toggleFilterValue([], "四季", seasons), seasons);
   assert.deepEqual(toggleFilterValue(seasons, "四季", seasons), []);
   assert.deepEqual(toggleFilterValue(seasons, "夏", seasons), ["春", "秋", "冬"]);
+});
+
+test("builds visible item info tags for seasons and thickness", () => {
+  assert.deepEqual(
+    wardrobeInfoTags({ seasons: ["春", "夏"], thickness: "轻薄" }),
+    ["春", "夏", "·", "轻薄"],
+  );
+});
+
+test("keeps thickness out of the regular feature tags", () => {
+  assert.deepEqual(
+    wardrobeFeatureTags({ tags: ["水洗效果", "适中", "五口袋设计"] }),
+    ["水洗效果", "五口袋设计"],
+  );
 });

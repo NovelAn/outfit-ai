@@ -14,6 +14,7 @@ class ClothingAttributes(BaseModel):
     primary_color: str
     secondary_color: str | None = None
     material: str | None = None
+    thickness: Literal["轻薄", "适中", "厚实"] | None = None
     fit: str | None = None
     formality: str | None = None
     styles: list[str] = Field(default_factory=list)
@@ -81,9 +82,26 @@ class StyleDnaMerge(BaseModel):
 class ProposedLook(BaseModel):
     tier: Literal["safe", "fresh", "stretch"]
     item_ids: list[str] = Field(min_length=3, max_length=6)
-    reason: str
+    reason: str = Field(min_length=1, max_length=50)
     weather_fit: str
     occasion_fit: str
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def compact_reason(cls, value):
+        if not isinstance(value, str):
+            return value
+        text = " ".join(value.split())
+        if len(text) <= 50:
+            return text
+        sentence_ends = [
+            text.find(mark, 1, 50)
+            for mark in "。！？.!?"
+            if text.find(mark, 1, 50) >= 0
+        ]
+        if sentence_ends:
+            return text[: min(sentence_ends) + 1]
+        return f"{text[:49].rstrip()}…"
 
     @field_validator("item_ids")
     @classmethod

@@ -35,8 +35,8 @@ frontend/index.html
 
 | 页面 | 源文件 | 用户功能 | 主要后端接口 |
 |---|---|---|---|
-| 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；每套按后端返回的 3–6 件完整展示（含外搭与配饰）。每套 Look 初始以轻微旋转、错位的紧凑卡组叠放，点击后逐件弹性展开，并按帽子→颈部配饰→外套/叠穿→上装→下装→鞋履→其他配饰形成纵向穿衣顺序；展开后在 Look 上方显示“收起搭配”，点击单品打开详情浮层，收起按钮反向叠回卡组，三套 Look 独立控制；切换底部 tab 后返回仍保持各自展开状态，刷新或重新打开应用时恢复叠放；详情与评分弹窗带弹跳入场动效并尊重系统“减弱动态效果”；反馈标签把最近用过的置前并支持自定义标签输入；“AI 换一换”只替换被点击的 Look，其他卡片保持不变；收藏、打分和反馈仍使用原始 item 顺序 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback`、`GET /api/profile` |
-| 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；支持季节（四季快捷项、春/夏/秋/冬）和厚薄（轻薄/适中/厚实）组合筛选，组内为 OR、分类/季节/厚薄组之间为 AND，重新进入页面恢复无筛选；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开在顶部安全区与底部导航上沿之间居中的紧凑详情，统一限制图片展示高度，显示图片、名称、分类和已识别标签，并支持左右滑动切换当前筛选结果中的相邻单品；详情内可编辑识别字段、手动多选适用季节、手动修正厚薄度或删除单品；进入“批量管理”后可勾选、全选当前筛选结果并批量删除，删除前统一二次确认。 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
+| 今日 | `ScreenToday.tsx` | 按当前定位/后备城市显示实时本地日期、城市、温度、天气和降雨摘要；从真实衣橱生成 Safe / Fresh / Stretch；每套按后端返回的 3–6 件完整展示（含外搭与配饰）。每套 Look 初始以轻微旋转、错位的紧凑卡组叠放，点击后逐件弹性展开，并按帽子→颈部配饰→外套/叠穿→上装→下装→鞋履→其他配饰形成纵向穿衣顺序；展开后在 Look 上方显示“收起搭配”，点击单品打开详情浮层，收起按钮反向叠回卡组，三套 Look 独立控制；切换底部 tab 后返回仍保持各自展开状态，刷新或重新打开应用时恢复叠放；搭配说明展示精炼 `reason`，新生成内容由后端控制在 50 个字符以内，旧长文案在前端安全压缩；详情与评分弹窗带弹跳入场动效并尊重系统“减弱动态效果”；反馈标签把最近用过的置前并支持自定义标签输入；“AI 换一换”只替换被点击的 Look，其他卡片保持不变；收藏、打分和反馈仍使用原始 item 顺序 | `GET /api/weather`、`GET /api/style-references`、`POST /api/recommend`、`POST /api/feedback`、`GET /api/profile` |
+| 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；支持季节（四季快捷项、春/夏/秋/冬）和厚薄（轻薄/适中/厚实）组合筛选，组内为 OR、分类/季节/厚薄组之间为 AND，重新进入页面恢复无筛选；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开在顶部安全区与底部导航上沿之间居中的紧凑详情，统一限制图片展示高度，显示图片、名称、特征标签、季节和厚薄度信息标签，并支持左右滑动切换当前筛选结果中的相邻单品；详情内可编辑识别字段、手动多选适用季节、手动修正厚薄度或删除单品；既有单品不会自动回补厚薄度；进入“批量管理”后可勾选、全选当前筛选结果并批量删除，删除前统一二次确认。 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
 | 灵感 | `ScreenInspiration.tsx` | 移动端内容画布、页眉和底部主导航统一为同一窄版宽度；长期灵感胶片中的上传卡和前两张预览使用紧凑尺寸，减少首屏占用；单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 移动端内容画布与底部主导航统一为同一窄版宽度；三列紧凑缩略图浏览；卡片标签显示在图片下方且最多显示 2 个，避免文字覆盖图片；点击图片打开在顶部安全区与底部导航上沿之间居中的紧凑预览，最多显示 8 个标签并自动换行；预览支持左右滑动切换当前筛选列表中的相邻图片；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
 | 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；分别读取 `recent` 和 `archive` 推荐历史。历史、收藏和评分的 AI 品味备忘录按已解析到的单品渲染缩略图网格（完整 Look 为 3–6 件），缩略图点击放大为从头到脚的紧凑单屏垂直预览，再次点击返回；仅当零件单品都无法解析时，旧记录才回退其单张拼图，并可收藏、评分或标记穿过；AI 品味备忘录卡片显示服务端学习进度（待学习 N/4 条反馈与最近更新时间） | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history?scope=`、`POST /api/feedback` |
@@ -59,20 +59,20 @@ frontend/index.html
 | `deleteReference(id)` | `DELETE /api/style-references/{id}` | 删除参考 Look 和图片 |
 | `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存完整 Profile；标签操作保留既有字段，并提交 `style_keywords`、`recent_style_signals` 和 `style_tag_preferences` |
 | `weather({city,latitude,longitude})` | `GET /api/weather` | 以同一位置上下文读取本地日期、城市、温度、天气和降雨数据 |
-| `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；后端先按天气、季节和用户手动覆盖做硬过滤，再按历史使用次数与最近使用时间排序，优先覆盖低暴露单品，并拒绝 30 天内完全重复的 Look；三档在候选充足时避免核心单品重叠。今日页会把已获取天气的本地 `local_date` 传入，使普通 recommendation set 复用不依赖服务器时区。普通非 prepared 完整组按同一天无条件复用；prepared 组另受位置、温度带和降雨阈值校验，未命中时仍可在不传 `force_refresh` 的情况下新生成。单卡换装传 `force_refresh:true, refresh_tier:"safe|fresh|stretch"`，后端只生成目标档并返回另外两档原卡片 |
+| `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；后端先按天气、季节和用户手动覆盖做硬过滤，再按历史使用次数与最近使用时间排序，优先覆盖低暴露单品，并拒绝 30 天内完全重复的 Look；候选充足时三档不共用任意单品，并检查颜色、版型或风格标签差异。今日页会把已获取天气的本地 `local_date` 传入，使普通 recommendation set 复用不依赖服务器时区。普通非 prepared 完整组按同一天无条件复用；prepared 组另受位置、温度带和降雨阈值校验，未命中时仍可在不传 `force_refresh` 的情况下新生成。单卡换装传 `force_refresh:true, refresh_tier:"safe|fresh|stretch"`，后端只生成目标档并返回另外两档原卡片 |
 | `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈；`action` 可省略以仅提交 `rating: 1..5`。已有 Look 的持久反馈必须含服务端 `history_id`，成功后才更新 UI |
 | `history({scope,limit} = {})` | `GET /api/history?scope=recent|archive&limit=` | truthy 的 `limit` 会转发，后端接受范围为 1–100；省略或传 `0` 时不带该参数，使用后端默认 `20`。`recent` 读取临时记录，`archive` 读取收藏、穿过或高评分存档；每项含 `scope`、`rating` |
 | `generateInspiration(data)` | `POST /api/inspiration/generate` | 一次返回三张独立灵感图 |
 
 灵感参考图批量上传复用现有单文件接口：前端对每张图片分别调用 `uploadReference()` 和 `referenceStatus()`，使用独立结算保证单张失败不影响同批其他图片，完成后只刷新一次灵感库。
 
-识图状态默认每 800ms 轮询一次、最长等待 5 分钟，以覆盖 `rembg` 首次下载本地模型的准备时间；后端同一 API 进程会串行化 rembg 初始化，避免批量上传触发重复模型下载。超过窗口时提示任务仍在后台处理并要求不要重复上传，不再把慢任务误报为识别失败。
+识图状态默认每 800ms 轮询一次、最长等待 5 分钟；后端显式使用缓存的 `u2net` 会话并串行化 rembg 初始化，避免误触发约 1GB 的默认 Bria 模型或批量上传重复下载。超过窗口时提示任务仍在后台处理并要求不要重复上传，不再把慢任务误报为识别失败。
 
 衣橱批量导入固定最多同时处理 2 张图片；每张独立执行上传、轮询和确认，单张失败不会中止同批其他图片。处理期间禁用批量导入按钮，并由同步 single-flight guard 忽略重复触发。全部结算后只请求一次权威衣橱列表，并提示成功和失败数量，避免大量图片同时占用 `rembg`、内存和 MiniMax 识图额度。
 
-衣橱展示层把 `outerwear` 归入“上装”、`dress` 归入“下装”，并单列 `accessory` 为“配饰”；后端保留稳定英文类别码，并在确认时将 VLM 常见别名（如 `hat`、`cap`、`baseball cap`）容错归入 `accessory`。VLM 实际读取 rembg 生成的透明 `.nobg.png`；返回的衣物名称、颜色、材质、版型、风格、标签、季节和场景使用简体中文，品牌名和内部 `category` 除外。
+衣橱展示层把 `outerwear` 归入“上装”、`dress` 归入“下装”，并单列 `accessory` 为“配饰”；后端保留稳定英文类别码，并在确认时将 VLM 常见别名（如 `hat`、`cap`、`baseball cap`）容错归入 `accessory`。VLM 实际读取 rembg 生成的透明 `.nobg.png`；返回的衣物名称、颜色、材质、版型、风格、标签、季节和场景使用简体中文，厚薄度单独返回为 `轻薄`、`适中`、`厚实` 或空值，品牌名和内部 `category` 除外。
 
-衣橱单品详情浮层展示图片、名称、分类和已识别标签，并提供“编辑信息”和“删除单品”入口。编辑沿用后端 PATCH 接口保存用户修正；删除会二次确认，同时删除数据库记录、原图和去背景图。左右滑动预览仍只切换当前筛选结果列表，不会触发修改或删除。
+衣橱单品详情浮层展示图片、名称、分类、特征标签、季节和厚薄度标签，并提供“编辑信息”和“删除单品”入口。编辑沿用后端 PATCH 接口保存用户修正；删除会二次确认，同时删除数据库记录、原图和去背景图。左右滑动预览仍只切换当前筛选结果列表，不会触发修改或删除。
 
 衣橱筛选在前端保持组合状态：每个筛选组内多选任一命中即可，分类、季节和厚薄同时选择时必须全部命中；选择“四季”等价于选择春夏秋冬且不保存第五个季节值。无结果时显示清除入口；激活筛选时不继续请求分页的“加载更多”，避免把未筛选分页结果混入当前视图。
 
@@ -82,7 +82,7 @@ frontend/index.html
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
 
-今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；天气栏固定在顶部，底部四项主导航固定在底部并避让 iPhone 安全区，滚动时仍可快速切换页面。上下文就绪后自动请求一次不带 `force_refresh` 的每日推荐；应用从后台恢复或重新显示时，`pageshow` / `visibilitychange` 会在 30 秒节流窗口后再次检查当天推荐。后端先按本地日期无条件复用最近完整的普通 Safe/Fresh/Stretch recommendation set，因此重新打开、导航或天气刷新不会重新生成。每日 06:30 预生成的 prepared 组只是后备候选：仅在不存在普通组时才考虑，且须同时满足距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25` 三档、降雨概率同处 50% 阈值的一侧；不命中时即使不传 `force_refresh` 也会新生成。只有用户点击“AI 换一换”才传 `force_refresh: true` 与对应 `refresh_tier`，后端只生成目标档，前端只合并目标卡片，其它卡片、反馈状态和历史 ID 不跳变。并发刷新会合并为一个进行中的请求，过期响应不会覆盖更新结果。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”，推荐加载或失败时保留本机缓存作为后备。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
+今日页会把定位或回退得到的同一 `city` / `latitude` / `longitude` 传给天气和推荐接口；天气栏固定在顶部，底部四项主导航固定在底部并避让 iPhone 安全区，滚动时仍可快速切换页面。上下文就绪后自动请求一次不带 `force_refresh` 的每日推荐；应用从后台恢复或重新显示时，`pageshow` / `visibilitychange` 会在 30 秒节流窗口后再次检查当天推荐。后端先按本地日期无条件复用最近完整的普通 Safe/Fresh/Stretch recommendation set，因此重新打开、导航或天气刷新不会重新生成。每日 06:30 预生成的 prepared 组只是后备候选：仅在不存在普通组时才考虑，且须同时满足距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25` 三档、降雨概率同处 50% 阈值的一侧；不命中时即使不传 `force_refresh` 也会新生成。只有用户点击“AI 换一换”才传 `force_refresh: true` 与对应 `refresh_tier`，后端只生成目标档，前端只合并目标卡片，其它卡片、反馈状态和历史 ID 不跳变。并发刷新会合并为一个进行中的请求，过期响应不会覆盖更新结果。天气刷新失败时保留本次会话内上一次成功结果并标注“上次更新”，推荐加载失败时保留本机缓存作为后备，同时明确提示当前显示上一组缓存。侧边栏城市按钮不再展示硬编码温度，显示当前实时城市标签，并在城市设置处保留 `© OpenStreetMap contributors` 署名链接。
 
 今日卡片不假定固定三件：逐项渲染后端 `items` 数组中的全部 3–6 件，必含上装、下装、鞋履；渲染副本由 `orderLookItems()` 稳定排序为从头到脚的纵向 editorial flow，`lookStackLayout()` 计算收起时的重叠位置和展开后的纵向位置，原始 `items` 数组用于反馈与历史。每张返回卡片均带 `history_id`，收藏/取消收藏、评分和“穿过”通过该 id 提交。请求失败时不乐观更新收藏、评分或穿过状态，保留服务端已确认状态并显示统一错误。
 

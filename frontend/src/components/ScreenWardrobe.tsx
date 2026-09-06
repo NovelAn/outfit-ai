@@ -7,6 +7,8 @@ import {
   SEASON_OPTIONS,
   THICKNESS_OPTIONS,
   toggleFilterValue,
+  wardrobeFeatureTags,
+  wardrobeInfoTags,
 } from '../lib/wardrobe-filters.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
@@ -696,13 +698,19 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
             )}
             <p className="text-sm text-[#43474c] mt-1 mb-4">{selectedItem.name}</p>
             <div className="mb-4 space-y-2 text-[11px] text-[#43474c]">
-              {[selectedItem.primaryColor, selectedItem.material, selectedItem.fit].filter(Boolean).length > 0 && (
-                <p>{[selectedItem.primaryColor, selectedItem.material, selectedItem.fit].filter(Boolean).join(' · ')}</p>
-              )}
-              {(selectedItem.tags || []).length > 0 && (
+              {wardrobeFeatureTags(selectedItem).length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {selectedItem.tags?.map((tag) => (
+                  {wardrobeFeatureTags(selectedItem).map((tag) => (
                     <span key={tag} className="rounded bg-[#f0eee9] px-1.5 py-0.5">{tag}</span>
+                  ))}
+                </div>
+              )}
+              {wardrobeInfoTags(selectedItem).length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {wardrobeInfoTags(selectedItem).map((tag) => (
+                    <span key={tag} className="rounded bg-[#f4dfcb] px-1.5 py-0.5 text-[#8f4028]">
+                      {tag}
+                    </span>
                   ))}
                 </div>
               )}

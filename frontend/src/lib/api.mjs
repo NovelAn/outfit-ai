@@ -34,6 +34,15 @@ function apiUrl(path) {
   return `${API_BASE}${path}`;
 }
 
+function compactRecommendationReason(value) {
+  const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  if (text.length <= 50) return text;
+  for (let index = 1; index < 50; index += 1) {
+    if ("。！？.!?".includes(text[index])) return text.slice(0, index + 1);
+  }
+  return `${text.slice(0, 49).trimEnd()}…`;
+}
+
 async function request(path, options = {}) {
   let response;
   try {
@@ -146,7 +155,7 @@ function mapLook(tier, look) {
     ...TIER_META[tier],
     historyId: look.history_id,
     description: items.map((item) => item.name).join(" + "),
-    reason: look.reason || "",
+    reason: compactRecommendationReason(look.reason),
     weatherFit: look.weather_fit || "",
     occasionFit: look.occasion_fit || "",
     imageUrl: items[0]?.img || "",

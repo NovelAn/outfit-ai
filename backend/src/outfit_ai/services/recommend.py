@@ -53,6 +53,14 @@ def _weather_context(weather: object) -> dict:
     return json.loads(json.dumps(weather.model_dump(), default=str))
 
 
+def _json_list(value: str | None) -> list:
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
 def _effective_coordinates(
     profile: Profile | None, request: RecommendRequest
 ) -> tuple[float | None, float | None]:
@@ -260,6 +268,16 @@ def recommend(
             f"锁定单品不可用: {', '.join(sorted(unavailable_locked))}"
         )
     categories = {item.id: item.category or "" for item in candidates}
+    candidate_attributes = {
+        item.id: {
+            "primary_color": item.primary_color,
+            "fit": item.fit,
+            "formality": item.formality,
+            "styles": _json_list(item.style_json),
+            "tags": _json_list(item.tags_json),
+        }
+        for item in candidates
+    }
     if not {"top", "bottom", "shoes"} <= {
         canonical_category(value) for value in categories.values()
     }:
@@ -405,6 +423,7 @@ def recommend(
             locked_ids=set(request.locked_item_ids),
             coverage_targets=coverage_targets,
             recent_look_keys=recent_look_keys,
+            candidate_attributes=candidate_attributes,
         )
         if ok:
             break

@@ -1,7 +1,29 @@
 from collections import Counter
+from typing import Any
 
 from ..schemas import ProposedLook
 from .categories import canonical_category
+
+
+def _style_signature(
+    item_ids: list[str], candidate_attributes: dict[str, dict[str, Any]]
+) -> frozenset[str]:
+    signature: set[str] = set()
+    for item_id in item_ids:
+        attributes = candidate_attributes.get(item_id)
+        if not isinstance(attributes, dict):
+            return frozenset()
+        for field in ("primary_color", "fit", "formality"):
+            value = attributes.get(field)
+            if isinstance(value, str) and value:
+                signature.add(f"{field}:{value}")
+        for field in ("styles", "tags"):
+            values = attributes.get(field)
+            if isinstance(values, list):
+                signature.update(
+                    f"{field}:{value}" for value in values if isinstance(value, str) and value
+                )
+    return frozenset(signature)
 
 
 def validate_look(
@@ -38,6 +60,7 @@ def validate_looks(
     locked_ids: set[str] | None = None,
     coverage_targets: dict[str, str] | None = None,
     recent_look_keys: set[tuple[str, ...]] | None = None,
+    candidate_attributes: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[bool, str]:
     locked_ids = locked_ids or set()
     coverage_targets = coverage_targets or {}
@@ -66,6 +89,20 @@ def validate_looks(
     )
     if all(core_counts[category] >= 3 for category in ("top", "bottom", "shoes")):
         by_tier = {look.tier: set(look.item_ids) for look in looks}
+        if len(candidate_categories) >= 9:
+            for left, right in (("safe", "fresh"), ("safe", "stretch"), ("fresh", "stretch")):
+                overlap = by_tier[left] & by_tier[right] - locked_ids
+                non_core_overlap = {
+                    item_id
+                    for item_id in overlap
+                    if canonical_category(candidate_categories[item_id])
+                    not in {"top", "bottom", "shoes"}
+                }
+                if non_core_overlap:
+                    return False, (
+                        f"{left} 与 {right} 不应共用单品: "
+                        f"{', '.join(sorted(non_core_overlap))}"
+                    )
         for left, right in (("safe", "fresh"), ("safe", "stretch"), ("fresh", "stretch")):
             overlap = by_tier[left] & by_tier[right] - locked_ids
             core_overlap = {
@@ -80,4 +117,19 @@ def validate_looks(
                 category_names = {"top": "上装", "bottom": "下装", "shoes": "鞋履"}
                 names = ", ".join(category_names[name] for name in categories)
                 return False, f"{left} 与 {right} 不应共用核心类别: {names}"
+    if candidate_attributes:
+        signatures = {
+            look.tier: _style_signature(look.item_ids, candidate_attributes)
+            for look in looks
+        }
+        available_signatures = {
+            _style_signature([item_id], candidate_attributes)
+            for item_id in candidate_attributes
+        }
+        if (
+            len(available_signatures) > 1
+            and all(signatures.values())
+            and len(set(signatures.values())) < 3
+        ):
+            return False, "Safe、Fresh、Stretch 必须在颜色、版型或风格标签上形成差异"
     return True, ""

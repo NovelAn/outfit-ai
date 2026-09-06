@@ -159,7 +159,7 @@ def test_stylist_sends_text_attributes_and_reference_analysis(monkeypatch) -> No
             fit="regular",
             formality="smart casual",
             style_json='["极简"]',
-            tags_json="[]",
+            tags_json='["厚实"]',
             seasons_json='["autumn"]',
             occasions_json='["通勤"]',
         ),
@@ -209,6 +209,11 @@ def test_stylist_sends_text_attributes_and_reference_analysis(monkeypatch) -> No
 
     content = captured["messages"][1]["content"]
     assert isinstance(content, str)
+    assert (
+        "reason 必须用一句话说明核心搭配思路，最多 50 个字符"
+        in captured["messages"][0]["content"]
+    )
     assert "白衬衫" in content
     assert "克制" in content
+    assert '"thickness": "厚实"' in content
     assert "image_url" not in content

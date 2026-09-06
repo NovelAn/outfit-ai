@@ -30,7 +30,7 @@ def test_extract_accepts_markdown_wrapped_vlm_json(monkeypatch, tmp_path) -> Non
         lambda *_: (
             "```json\n"
             '{"name":"白衬衫","category":"top","primary_color":"白色",'
-            '"styles":[],"tags":[],"seasons":[],"occasions":[]}'
+            '"thickness":"轻薄","styles":[],"tags":[],"seasons":[],"occasions":[]}'
             "\n```"
         ),
     )
@@ -39,6 +39,7 @@ def test_extract_accepts_markdown_wrapped_vlm_json(monkeypatch, tmp_path) -> Non
 
     assert attributes.category == "top"
     assert attributes.name == "白衬衫"
+    assert attributes.thickness == "轻薄"
     assert raw.startswith("```json")
 
 
@@ -146,6 +147,30 @@ def test_extract_requests_simplified_chinese_display_fields(monkeypatch, tmp_pat
     assert "versatility 必须是 0 到 1 的数字" in prompts[0]
     assert "styles、tags、seasons、occasions 必须是字符串数组" in prompts[0]
     assert "可空字段使用 null" in prompts[0]
+
+
+def test_extract_prompt_requests_thickness_as_a_separate_field(monkeypatch, tmp_path) -> None:
+    image_path = tmp_path / "item.png"
+    Image.new("RGB", (2, 2), "white").save(image_path)
+    prompts = []
+
+    def describe_image(_, prompt):
+        prompts.append(prompt)
+        return (
+            '{"name":"白衬衫","category":"top","primary_color":"白色",'
+            '"thickness":null,"styles":[],"tags":[],"seasons":[],"occasions":[]}'
+        )
+
+    monkeypatch.setattr(minimax_images, "describe_image", describe_image)
+
+    extract(image_path)
+
+    assert (
+        "字段：name、category、primary_color、secondary_color、material、thickness、fit"
+        in prompts[0]
+    )
+    assert "thickness 只能是轻薄、适中、厚实之一" in prompts[0]
+    assert "不要把厚薄度重复放进 tags" in prompts[0]
 
 
 def test_reference_analysis_is_structured(monkeypatch, tmp_path) -> None:

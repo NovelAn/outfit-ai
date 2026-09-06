@@ -43,7 +43,7 @@
 ### 3. 每日推荐
 
 - 根据当前位置或手动城市获取当地天气、温度、日期和降雨信息。
-- 每天 06:30（Asia/Shanghai）由服务器预生成 Safe / Fresh / Stretch 三套推荐。
+- 每天 06:30（Asia/Shanghai）由服务器预生成 Safe / Fresh / Stretch 三套推荐；超时、网络异常或模型工具调用异常时最多自动重试 1 次，确定性配置错误不重试。
 - 每套 Look 按真实穿衣顺序展示 3–6 件：帽子/围巾等配饰 → 外套/上装 → 下装 → 鞋履。
 - “AI 换一换”只替换当前点击的 Look，不影响另外两套。
 - 推荐支持收藏、评分、标记穿过和历史归档，反馈用于更新品味备忘录。
@@ -91,7 +91,7 @@ npm run dev
 - 健康检查：<http://localhost:8000/health>
 - 默认数据目录：`~/.outfit-ai/`（SQLite 数据库与上传图片）
 
-首次处理真实衣物时，`rembg` 可能需要下载约 176MB 的本地模型到 `~/.u2net/`；模型缓存后不会重复下载。
+首次处理真实衣物时，`rembg` 使用约 176MB 的 U²-Net 本地模型并缓存到 `~/.u2net/`；应用显式复用该轻量模型，不会误触发约 1GB 的 Bria 默认模型。衣橱详情会显示单品的季节和厚薄度标签。
 
 ## 测试与构建
 
@@ -114,7 +114,7 @@ npm run build
 30 6 * * * root /usr/bin/flock -n /run/lock/outfit-ai-precompute.lock /usr/local/sbin/outfit-ai-precompute
 ```
 
-执行日志：`/var/log/outfit-ai-precompute.log`。
+执行日志：`/var/log/outfit-ai-precompute.log`；预生成每次失败会回滚事务，重试成功后只写入一组三档。
 
 ```bash
 DEPLOY_HOST=ubuntu@your-server-ip \

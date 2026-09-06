@@ -51,10 +51,13 @@ def stylist_system(
         "天气需要时可加叠穿，配饰可选；不要为了凑数量加入无作用的单品。"
         "Safe：天气合适、符合长期 Style DNA，优先熟悉耐穿的组合，不强制冷门单品。"
         "Fresh：必须包含指定低曝光单品，并在颜色、廓形、层次或鞋型中改变"
-        "一个主要维度，仍在 Style DNA 内。"
+        "一个主要维度，仍在 Style DNA 内；不能只替换帽子或其它配饰。"
         "Stretch：必须包含另一指定低曝光单品，并比 Fresh 在颜色、廓形或"
-        "搭配公式上形成更明显的突破，同时保持天气安全。"
-        "季节资格是硬边界，不能用锁定或风格突破绕过；reason 必须具体说明三档差异。"
+        "搭配公式上至少形成两个更明显的突破，不能只替换一个配饰，同时保持天气安全。"
+        "厚薄度用于结合温度、体感温度和湿度判断适穿度：高温高湿优先轻薄，"
+        "低温优先适中或厚实，轻薄单品只有在叠穿成立时才使用；没有厚薄标签时不要臆造。"
+        "季节资格是硬边界，不能用锁定或风格突破绕过；reason 必须用一句话说明核心搭配思路，"
+        "最多 50 个字符，避免复述单品名称、天气和完整分析。"
         f"锁定单品必须出现：{locked}。{coverage}"
     )
 
@@ -96,6 +99,14 @@ def stylist_context(
             "formality": item.formality,
             "styles": _json_list(item.style_json),
             "tags": _json_list(item.tags_json),
+            "thickness": next(
+                (
+                    tag
+                    for tag in _json_list(item.tags_json)
+                    if tag in {"轻薄", "适中", "厚实"}
+                ),
+                "",
+            ),
             "seasons": _json_list(item.seasons_json),
             "occasions": _json_list(item.occasions_json),
             "usage_count": usage_stats.get(item.id, {}).get("count", 0),

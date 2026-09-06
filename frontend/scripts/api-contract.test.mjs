@@ -4,7 +4,11 @@ import test from "node:test";
 
 import * as profileApi from "../src/lib/api.mjs";
 import { lookStackLayout, orderLookItems } from "../src/lib/look-layout.mjs";
-import { displayWeatherForRecommendation, lookFeedbackKey } from "../src/lib/today-state.mjs";
+import {
+  displayWeatherForRecommendation,
+  lookFeedbackKey,
+  recommendationErrorMessage,
+} from "../src/lib/today-state.mjs";
 import {
   api,
   categoryCode,
@@ -27,6 +31,14 @@ test("maps canonical Style DNA palette names without positional fallback colors"
   assert.equal(profileApi.paletteHex("浅蓝色"), "#A9C7DD");
   assert.equal(profileApi.paletteHex("不存在的颜色"), null);
   assert.equal(profileApi.paletteHex("constructor"), null);
+});
+
+test("labels cached recommendations when today's load fails", () => {
+  assert.match(
+    recommendationErrorMessage(new Error("MiniMax 响应超时"), true),
+    /上一组缓存.*MiniMax 响应超时/,
+  );
+  assert.equal(recommendationErrorMessage(new Error("生成失败"), false), "生成失败");
 });
 
 test("keeps pinned tags visible when an alias is also hidden", () => {
@@ -175,7 +187,7 @@ test("maps three real wardrobe recommendations into Safe Fresh Stretch cards", (
   const mapped = mapRecommendation({
     safe: {
       history_id: "history-safe",
-      reason: "经典通勤",
+      reason: "先用浅色上装提亮整体，再以深色长裤稳住比例，最后用白色板鞋呼应色彩并强化日常休闲感，同时通过利落廓形保持清爽层次。",
       weather_fit: "适合 22°C",
       occasion_fit: "适合通勤",
       items: [
@@ -188,6 +200,8 @@ test("maps three real wardrobe recommendations into Safe Fresh Stretch cards", (
     stretch: { history_id: "history-stretch", reason: "突破", weather_fit: "适合", occasion_fit: "适合", items: [] },
   });
   assert.equal(mapped.safe.historyId, "history-safe");
+  assert.ok(mapped.safe.reason.length <= 50);
+  assert.ok(mapped.safe.reason.endsWith("。") || mapped.safe.reason.endsWith("…"));
   assert.equal(mapped.safe.items[0].name, "白衬衫");
   assert.equal(mapped.safe.description, "白衬衫 + 藏青西裤 + 乐福鞋");
   assert.equal(mapped.fresh.title, "Look 02 / 新鲜 (FRESH)");
@@ -315,6 +329,12 @@ test("shows the selected recommendation item image and attributes in its detail 
   assert.match(today, /activeModalItem\.imageUrl/);
   assert.match(today, /activeModalItem\.category/);
   assert.match(today, /activeModalItem\.color/);
+});
+
+test("keeps wardrobe item detail concise while showing season and thickness tags", () => {
+  const wardrobe = readFileSync(new URL("../src/components/ScreenWardrobe.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(wardrobe, /selectedItem\.primaryColor, selectedItem\.material, selectedItem\.fit/);
+  assert.match(wardrobe, /wardrobeInfoTags\(selectedItem\)/);
 });
 
 test("keeps mobile header and bottom navigation fixed during scrolling", () => {

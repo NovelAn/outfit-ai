@@ -1,3 +1,4 @@
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from threading import Lock
@@ -17,10 +18,17 @@ def background_path(path: str | Path) -> Path:
     return source.with_name(f"{source.stem}.nobg.png")
 
 
+@lru_cache(maxsize=1)
+def _rembg_session() -> Any:
+    from rembg import new_session
+
+    return new_session("u2net")
+
+
 def _remove(data: bytes) -> Any:
     from rembg import remove
 
-    return remove(data)
+    return remove(data, session=_rembg_session())
 
 
 def ensure_background_removed(path: str | Path) -> Path:

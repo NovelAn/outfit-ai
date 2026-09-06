@@ -3,7 +3,7 @@ import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api, confirmFeedback, feedbackLearningNote, requireHistoryId } from '../lib/api.mjs';
 import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
 import { lookStackLayout, orderLookItems } from '../lib/look-layout.mjs';
-import { displayWeatherForRecommendation, lookFeedbackKey } from '../lib/today-state.mjs';
+import { displayWeatherForRecommendation, lookFeedbackKey, recommendationErrorMessage } from '../lib/today-state.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -407,8 +407,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
         });
         if (requestId === recommendationRequestRef.current) applyRecommendation(recommendation, latestWeather);
       } catch (error) {
-        if (requestId === recommendationRequestRef.current && !liveLooks) {
-          triggerToast(error instanceof Error ? error.message : '每日推荐加载失败');
+        if (requestId === recommendationRequestRef.current) {
+          triggerToast(recommendationErrorMessage(error, Boolean(liveLooks)));
         }
       }
     })();

@@ -26,6 +26,19 @@ def test_rejects_unknown_item_and_missing_required_category() -> None:
     assert "missing" in error
 
 
+def test_compacts_overlong_look_reason() -> None:
+    look = ProposedLook(
+        tier="safe",
+        item_ids=["top", "bottom", "shoes"],
+        reason="先用浅色上装提亮整体，再以深色长裤稳住比例，最后用白色板鞋呼应色彩并强化日常休闲感。",
+        weather_fit="适合",
+        occasion_fit="日常",
+    )
+
+    assert len(look.reason) <= 50
+    assert look.reason.endswith("。") or look.reason.endswith("…")
+
+
 def test_accepts_three_distinct_complete_tiers() -> None:
     categories = {
         "top-1": "top",
@@ -166,3 +179,67 @@ def test_rejects_avoidable_core_overlap_when_three_candidates_exist() -> None:
 
     assert not ok
     assert "上装" in error
+
+
+def test_rejects_any_cross_tier_overlap_when_wardrobe_is_large() -> None:
+    categories = {
+        "top-1": "top",
+        "top-2": "top",
+        "top-3": "top",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+        "hat-1": "accessory",
+    }
+    looks = [
+        _look("safe", ["top-1", "bottom-1", "shoes-1", "hat-1"]),
+        _look("fresh", ["top-2", "bottom-2", "shoes-2", "hat-1"]),
+        _look("stretch", ["top-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories)
+
+    assert not ok
+    assert "hat-1" in error
+
+
+def test_rejects_three_tiers_with_identical_style_signature() -> None:
+    categories = {
+        "top-1": "top",
+        "top-2": "top",
+        "top-3": "top",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+        "top-4": "top",
+        "bottom-4": "bottom",
+        "shoes-4": "shoes",
+    }
+    attributes = {
+        item_id: {
+            "primary_color": "黑色",
+            "fit": "宽松",
+            "formality": "休闲",
+            "styles": ["极简"],
+            "tags": [],
+            "category": categories[item_id],
+        }
+        for item_id in categories
+    }
+    attributes["top-4"].update(primary_color="白色", fit="修身")
+    looks = [
+        _look("safe", ["top-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["top-2", "bottom-2", "shoes-2"]),
+        _look("stretch", ["top-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories, candidate_attributes=attributes)
+
+    assert not ok
+    assert "颜色、版型或风格标签" in error
