@@ -10,7 +10,7 @@ from .services.profile_state import decode_profile_state
 from .services.recommend import recommend
 from .services.weather import WeatherServiceError
 
-_PRECOMPUTE_MAX_ATTEMPTS = 2
+_PRECOMPUTE_MAX_ATTEMPTS = 3
 _PRECOMPUTE_RETRY_DELAY_SECONDS = 15
 
 

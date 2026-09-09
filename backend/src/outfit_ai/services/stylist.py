@@ -1,7 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from ..schemas import ProposedLook
-from .llm import LLMResponseError, chat_multimodal
+from .llm import LLMResponseError, _parse_json_object, chat_multimodal
 from .prompt_builder import stylist_context, stylist_system
 
 
@@ -11,6 +11,23 @@ class ProposedLooks(BaseModel):
 
 class ProposedSingleLook(BaseModel):
     look: ProposedLook
+
+
+def _message(response) -> object:
+    try:
+        return response.choices[0].message
+    except (AttributeError, IndexError) as exc:
+        raise LLMResponseError("造型师未返回有效响应") from exc
+
+
+def _tool_call_arguments(message) -> str | None:
+    calls = getattr(message, "tool_calls", None)
+    if not calls:
+        return None
+    try:
+        return calls[0].function.arguments
+    except (AttributeError, IndexError, KeyError, TypeError):
+        return None
 
 
 _LOOKS_SCHEMA = {
@@ -76,10 +93,17 @@ def propose(
         tools=[_LOOKS_SCHEMA],
         tool_choice={"type": "function", "function": {"name": "propose_looks"}},
     )
+    message = _message(response)
     try:
-        arguments = response.choices[0].message.tool_calls[0].function.arguments
-        return ProposedLooks.model_validate_json(arguments).looks
-    except (AttributeError, IndexError, KeyError, TypeError, ValueError) as exc:
+        arguments = _tool_call_arguments(message)
+        if arguments is not None:
+            return ProposedLooks.model_validate_json(arguments).looks
+    except (ValueError, ValidationError):
+        pass
+    try:
+        content = getattr(message, "content", "") or ""
+        return ProposedLooks.model_validate(_parse_json_object(content)).looks
+    except (ValueError, ValidationError) as exc:
         raise LLMResponseError("造型师未返回有效的 propose_looks 工具调用") from exc
 
 
@@ -126,11 +150,21 @@ def propose_tier(
         tools=[_SINGLE_LOOK_SCHEMA],
         tool_choice={"type": "function", "function": {"name": "propose_one_look"}},
     )
+    message = _message(response)
     try:
-        arguments = response.choices[0].message.tool_calls[0].function.arguments
-        look = ProposedSingleLook.model_validate_json(arguments).look
+        arguments = _tool_call_arguments(message)
+        if arguments is not None:
+            look = ProposedSingleLook.model_validate_json(arguments).look
+            if look.tier != tier:
+                raise ValueError(f"tier 必须为 {tier}")
+            return look
+    except (ValueError, ValidationError):
+        pass
+    try:
+        content = getattr(message, "content", "") or ""
+        look = ProposedSingleLook.model_validate(_parse_json_object(content)).look
         if look.tier != tier:
             raise ValueError(f"tier 必须为 {tier}")
         return look
-    except (AttributeError, IndexError, KeyError, TypeError, ValueError) as exc:
+    except (ValueError, ValidationError) as exc:
         raise LLMResponseError("造型师未返回有效的 propose_one_look 工具调用") from exc

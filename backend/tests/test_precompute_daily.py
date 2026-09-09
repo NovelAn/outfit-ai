@@ -75,8 +75,8 @@ def test_precompute_stops_after_retry_limit(monkeypatch, capsys) -> None:
     monkeypatch.setattr(precompute_daily, "sleep", lambda _seconds: None, raising=False)
 
     assert precompute_daily.main() == 1
-    assert attempts == 2
-    assert db.rollbacks == 2
+    assert attempts == 3
+    assert db.rollbacks == 3
     assert "工具调用格式错误" in capsys.readouterr().err
 
 

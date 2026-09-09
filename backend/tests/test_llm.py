@@ -36,6 +36,55 @@ def test_stylist_rejects_response_without_required_tool_call(monkeypatch) -> Non
         stylist.propose([], None, {}, "日常", None, [], set())
 
 
+def test_stylist_falls_back_to_plain_json_when_tool_call_is_missing(monkeypatch) -> None:
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    tool_calls=[],
+                    content=(
+                        '{"looks":['
+                        '{"tier":"safe","item_ids":["top","bottom","shoes"],'
+                        '"reason":"稳妥","weather_fit":"适合","occasion_fit":"合适"},'
+                        '{"tier":"fresh","item_ids":["top","bottom","shoes"],'
+                        '"reason":"新鲜","weather_fit":"适合","occasion_fit":"合适"},'
+                        '{"tier":"stretch","item_ids":["top","bottom","shoes"],'
+                        '"reason":"突破","weather_fit":"适合","occasion_fit":"合适"}]}'
+                    ),
+                )
+            )
+        ]
+    )
+    monkeypatch.setattr(stylist, "chat_multimodal", lambda *args, **kwargs: response)
+
+    looks = stylist.propose([], None, {}, "日常", None, [], set())
+
+    assert [look.tier for look in looks] == ["safe", "fresh", "stretch"]
+
+
+def test_stylist_tier_falls_back_to_plain_json(monkeypatch) -> None:
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    tool_calls=[],
+                    content=(
+                        '{"look":{"tier":"safe","item_ids":["top","bottom","shoes"],'
+                        '"reason":"稳妥","weather_fit":"适合","occasion_fit":"合适"}}'
+                    ),
+                )
+            )
+        ]
+    )
+    monkeypatch.setattr(stylist, "chat_multimodal", lambda *args, **kwargs: response)
+
+    look = stylist.propose_tier(
+        [], None, {}, "日常", None, [], set(), "safe"
+    )
+
+    assert look.tier == "safe"
+
+
 def test_generate_json_rejects_non_object_json(monkeypatch) -> None:
     response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content="[]"))]
