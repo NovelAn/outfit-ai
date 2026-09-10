@@ -84,8 +84,6 @@ def _effective_coordinates(
 def _prepared_matches(
     prepared: list, latitude: float | None, longitude: float | None, weather: object
 ) -> bool:
-    if latitude is None or longitude is None:
-        return False
     weather_context = _weather_context(weather)
     for history in prepared:
         try:
@@ -95,12 +93,16 @@ def _prepared_matches(
                 return False
             prepared_temp = prepared_weather.get("temp")
             prepared_rain = prepared_weather.get("precipitation_probability_max", 0)
-            distance = _haversine_km(
-                context["latitude"],
-                context["longitude"],
-                latitude,
-                longitude,
-            )
+            prepared_lat = context.get("latitude")
+            prepared_lon = context.get("longitude")
+            request_has_coords = latitude is not None and longitude is not None
+            prepared_has_coords = prepared_lat is not None and prepared_lon is not None
+            if request_has_coords and prepared_has_coords:
+                distance = _haversine_km(prepared_lat, prepared_lon, latitude, longitude)
+            elif request_has_coords != prepared_has_coords:
+                return False
+            else:
+                distance = 0
         except (KeyError, TypeError, ValueError):
             return False
         if (

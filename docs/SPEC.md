@@ -171,7 +171,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 
 每次新生成推荐会把粗略经纬度、返回城市、时区和更新时间写入 Profile 的 `last_location`，完整三档会写入同一个 recommendation set id。普通请求会在天气、坐标和 MiniMax Key 校验前复用当地日期最新完整的非 prepared 三档组；`local_date` 由请求提供时优先使用，否则用已保存定位的时区计算本地日期。prepared 组不会遮蔽较早的普通完整组；因此页面导航或重复打开不会重复生成。完整 `force_refresh=true` 和预生成调用都明确跳过这一路径；单卡刷新同样跳过复用检查，但只调用一次目标档 M3，并保留另外两档。prepared 三档仍须满足：距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25`、当天降水概率未跨越 50%；命中后按卡片结构重建返回，不调用 MiniMax。预生成调用使用 `history_action="prepared"`。
 
-MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因此未配置 Key 但存在有效 prepared 时仍返回 200，未命中 prepared 时返回 503。
+MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因此未配置 Key 但存在有效 prepared 时仍返回 200，未命中 prepared 时返回 503。prepared 复用的距离校验在请求和 prepared 双方均无坐标（HTTP 部署下浏览器禁用定位 API 的城市回退场景）时跳过，仅检查温度带和降雨阈值；只有一方有坐标时不复用。
 
 每日预生成入口是 `python -m outfit_ai.precompute_daily`：读取 `last_location` 的坐标（否则 Profile `city`），先校验 MiniMax Key，再强制生成并保存 prepared 三档；超时、网络异常或模型工具调用异常最多重试 1 次，每次失败先回滚事务，只有成功结果才写入推荐组；没有位置/城市或衣橱不足时以非零退出且不重试。云端 `scripts/deploy.sh` 会安装 `/etc/cron.d/outfit-ai-precompute`，按 `Asia/Shanghai` 每日 06:30 调用该入口，并用 `flock` 防止运行重叠；执行日志写入 `/var/log/outfit-ai-precompute.log`。本地开发不安装 cron/launchd。
 

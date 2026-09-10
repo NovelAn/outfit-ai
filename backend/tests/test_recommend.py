@@ -162,6 +162,23 @@ def test_haversine_shanghai_to_suzhou_exceeds_prepared_reuse_radius() -> None:
     assert recommend_service._haversine_km(31.230, 121.474, 31.299, 120.585) > 20
 
 
+def test_prepared_matches_without_coordinates_checks_weather_only() -> None:
+    prepared = [
+        SimpleNamespace(
+            context_json=json.dumps(
+                {
+                    "latitude": None,
+                    "longitude": None,
+                    "weather": {"temp": 21, "precipitation_probability_max": 30},
+                }
+            )
+        )
+    ]
+
+    assert recommend_service._prepared_matches(prepared, None, None, _weather(temp=22)) is True
+    assert recommend_service._prepared_matches(prepared, None, None, _weather(temp=30)) is False
+
+
 def test_recommend_request_limits_refresh_tier() -> None:
     assert RecommendRequest(refresh_tier="stretch", force_refresh=True).refresh_tier == "stretch"
     with pytest.raises(ValueError):
