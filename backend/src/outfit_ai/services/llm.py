@@ -16,6 +16,7 @@ from .minimax_images import (
 
 _JSON_OBJECT = TypeAdapter(dict[str, Any])
 _LLM_TIMEOUT_SECONDS = 120
+_DISABLE_THINKING = {"thinking": {"type": "disabled"}}
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +48,9 @@ def get_client() -> OpenAI:
 def _create_completion(**kwargs):
     started = monotonic()
     try:
-        response = get_client().chat.completions.create(**kwargs)
+        response = get_client().chat.completions.create(
+            extra_body=_DISABLE_THINKING, **kwargs
+        )
         logger.info(
             "MiniMax M3 request completed elapsed=%.1fs",
             monotonic() - started,
