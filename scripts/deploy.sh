@@ -14,7 +14,7 @@ command -v rsync >/dev/null || { echo "本机缺少 rsync" >&2; exit 1; }
 
 ssh "$REMOTE" "mkdir -p '$REMOTE_PATH'"
 
-rsync -az \
+rsync -az --exclude=backend/.venv/ \
   --exclude '.git/' \
   --exclude '.env' \
   --exclude '.env.*' \
