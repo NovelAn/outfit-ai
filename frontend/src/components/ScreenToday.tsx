@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api, confirmFeedback, feedbackLearningNote, isCurrentContextRequest, requireHistoryId, splitFeedbackSignals } from '../lib/api.mjs';
-import { loadDailyRecommendation, resolveLocationContext, saveLocationCandidate } from '../lib/location.mjs';
+import { loadDailyRecommendation, localTodayDate, resolveLocationContext, saveLocationCandidate } from '../lib/location.mjs';
 import { lookStackLayout, orderLookItems } from '../lib/look-layout.mjs';
 import { displayWeatherForRecommendation, formatTargetDateLabel, lookFeedbackKey, recommendationErrorMessage } from '../lib/today-state.mjs';
 import { BottomNav } from './BottomNav';
@@ -230,11 +230,13 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [locationContext, setLocationContext] = useState<any>({ source: 'missing' });
   const [locationCandidates, setLocationCandidates] = useState<any[]>([]);
+  const [pendingContext, setPendingContext] = useState(false);
+  const pendingContextRef = useRef(false);
   const [targetDate, setTargetDate] = useState<string>(() => {
     try {
-      return localStorage.getItem('OUTFIT_AI_TARGET_DATE') || '';
+      return localStorage.getItem('OUTFIT_AI_TARGET_DATE') || localTodayDate();
     } catch {
-      return '';
+      return localTodayDate();
     }
   });
   const locationRef = useRef<any>({ source: 'missing' });
@@ -260,96 +262,6 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
   // Rating & Swap states per look
   const [ratings, setRatings] = useState<Record<string, LookRating>>({});
   const [swappingTier, setSwappingTier] = useState<string | null>(null);
-
-  // Comparison Mode states
-  const [isCompareMode, setIsCompareMode] = useState<boolean>(false);
-  const [selectedCompareKeys, setSelectedCompareKeys] = useState<('safe' | 'fresh' | 'stretch')[]>(['safe', 'fresh']);
-  const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
-
-  const toggleCompareKey = (key: 'safe' | 'fresh' | 'stretch') => {
-    if (selectedCompareKeys.includes(key)) {
-      if (selectedCompareKeys.length <= 1) {
-        triggerToast('请至少选择 1 套 Look 进行对比');
-        return;
-      }
-      setSelectedCompareKeys(selectedCompareKeys.filter((k) => k !== key));
-    } else {
-      if (selectedCompareKeys.length >= 2) {
-        setSelectedCompareKeys([selectedCompareKeys[1], key]);
-      } else {
-        setSelectedCompareKeys([...selectedCompareKeys, key]);
-      }
-    }
-  };
-
-  const getLookData = (key: 'safe' | 'fresh' | 'stretch') => {
-    const variant = liveLooks?.[key] || EMPTY_LOOKS[key];
-    return {
-      key,
-      title: variant.title,
-      tag: variant.tag,
-      tierName: key === 'safe' ? '稳妥 (SAFE)' : key === 'fresh' ? '新鲜 (FRESH)' : '突破 (STRETCH)',
-      description: variant.description,
-      imageUrl: variant.imageUrl,
-      items: variant.items
-    };
-  };
-
-  const getAIComparisonAnalysis = (keyA: 'safe' | 'fresh' | 'stretch', keyB: 'safe' | 'fresh' | 'stretch') => {
-    const lookA = getLookData(keyA);
-    const lookB = getLookData(keyB);
-
-    let formalityA = 85;
-    let formalityB = 45;
-    let relaxA = 55;
-    let relaxB = 90;
-    let summary = '';
-    let highlightA = '';
-    let highlightB = '';
-    let occasionAdvice = '';
-
-    if ((keyA === 'safe' && keyB === 'fresh') || (keyA === 'fresh' && keyB === 'safe')) {
-      formalityA = keyA === 'safe' ? 85 : 45;
-      formalityB = keyB === 'safe' ? 85 : 45;
-      relaxA = keyA === 'safe' ? 55 : 90;
-      relaxB = keyB === 'safe' ? 55 : 90;
-      summary = '“稳妥”与“新鲜”体现了从严谨精纺商务到呼吸感日杂休假的风格跨越。';
-      highlightA = keyA === 'safe' ? '【稳妥】洁白精纺衬衫+藏青西裤，呈现利落权威感' : '【新鲜】蓝白细条纹+米色斜纹裤，透出空气感与亲和力';
-      highlightB = keyB === 'safe' ? '【稳妥】洁白精纺衬衫+藏青西裤，呈现利落权威感' : '【新鲜】蓝白细条纹+米色斜纹裤，透出空气感与亲和力';
-      occasionAdvice = '高层会议、重要商务拜访选【稳妥】；日常办公、下午茶咖啡或周末街拍选【新鲜】。';
-    } else if ((keyA === 'safe' && keyB === 'stretch') || (keyA === 'stretch' && keyB === 'safe')) {
-      formalityA = keyA === 'safe' ? 85 : 65;
-      formalityB = keyB === 'safe' ? 85 : 65;
-      relaxA = keyA === 'safe' ? 55 : 75;
-      relaxB = keyB === 'safe' ? 55 : 75;
-      summary = '“稳妥”是经典不踩雷的安全牌，“突破”则引入工装无结构轮廓与潮酷张力。';
-      highlightA = keyA === 'safe' ? '【稳妥】标准日杂商务模板，剪裁工整得体' : '【突破】橄榄绿无结构外套+厚底德比鞋，先锋有态度';
-      highlightB = keyB === 'safe' ? '【稳妥】标准日杂商务模板，剪裁工整得体' : '【突破】橄榄绿无结构外套+厚底德比鞋，先锋有态度';
-      occasionAdvice = '追求专业稳重选【稳妥】；参观设计展、艺术街区巡游或夜间聚会选【突破】。';
-    } else {
-      formalityA = keyA === 'fresh' ? 45 : 65;
-      formalityB = keyB === 'fresh' ? 45 : 65;
-      relaxA = keyA === 'fresh' ? 90 : 75;
-      relaxB = keyB === 'fresh' ? 90 : 75;
-      summary = '“新鲜”主打轻盈随性与柔和亲和，“突破”突出工装廓形与硬朗质感。';
-      highlightA = keyA === 'fresh' ? '【新鲜】浅色淡雅调性，极简德训鞋轻松百搭' : '【突破】立体机能工装口袋+厚底德比鞋，气场独立';
-      highlightB = keyB === 'fresh' ? '【新鲜】浅色淡雅调性，极简德训鞋轻松百搭' : '【突破】立体机能工装口袋+厚底德比鞋，气场独立';
-      occasionAdvice = '喜欢日系温和松弛氛围选【新鲜】；追求有范儿、个性鲜明潮流表达选【突破】。';
-    }
-
-    return {
-      lookA,
-      lookB,
-      formalityA,
-      formalityB,
-      relaxA,
-      relaxB,
-      summary,
-      highlightA,
-      highlightB,
-      occasionAdvice
-    };
-  };
 
   const [activeRatingModal, setActiveRatingModal] = useState<{ id: string; title: string; imageUrl?: string; items: any[] } | null>(null);
   const [currentStars, setCurrentStars] = useState<number>(5);
@@ -424,7 +336,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       }
       setLocationContext(context);
       locationRef.current = context;
-      setTargetDate(context.target_date || '');
+      setTargetDate(context.target_date || localTodayDate());
       setLocationCandidates([]);
       if (context.source === 'missing') {
         setWeatherIsStale(false);
@@ -478,12 +390,17 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
     setSwappingTier(tier);
     try {
       if (dailyRefreshRef.current) await dailyRefreshRef.current;
+      if (pendingContextRef.current) {
+        triggerToast('请先点击“更新天气与推荐”应用新的城市或日期');
+        return;
+      }
       const currentContext = locationRef.current;
       if (currentContext.source === 'missing') {
         triggerToast('需要定位或选择城市');
         return;
       }
-      ++recommendationRequestRef.current;
+      const contextKey = `${currentContext.city || ''}|${currentContext.latitude ?? ''},${currentContext.longitude ?? ''}|${currentContext.target_date || ''}`;
+      const requestId = ++recommendationRequestRef.current;
       const recommendation = await loadDailyRecommendation({
         api,
         context: currentContext,
@@ -491,6 +408,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
         forceRefresh: true,
         refreshTier: tier,
       });
+      if (requestId !== recommendationRequestRef.current || !isCurrentContextRequest(contextKey, activeContextKeyRef.current)) return;
       applyRecommendation(recommendation, undefined, tier);
       triggerToast(`✨ AI 已更新 ${tier === 'safe' ? '稳妥' : tier === 'fresh' ? '新鲜' : '突破'} Look！`);
     } catch (error) {
@@ -529,15 +447,13 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
 
       const handleStorageChange = () => {
         loadFavorites();
-        const inFlight = dailyRefreshRef.current;
-        if (inFlight) {
-          void inFlight.then(() => refreshDailyContext(), () => refreshDailyContext());
-        } else {
-          void refreshDailyContext();
-        }
+        ++recommendationRequestRef.current;
+        setLocationCandidates([]);
+        pendingContextRef.current = true;
+        setPendingContext(true);
       };
       const refreshOnResume = () => {
-        if (document.visibilityState === 'hidden') return;
+        if (document.visibilityState === 'hidden' || pendingContextRef.current) return;
         const now = Date.now();
         if (now - lastResumeRefreshRef.current < 30_000) return;
         lastResumeRefreshRef.current = now;
@@ -574,14 +490,22 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       : '';
 
   const changeTargetDate = (value: string) => {
-    setTargetDate(value);
+    const chosenDate = value || localTodayDate();
+    setTargetDate(chosenDate);
     try {
-      if (value) localStorage.setItem('OUTFIT_AI_TARGET_DATE', value);
-      else localStorage.removeItem('OUTFIT_AI_TARGET_DATE');
+      localStorage.setItem('OUTFIT_AI_TARGET_DATE', chosenDate);
       window.dispatchEvent(new Event('storage'));
     } catch {
       // Target-date persistence is optional; the current screen remains usable.
     }
+  };
+
+  const applyContextChanges = () => {
+    pendingContextRef.current = false;
+    setPendingContext(false);
+    const inFlight = dailyRefreshRef.current;
+    if (inFlight) void inFlight.finally(() => refreshDailyContext());
+    else void refreshDailyContext();
   };
 
   const openTargetDatePicker = () => {
@@ -746,7 +670,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
   const tagOptions = [...new Set([...recentTags, ...selectedTags, ...FEEDBACK_TAG_OPTIONS])];
 
   return (
-    <div className={`min-h-screen bg-[#fbf9f4] text-[#1b1c19] pb-[100px] ${isCompareMode ? 'pt-[250px]' : 'pt-[160px]'}`}>
+    <div className="min-h-screen bg-[#fbf9f4] text-[#1b1c19] pb-[100px]">
       {/* Side Drawer Menu */}
       <SideDrawer
         isOpen={isDrawerOpen}
@@ -757,7 +681,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       />
 
       {/* Header */}
-      <header className="fixed inset-x-0 top-0 z-40 bg-[#fbf9f4]/95 backdrop-blur-md px-5 py-2.5 flex flex-col items-center border-b border-[#e4e2dd]">
+      <header className="sticky top-0 z-40 bg-[#fbf9f4]/95 backdrop-blur-md px-5 py-2.5 flex flex-col items-center border-b border-[#e4e2dd]">
         <div className="w-full flex flex-col gap-1 max-w-md mx-auto">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-4">
@@ -786,27 +710,10 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
             </div>
           </div>
           <div className="h-px bg-[#c4c6cd]/30 w-full mt-2"></div>
-          <div className="flex items-center justify-between mt-2 font-semibold">
+          <div className="flex items-center mt-2 font-semibold">
             <h1 className="font-serif-display text-[20px] sm:text-[22px] text-[#162839] tracking-tight font-semibold flex items-center gap-1">
               今日推荐 <span className="font-normal opacity-50 text-xs sm:text-sm">Daily Picks</span>
             </h1>
-            <button
-              onClick={() => {
-                const nextMode = !isCompareMode;
-                setIsCompareMode(nextMode);
-                if (nextMode && selectedCompareKeys.length < 2) {
-                  setSelectedCompareKeys(['safe', 'fresh']);
-                }
-              }}
-              className={`text-xs font-bold px-3 py-1 rounded-full border transition-all flex items-center gap-1 shadow-2xs ${
-                isCompareMode
-                  ? 'bg-[#162839] text-white border-[#162839]'
-                  : 'bg-white text-[#162839] border-[#162839]/40 hover:bg-[#162839]/10'
-              }`}
-            >
-              <span className="material-symbols-outlined text-sm">compare_arrows</span>
-              {isCompareMode ? '退出对比' : '对比模式'}
-            </button>
           </div>
           <label className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-[#74777d]">
             <span className="shrink-0">目标日期（今天起 14 天内）</span>
@@ -814,8 +721,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
               ref={dateInputRef}
               type="date"
               value={targetDate}
-              min={new Date().toISOString().slice(0, 10)}
-              max={new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)}
+              min={localTodayDate()}
+              max={localTodayDate(new Date(Date.now() + 14 * 86_400_000))}
               onChange={(event) => changeTargetDate(event.target.value)}
               className="sr-only"
               tabIndex={-1}
@@ -824,11 +731,22 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
             <button
               type="button"
               onClick={openTargetDatePicker}
-              className="text-[10px] font-normal text-[#74777d] underline-offset-2 hover:text-[#162839] hover:underline"
+              aria-label="选择目标日期"
+              className="rounded border border-[#9a442a]/60 bg-[#9a442a]/10 px-2 py-0.5 text-[10px] font-normal text-[#74777d] hover:border-[#9a442a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#9a442a]"
             >
+              <span className="material-symbols-outlined mr-0.5 align-middle text-[12px] text-[#9a442a]">calendar_month</span>
               {formatTargetDateLabel(targetDate)}
             </button>
           </label>
+          {pendingContext && (
+            <button
+              type="button"
+              onClick={applyContextChanges}
+              className="self-end rounded-full bg-[#9a442a] px-3 py-1 text-[10px] font-semibold text-white"
+            >
+              更新天气与推荐
+            </button>
+          )}
           {locationCandidates.length > 0 && (
             <div className="mt-2 rounded border border-[#c4c6cd]/50 bg-white p-2">
               <p className="mb-1 text-[10px] font-semibold text-[#9a442a]">请选择具体城市或区县</p>
@@ -852,46 +770,6 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
             </div>
           )}
 
-          {/* Comparison Banner when Comparison Mode is active */}
-          {isCompareMode && (
-            <div className="mt-3 bg-[#162839]/5 border border-[#162839]/20 rounded-xl p-2.5 flex flex-col gap-2 shadow-2xs animate-fade-in">
-              <div className="flex items-center justify-between text-xs text-[#162839]">
-                <div className="flex items-center gap-1 font-bold text-[11px]">
-                  <span className="material-symbols-outlined text-sm text-[#9a442a]">compare_arrows</span>
-                  <span>对比模式 ({selectedCompareKeys.length}/2)</span>
-                </div>
-                <div className="flex gap-1">
-                  {(['safe', 'fresh', 'stretch'] as const).map((k) => {
-                    const isSel = selectedCompareKeys.includes(k);
-                    const name = k === 'safe' ? '稳妥' : k === 'fresh' ? '新鲜' : '突破';
-                    return (
-                      <button
-                        key={k}
-                        onClick={() => toggleCompareKey(k)}
-                        className={`text-[10px] px-2 py-0.5 rounded font-bold border transition-all ${
-                          isSel
-                            ? 'bg-[#162839] text-white border-[#162839]'
-                            : 'bg-white text-[#74777d] border-[#c4c6cd]'
-                        }`}
-                      >
-                        {isSel ? `✓ ${name}` : `+ ${name}`}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {selectedCompareKeys.length === 2 && (
-                <button
-                  onClick={() => setIsCompareModalOpen(true)}
-                  className="w-full bg-[#9a442a] text-white text-xs font-bold py-1.5 rounded-lg hover:opacity-90 transition-opacity shadow-xs flex items-center justify-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                  查看【{selectedCompareKeys[0] === 'safe' ? '稳妥' : selectedCompareKeys[0] === 'fresh' ? '新鲜' : '突破'} vs {selectedCompareKeys[1] === 'safe' ? '稳妥' : selectedCompareKeys[1] === 'fresh' ? '新鲜' : '突破'}】 AI 对比分析
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </header>
 
@@ -917,23 +795,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
 
           return (
             <section className="py-12 px-6 flex flex-col items-center border-b border-[#e4e2dd]/50 relative">
-              <div className="absolute top-4 inset-x-6 flex justify-between items-center z-20">
-                <button
-                  onClick={() => {
-                    if (!isCompareMode) setIsCompareMode(true);
-                    toggleCompareKey('safe');
-                  }}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 shadow-2xs ${
-                    selectedCompareKeys.includes('safe')
-                      ? 'bg-[#162839] text-white border-[#162839]'
-                      : 'bg-white/80 text-[#162839] border-[#162839]/30 hover:bg-[#162839] hover:text-white'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-xs">
-                    {selectedCompareKeys.includes('safe') ? 'check_box' : 'add_box'}
-                  </span>
-                  {selectedCompareKeys.includes('safe') ? '已选对比 (Look 01)' : '+ 加入对比'}
-                </button>
+              <div className="absolute top-4 inset-x-6 flex justify-end items-center z-20">
                 <button
                   onClick={(e) => toggleLike('safe', e)}
                   className="p-1.5 rounded-full hover:bg-black/5 transition-colors bg-white/60 border border-[#c4c6cd]/30"
@@ -1016,23 +878,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
 
           return (
             <section className="py-12 px-6 flex flex-col items-center border-b border-[#e4e2dd]/50 relative">
-              <div className="absolute top-4 inset-x-6 flex justify-between items-center z-20">
-                <button
-                  onClick={() => {
-                    if (!isCompareMode) setIsCompareMode(true);
-                    toggleCompareKey('fresh');
-                  }}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 shadow-2xs ${
-                    selectedCompareKeys.includes('fresh')
-                      ? 'bg-[#162839] text-white border-[#162839]'
-                      : 'bg-white/80 text-[#162839] border-[#162839]/30 hover:bg-[#162839] hover:text-white'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-xs">
-                    {selectedCompareKeys.includes('fresh') ? 'check_box' : 'add_box'}
-                  </span>
-                  {selectedCompareKeys.includes('fresh') ? '已选对比 (Look 02)' : '+ 加入对比'}
-                </button>
+              <div className="absolute top-4 inset-x-6 flex justify-end items-center z-20">
                 <button
                   onClick={(e) => toggleLike('fresh', e)}
                   className="p-1.5 rounded-full hover:bg-black/5 transition-colors bg-white/60 border border-[#c4c6cd]/30"
@@ -1115,23 +961,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
 
           return (
             <section className="py-12 px-6 flex flex-col items-center relative">
-              <div className="absolute top-4 inset-x-6 flex justify-between items-center z-20">
-                <button
-                  onClick={() => {
-                    if (!isCompareMode) setIsCompareMode(true);
-                    toggleCompareKey('stretch');
-                  }}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 shadow-2xs ${
-                    selectedCompareKeys.includes('stretch')
-                      ? 'bg-[#162839] text-white border-[#162839]'
-                      : 'bg-white/80 text-[#162839] border-[#162839]/30 hover:bg-[#162839] hover:text-white'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-xs">
-                    {selectedCompareKeys.includes('stretch') ? 'check_box' : 'add_box'}
-                  </span>
-                  {selectedCompareKeys.includes('stretch') ? '已选对比 (Look 03)' : '+ 加入对比'}
-                </button>
+              <div className="absolute top-4 inset-x-6 flex justify-end items-center z-20">
                 <button
                   onClick={(e) => toggleLike('stretch', e)}
                   className="p-1.5 rounded-full hover:bg-black/5 transition-colors bg-white/60 border border-[#c4c6cd]/30"
@@ -1361,207 +1191,6 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
           </div>
         </div>
       )}
-
-      {/* Look PK Comparison Modal */}
-      {isCompareModalOpen && selectedCompareKeys.length === 2 && (() => {
-        const keyA = selectedCompareKeys[0];
-        const keyB = selectedCompareKeys[1];
-        const analysis = getAIComparisonAnalysis(keyA, keyB);
-        const lookA = analysis.lookA;
-        const lookB = analysis.lookB;
-
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 animate-fade-in overflow-y-auto">
-            <div className="bg-[#fbf9f4] p-4 sm:p-5 max-w-md w-full rounded-2xl border border-[#162839] shadow-2xl relative my-auto max-h-[92vh] flex flex-col">
-              {/* Modal Header */}
-              <div className="flex justify-between items-center pb-3 border-b border-[#c4c6cd]/40 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="bg-[#9a442a] text-white font-mono text-[9px] uppercase px-2 py-0.5 rounded font-bold tracking-wider">
-                    AI Look PK
-                  </span>
-                  <h3 className="text-xs font-bold text-[#162839]">Look 方案对比与 AI 风格差异</h3>
-                </div>
-                <button
-                  onClick={() => setIsCompareModalOpen(false)}
-                  className="text-[#74777d] hover:text-[#162839] p-1 rounded-full hover:bg-black/5"
-                >
-                  <span className="material-symbols-outlined text-lg">close</span>
-                </button>
-              </div>
-
-              {/* Modal Body - Scrollable */}
-              <div className="overflow-y-auto my-3 space-y-3.5 pr-1 flex-1">
-                {/* Side by Side Look Comparison Cards */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  {/* Look A Card */}
-                  <div className="bg-white p-2.5 rounded-xl border border-[#c4c6cd]/50 shadow-2xs flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="bg-[#162839]/10 text-[#162839] text-[9px] font-bold px-1.5 py-0.5 rounded font-mono">
-                          {lookA.tierName}
-                        </span>
-                        <span className="text-[9px] text-[#9a442a] font-bold">{lookA.tag}</span>
-                      </div>
-                      <div className="aspect-3/4 rounded-lg overflow-hidden border border-[#c4c6cd]/30 bg-[#f8f6f0] my-1.5 relative">
-                        <img src={lookA.imageUrl} alt={lookA.title} className="w-full h-full object-cover" />
-                      </div>
-                      <p className="text-[10px] text-[#162839] font-bold leading-tight line-clamp-2 min-h-[26px]">
-                        {lookA.description}
-                      </p>
-                    </div>
-
-                    {/* Items Breakdown */}
-                    <div className="mt-2 pt-2 border-t border-[#e4e2dd]/60 space-y-1">
-                      <span className="text-[9px] text-[#74777d] font-bold block">单品构成:</span>
-                      <div className="grid grid-cols-3 gap-1">
-                        {lookA.items.map((item, i) => (
-                          <div key={i} className="flex flex-col items-center text-center">
-                            <img src={item.img} alt={item.name} className="w-full aspect-square object-cover rounded border border-[#c4c6cd]/30 bg-[#f8f6f0]" />
-                            <span className="text-[8px] text-[#43474c] truncate w-full mt-0.5">{item.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Look B Card */}
-                  <div className="bg-white p-2.5 rounded-xl border border-[#c4c6cd]/50 shadow-2xs flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="bg-[#162839]/10 text-[#162839] text-[9px] font-bold px-1.5 py-0.5 rounded font-mono">
-                          {lookB.tierName}
-                        </span>
-                        <span className="text-[9px] text-[#9a442a] font-bold">{lookB.tag}</span>
-                      </div>
-                      <div className="aspect-3/4 rounded-lg overflow-hidden border border-[#c4c6cd]/30 bg-[#f8f6f0] my-1.5 relative">
-                        <img src={lookB.imageUrl} alt={lookB.title} className="w-full h-full object-cover" />
-                      </div>
-                      <p className="text-[10px] text-[#162839] font-bold leading-tight line-clamp-2 min-h-[26px]">
-                        {lookB.description}
-                      </p>
-                    </div>
-
-                    {/* Items Breakdown */}
-                    <div className="mt-2 pt-2 border-t border-[#e4e2dd]/60 space-y-1">
-                      <span className="text-[9px] text-[#74777d] font-bold block">单品构成:</span>
-                      <div className="grid grid-cols-3 gap-1">
-                        {lookB.items.map((item, i) => (
-                          <div key={i} className="flex flex-col items-center text-center">
-                            <img src={item.img} alt={item.name} className="w-full aspect-square object-cover rounded border border-[#c4c6cd]/30 bg-[#f8f6f0]" />
-                            <span className="text-[8px] text-[#43474c] truncate w-full mt-0.5">{item.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* AI Analysis Box */}
-                <div className="bg-[#f5f3ee] p-3.5 rounded-xl border border-[#162839]/20 space-y-3">
-                  <div className="flex items-center gap-1.5 pb-2 border-b border-[#c4c6cd]/40">
-                    <span className="material-symbols-outlined text-base text-[#9a442a]">auto_awesome</span>
-                    <h4 className="text-xs font-bold text-[#162839]">AI 建议的分析对比框</h4>
-                  </div>
-
-                  {/* Summary sentence */}
-                  <p className="text-[11px] text-[#162839] font-medium leading-relaxed bg-white p-2.5 rounded-lg border border-[#c4c6cd]/30 shadow-2xs">
-                    {analysis.summary}
-                  </p>
-
-                  {/* Dimension Comparison Score Bars */}
-                  <div className="space-y-2 bg-white p-2.5 rounded-lg border border-[#c4c6cd]/30 text-[10px]">
-                    <div>
-                      <div className="flex justify-between text-[#43474c] font-bold mb-1">
-                        <span>👔 正式度与干练指数 (Formality)</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <div className="flex justify-between text-[9px] text-[#162839] mb-0.5 font-medium">
-                            <span>{lookA.tierName.split(' ')[0]}</span>
-                            <span>{analysis.formalityA}%</span>
-                          </div>
-                          <div className="w-full bg-[#e4e2dd] h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-[#162839] h-full" style={{ width: `${analysis.formalityA}%` }}></div>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex justify-between text-[9px] text-[#162839] mb-0.5 font-medium">
-                            <span>{lookB.tierName.split(' ')[0]}</span>
-                            <span>{analysis.formalityB}%</span>
-                          </div>
-                          <div className="w-full bg-[#e4e2dd] h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-[#9a442a] h-full" style={{ width: `${analysis.formalityB}%` }}></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-[#43474c] font-bold mb-1">
-                        <span>☕ 视觉松弛感与亲和度 (Relaxation)</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <div className="flex justify-between text-[9px] text-[#162839] mb-0.5 font-medium">
-                            <span>{lookA.tierName.split(' ')[0]}</span>
-                            <span>{analysis.relaxA}%</span>
-                          </div>
-                          <div className="w-full bg-[#e4e2dd] h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-[#162839] h-full" style={{ width: `${analysis.relaxA}%` }}></div>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex justify-between text-[9px] text-[#162839] mb-0.5 font-medium">
-                            <span>{lookB.tierName.split(' ')[0]}</span>
-                            <span>{analysis.relaxB}%</span>
-                          </div>
-                          <div className="w-full bg-[#e4e2dd] h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-[#9a442a] h-full" style={{ width: `${analysis.relaxB}%` }}></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Highlights Breakdown */}
-                  <div className="space-y-1.5 text-[10px]">
-                    <div className="bg-white p-2 rounded-lg border border-[#c4c6cd]/30">
-                      <span className="font-bold text-[#162839] block mb-0.5">✦ 核心材质与轮廓差异:</span>
-                      <p className="text-[10px] text-[#162839]">{analysis.highlightA}</p>
-                      <p className="text-[10px] text-[#9a442a] mt-1">{analysis.highlightB}</p>
-                    </div>
-
-                    <div className="bg-[#9a442a]/10 p-2 rounded-lg border border-[#9a442a]/20 text-[#162839]">
-                      <span className="font-bold text-[#9a442a] block mb-0.5">💡 AI 穿搭场景建议:</span>
-                      <p className="text-[10px] text-[#162839] leading-normal">{analysis.occasionAdvice}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="pt-2 border-t border-[#c4c6cd]/40 flex gap-2 shrink-0">
-                <button
-                  onClick={() => setIsCompareModalOpen(false)}
-                  className="flex-1 border border-[#162839] text-[#162839] py-2 rounded-lg text-xs font-bold hover:bg-[#162839]/5 transition-colors"
-                >
-                  调整选方案
-                </button>
-                <button
-                  onClick={() => {
-                    setIsCompareModalOpen(false);
-                    triggerToast(`✨ 已选定【${lookA.tierName.split(' ')[0]} vs ${lookB.tierName.split(' ')[0]}】对比方案！`);
-                  }}
-                  className="flex-1 bg-[#162839] text-white py-2 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity shadow-xs flex items-center justify-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-sm">check_circle</span>
-                  采纳推荐
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Unified Bottom Navigation Bar */}
       <BottomNav currentScreen="today" onNavigate={onNavigate} />

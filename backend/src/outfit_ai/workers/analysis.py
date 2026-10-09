@@ -1,4 +1,5 @@
 import json
+from threading import BoundedSemaphore
 
 from sqlalchemy import update
 
@@ -9,6 +10,8 @@ from ..services.categories import canonical_category
 from ..services.vision import extract
 
 THICKNESS_TAGS = {"轻薄", "适中", "厚实"}
+# shortcut: this cap is process-local; add cross-process admission control if API workers multiply.
+_ANALYSIS_SLOTS = BoundedSemaphore(2)
 
 
 def analyze_item(item_id: str) -> None:
@@ -33,7 +36,8 @@ def analyze_item(item_id: str) -> None:
             return
         try:
             analysis_path = ensure_background_removed(item.image_path)
-            attributes, raw = extract(analysis_path)
+            with _ANALYSIS_SLOTS:
+                attributes, raw = extract(analysis_path)
             for field in (
                 "name",
                 "category",

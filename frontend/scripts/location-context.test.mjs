@@ -3,7 +3,7 @@ import test from "node:test";
 
 import * as location from "../src/lib/location.mjs";
 
-const { resolveLocationContext, saveLocationCandidate } = location;
+const { localTodayDate, resolveLocationContext, saveLocationCandidate } = location;
 
 const memoryStorage = (initial = {}) => {
   const values = new Map(Object.entries(initial));
@@ -33,6 +33,7 @@ test("uses rounded current coordinates when permission succeeds", async () => {
   assert.equal(context.latitude, 31.23);
   assert.equal(context.longitude, 121.474);
   assert.equal(context.source, "current");
+  assert.equal(context.target_date, localTodayDate(new Date("2026-07-31T08:00:00+08:00")));
   assert.equal(receivedOptions.enableHighAccuracy, true);
   assert.equal(receivedOptions.maximumAge, 5 * 60 * 1000);
 });
@@ -45,7 +46,7 @@ test("uses an explicit manual city override before browser location", async () =
     storage: memoryStorage({ OUTFIT_AI_CITY: "杭州", OUTFIT_AI_LOCATION_MODE: "manual" }),
   });
 
-  assert.deepEqual(context, { city: "杭州", source: "manual" });
+  assert.deepEqual(context, { city: "杭州", source: "manual", target_date: localTodayDate() });
 });
 
 test("uses the coordinates of the selected city candidate", async () => {
@@ -66,7 +67,17 @@ test("uses the coordinates of the selected city candidate", async () => {
     latitude: 50.24,
     longitude: 120.18,
     source: "manual",
+    target_date: localTodayDate(),
   });
+});
+
+test("uses municipality default weather even if an older candidate stored coordinates", async () => {
+  const storage = memoryStorage();
+  saveLocationCandidate({ name: "上海", latitude: 25.04, longitude: 102.71 }, storage);
+
+  const context = await resolveLocationContext({ storage });
+
+  assert.deepEqual(context, { city: "上海", source: "manual", target_date: localTodayDate() });
 });
 
 test("falls back when the browser never resolves the location callback", async () => {
@@ -79,7 +90,7 @@ test("falls back when the browser never resolves the location callback", async (
     new Promise((resolve) => setTimeout(() => resolve("application timeout"), 50)),
   ]);
 
-  assert.deepEqual(context, { city: "上海", source: "manual" });
+  assert.deepEqual(context, { city: "上海", source: "manual", target_date: localTodayDate() });
 });
 
 test("falls back from denied location to cached coordinates, then manual city", async () => {
@@ -103,7 +114,7 @@ test("falls back from denied location to cached coordinates, then manual city", 
     storage,
     now: () => new Date("2026-07-31T08:00:00.000Z"),
   });
-  assert.deepEqual(manual, { city: "上海", source: "manual" });
+  assert.deepEqual(manual, { city: "上海", source: "manual", target_date: localTodayDate(new Date("2026-07-31T08:00:00.000Z")) });
 });
 
 test("does not reuse a stale location cache after the cache window", async () => {
@@ -120,7 +131,20 @@ test("does not reuse a stale location cache after the cache window", async () =>
     now: () => new Date("2026-07-31T10:00:00.000Z"),
   });
 
-  assert.deepEqual(context, { city: "北京", source: "manual" });
+  assert.deepEqual(context, { city: "北京", source: "manual", target_date: localTodayDate(new Date("2026-07-31T10:00:00.000Z")) });
+});
+
+test("defaults to the local calendar day when the saved target is invalid", async () => {
+  const today = new Date(2026, 9, 10, 23, 30);
+  const context = await resolveLocationContext({
+    storage: memoryStorage({
+      OUTFIT_AI_CITY: "上海",
+      OUTFIT_AI_LOCATION_MODE: "manual",
+      OUTFIT_AI_TARGET_DATE: "2026-09-01",
+    }),
+    now: () => today,
+  });
+  assert.equal(context.target_date, "2026-10-10");
 });
 
 test("loads the daily prepared recommendation without forcing regeneration", async () => {

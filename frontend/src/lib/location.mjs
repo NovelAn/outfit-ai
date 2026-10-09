@@ -6,6 +6,10 @@ const SELECTED_LOCATION_KEY = "OUTFIT_AI_SELECTED_LOCATION";
 const CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const GEOLOCATION_TIMEOUT_MS = 8_000;
 const GEOLOCATION_MAX_AGE_MS = 5 * 60 * 1000;
+const MUNICIPALITIES = new Set(["上海", "北京", "天津", "重庆"]);
+
+export const localTodayDate = (now = new Date()) =>
+  `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
 const validTargetDate = (value, now = new Date()) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
@@ -19,15 +23,14 @@ const validTargetDate = (value, now = new Date()) => {
 const readTargetDate = (storage, now) => {
   try {
     const value = storage?.getItem(TARGET_DATE_KEY);
-    return validTargetDate(value, now()) ? value : null;
+    return validTargetDate(value, now()) ? value : localTodayDate(now());
   } catch {
-    return null;
+    return localTodayDate(now());
   }
 };
 
 const withTargetDate = (context, storage, now) => {
-  const targetDate = readTargetDate(storage, now);
-  return targetDate ? { ...context, target_date: targetDate } : context;
+  return { ...context, target_date: readTargetDate(storage, now) };
 };
 
 const readSelectedLocation = (storage) => {
@@ -117,7 +120,9 @@ export async function resolveLocationContext({
     const city = storage?.getItem(CITY_KEY)?.trim();
     const selected = readSelectedLocation(storage);
     if (mode === "manual" && city) {
-      const context = selected?.city === city ? { ...selected, source: "manual" } : { city, source: "manual" };
+      const context = selected?.city === city && !MUNICIPALITIES.has(city.replace(/市$/, ""))
+        ? { ...selected, source: "manual" }
+        : { city, source: "manual" };
       return withTargetDate(context, storage, now);
     }
   } catch {

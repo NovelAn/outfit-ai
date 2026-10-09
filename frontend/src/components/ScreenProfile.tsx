@@ -911,7 +911,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
             {modalType === 'settings' && (
               <div className="py-4 text-xs text-[#43474c] space-y-2">
                 <p>· 已开启深色模式适配与 AI 自动日杂调色引擎。</p>
-                <p>· 当前推荐模式：3档对比推荐 (SAFE / FRESH / STRETCH)。</p>
+                <p>· 当前推荐模式：3档风格推荐 (SAFE / FRESH / STRETCH)。</p>
                 <p>· 当前引擎版本：v2.4.0 (Build 894-FX)。</p>
               </div>
             )}

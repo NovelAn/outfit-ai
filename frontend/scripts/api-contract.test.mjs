@@ -378,7 +378,8 @@ test("uses a vertical ordered Look flow", () => {
   assert.match(today, /refreshTier: tier/);
   assert.doesNotMatch(today, /compact-look-collage/);
   assert.doesNotMatch(today, /look-item-rail/);
-  assert.match(today, /header className="fixed inset-x-0 top-0/);
+  assert.match(today, /header className="sticky top-0/);
+  assert.doesNotMatch(today, /isCompareMode|selectedCompareKeys|isCompareModalOpen|AI Look PK/);
 });
 
 test("shows the selected recommendation item image and attributes in its detail modal", () => {
@@ -397,9 +398,26 @@ test("keeps wardrobe item detail concise while showing season and thickness tags
 test("keeps mobile header and bottom navigation fixed during scrolling", () => {
   const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
   const nav = readFileSync(new URL("../src/components/BottomNav.tsx", import.meta.url), "utf8");
-  assert.match(today, /header className="fixed inset-x-0 top-0/);
+  assert.match(today, /header className="sticky top-0/);
   assert.match(nav, /nav aria-label="主导航" className="fixed inset-x-0 bottom-0/);
   assert.match(nav, /safe-area-inset-bottom/);
+});
+
+test("defers location and date requests until the user applies the pending context", () => {
+  const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
+  assert.match(today, /pendingContextRef\.current = true/);
+  assert.match(today, /更新天气与推荐/);
+  assert.match(today, /pendingContextRef\.current = false/);
+  const storageHandler = today.match(/const handleStorageChange = \(\) => \{([\s\S]*?)\n      \};/);
+  assert.ok(storageHandler, "Today must keep a dedicated storage-change handler");
+  assert.doesNotMatch(storageHandler[1], /refreshDailyContext\(\)/);
+});
+
+test("shows per-file batch progress and failure details", () => {
+  const wardrobe = readFileSync(new URL("../src/components/ScreenWardrobe.tsx", import.meta.url), "utf8");
+  assert.match(wardrobe, /batchProgress/);
+  assert.match(wardrobe, /file\.name/);
+  assert.match(wardrobe, /status === 'rejected'/);
 });
 
 test("refreshes Today when a mobile home-screen app resumes", () => {

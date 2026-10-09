@@ -44,7 +44,8 @@ assert.match(
 assert.match(wardrobe, /首次处理.*去背景模型/, "wardrobe must explain slow first-time setup");
 assert.match(wardrobe, /grid-cols-3/, "mobile wardrobe must show three compact columns");
 assert.match(wardrobe, /aspect-\[4\/5\]/, "wardrobe thumbnails must use a compact fixed ratio");
-assert.match(wardrobe, /settleInPairs\(Array\.from\(files\)/, "wardrobe uploads must limit background-processing concurrency");
+assert.match(wardrobe, /settleInPairs\(files\.map\(\(file, index\)/, "wardrobe must submit every selected file with bounded upload concurrency");
+assert.ok(wardrobe.indexOf("const uploads = await settleInPairs") < wardrobe.indexOf("const results = await Promise.all"), "all wardrobe photos must be submitted before waiting for slow analysis");
 assert.match(wardrobe, /编辑信息/, "wardrobe details must expose item editing");
 assert.match(wardrobe, /删除单品/, "wardrobe details must expose item deletion");
 assert.match(wardrobe, /api\.updateWardrobe\(/, "wardrobe editing must call the update API");

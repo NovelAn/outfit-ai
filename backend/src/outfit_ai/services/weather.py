@@ -43,6 +43,12 @@ _PROVINCE_DESTINATIONS = {
         {"name": "呼和浩特市", "latitude": 40.818, "longitude": 111.66, "admin1": "内蒙古自治区"},
     ],
 }
+_MUNICIPALITY_CENTERS = {
+    "上海": (31.230, 121.474),
+    "北京": (39.904, 116.407),
+    "天津": (39.084, 117.201),
+    "重庆": (29.563, 106.552),
+}
 
 
 class WeatherInputError(ValueError):
@@ -200,7 +206,29 @@ def _nominatim_city_candidates(client: httpx.Client, query: str) -> list[dict]:
     chinese = [candidate for candidate in candidates if candidate.get("country") == "中国"]
     pool = chinese or candidates
     administrative = [candidate for candidate in administrative if candidate in pool]
-    return administrative or pool
+    municipality = next(
+        (name for name in _MUNICIPALITY_CENTERS if query.startswith(name) and query != name),
+        None,
+    )
+    if municipality:
+        administrative = [
+            candidate
+            for candidate in administrative
+            if candidate["admin1"] in {municipality, f"{municipality}市"}
+        ]
+        pool = [
+            candidate
+            for candidate in pool
+            if candidate["admin1"] in {municipality, f"{municipality}市"}
+        ]
+    seen = set()
+    unique = []
+    for candidate in administrative or pool:
+        identity = (candidate["name"], candidate["admin1"], candidate["admin2"])
+        if identity not in seen:
+            unique.append(candidate)
+            seen.add(identity)
+    return unique
 
 
 def _default_open_meteo_candidate(query: str, results: list[dict]) -> dict | None:
@@ -210,11 +238,13 @@ def _default_open_meteo_candidate(query: str, results: list[dict]) -> dict | Non
         return None
     if chinese_results and pool[0].get("country_code") != "CN":
         return None
-    admin1s = {result.get("admin1") for result in pool if result.get("admin1")}
-    if not admin1s or len(admin1s) > 1:
-        return None
     exact = [result for result in pool if result.get("name") == query]
     if exact:
+        admin1s = {result.get("admin1") for result in exact if result.get("admin1")}
+        if not admin1s or len(admin1s) > 1:
+            return None
+        if len(exact) == 1:
+            return exact[0]
         exact_with_admin2 = [result for result in exact if result.get("admin2")]
         if len(exact_with_admin2) != len(exact):
             return None
@@ -233,6 +263,9 @@ def _default_open_meteo_candidate(query: str, results: list[dict]) -> dict | Non
             ranked[1].get("population") or 0
         ):
             return ranked[0]
+        return None
+    admin1s = {result.get("admin1") for result in pool if result.get("admin1")}
+    if not admin1s or len(admin1s) > 1:
         return None
     pool_with_admin2 = [result for result in pool if result.get("admin2")]
     if len(pool_with_admin2) != len(pool):
@@ -276,48 +309,53 @@ def get_weather(
             if latitude is None or longitude is None:
                 if not city:
                     raise WeatherInputError("需要城市或经纬度")
-                result = (
-                    client.get(
-                        "https://geocoding-api.open-meteo.com/v1/search",
-                        params={"name": city, "count": 5, "language": "zh"},
+                municipality = _MUNICIPALITY_CENTERS.get(city.strip().removesuffix("市"))
+                if municipality:
+                    latitude, longitude = municipality
+                else:
+                    result = (
+                        client.get(
+                            "https://geocoding-api.open-meteo.com/v1/search",
+                            params={"name": city, "count": 5, "language": "zh"},
+                        )
+                        .raise_for_status()
+                        .json()
+                        .get("results", [])
                     )
-                    .raise_for_status()
-                    .json()
-                    .get("results", [])
-                )
-                if not result:
-                    resolved = _nominatim_city_candidates(client, city)
-                    if len(resolved) == 1:
-                        result = resolved
-                    elif len(resolved) > 1:
-                        raise WeatherAmbiguousError(resolved)
-                    else:
-                        raise WeatherInputError(f"找不到城市：{city}")
-                if len(result) > 1:
-                    resolved = _nominatim_city_candidates(client, city)
-                    if len(resolved) == 1:
-                        result = resolved
-                    else:
+                    if not result:
+                        resolved = _nominatim_city_candidates(client, city)
+                        if len(resolved) == 1:
+                            result = resolved
+                        elif len(resolved) > 1:
+                            raise WeatherAmbiguousError(resolved)
+                        else:
+                            raise WeatherInputError(f"找不到城市：{city}")
+                    if len(result) > 1:
                         default = _default_open_meteo_candidate(city, result)
                         if default is None:
-                            candidates = resolved or [
-                                {
-                                    key: candidate[key]
-                                    for key in (
-                                        "name",
-                                        "latitude",
-                                        "longitude",
-                                        "admin1",
-                                        "admin2",
-                                        "country",
-                                    )
-                                    if candidate.get(key) is not None
-                                }
-                                for candidate in result
-                            ]
-                            raise WeatherAmbiguousError(candidates)
-                        result = [default]
-                latitude, longitude = result[0]["latitude"], result[0]["longitude"]
+                            resolved = _nominatim_city_candidates(client, city)
+                            if len(resolved) == 1:
+                                result = resolved
+                            else:
+                                candidates = resolved or [
+                                    {
+                                        key: candidate[key]
+                                        for key in (
+                                            "name",
+                                            "latitude",
+                                            "longitude",
+                                            "admin1",
+                                            "admin2",
+                                            "country",
+                                        )
+                                        if candidate.get(key) is not None
+                                    }
+                                    for candidate in result
+                                ]
+                                raise WeatherAmbiguousError(candidates)
+                        else:
+                            result = [default]
+                    latitude, longitude = result[0]["latitude"], result[0]["longitude"]
                 latitude, longitude = round(latitude, 3), round(longitude, 3)
             payload = (
                 client.get(

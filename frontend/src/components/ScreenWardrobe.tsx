@@ -17,6 +17,12 @@ interface ScreenWardrobeProps {
   onNavigate: (screen: ScreenId) => void;
 }
 
+type BatchProgress = {
+  name: string;
+  status: 'uploading' | 'uploaded' | 'processing' | 'ready' | 'failed';
+  detail: string;
+};
+
 const INITIAL_ITEMS: OutfitItem[] = [
   {
     id: '1',
@@ -173,6 +179,10 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [extractCount, setExtractCount] = useState<number>(0);
+  const [extractProgress, setExtractProgress] = useState<string>('');
+  const [batchProgress, setBatchProgress] = useState<BatchProgress[]>([]);
+  const [batchResult, setBatchResult] = useState<string>('');
+  const batchRunning = useRef(false);
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -251,43 +261,88 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
   }, []);
 
   const handleBatchImportClick = () => {
-    if (fileInputRef.current) {
+    if (!batchRunning.current && fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (batchRunning.current) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
+    batchRunning.current = true;
     const count = files.length;
     setExtractCount(count);
+    setBatchProgress(files.map((file) => ({ name: file.name, status: 'uploading', detail: '等待上传' })));
+    setBatchResult('');
+    setExtractProgress(`正在上传 0/${count} 张`);
     setIsExtracting(true);
 
     try {
-      const results = await settleInPairs(Array.from(files), async (file) => {
-        const uploaded = await api.uploadWardrobe(file);
-        const ready = await waitForReady(() => api.wardrobeStatus(uploaded.id));
-        const confirmed = await api.confirmWardrobe(uploaded.id, {
-          ...(ready.attributes || {}),
-          confirmed_by_user: true,
-        });
-        return { ...mapWardrobeItem(confirmed), isNew: true } as OutfitItem;
+      let uploadSettled = 0;
+      const uploads = await settleInPairs(files.map((file, index) => ({ file, index })), async ({ file, index }) => {
+        try {
+          const uploaded = await api.uploadWardrobe(file);
+          setBatchProgress((current) => current.map((entry, progressIndex) => progressIndex === index
+            ? { ...entry, status: 'uploaded', detail: '已提交，等待识别' }
+            : entry));
+          return uploaded.id as string;
+        } catch (reason) {
+          setBatchProgress((current) => current.map((entry, progressIndex) => progressIndex === index
+            ? { ...entry, status: 'failed', detail: reason instanceof Error ? reason.message : '上传失败' }
+            : entry));
+          throw reason;
+        } finally {
+          setExtractProgress(`已提交 ${++uploadSettled}/${count} 张上传`);
+        }
       });
+      let completed = uploads.filter((upload) => upload.status === 'rejected').length;
+      setExtractProgress(`正在识别，已完成 ${completed}/${count} 张`);
+      const results = await Promise.all(uploads.map(async (upload, index) => {
+        if (upload.status === 'rejected') return upload;
+        setBatchProgress((current) => current.map((entry, progressIndex) => progressIndex === index
+          ? { ...entry, status: 'processing', detail: '识别中' }
+          : entry));
+        try {
+          const ready = await waitForReady(() => api.wardrobeStatus(upload.value));
+          const confirmed = await api.confirmWardrobe(upload.value, {
+            ...(ready.attributes || {}),
+            confirmed_by_user: true,
+          });
+          setBatchProgress((current) => current.map((entry, progressIndex) => progressIndex === index
+            ? { ...entry, status: 'ready', detail: '已完成' }
+            : entry));
+          return { status: 'fulfilled' as const, value: mapWardrobeItem(confirmed) as OutfitItem };
+        } catch (reason) {
+          setBatchProgress((current) => current.map((entry, progressIndex) => progressIndex === index
+            ? { ...entry, status: 'failed', detail: reason instanceof Error ? reason.message : '识别失败' }
+            : entry));
+          return { status: 'rejected' as const, reason };
+        } finally {
+          setExtractProgress(`正在识别，已完成 ${++completed}/${count} 张`);
+        }
+      }));
       const extracted = results.flatMap((result) =>
         result.status === 'fulfilled' ? [result.value] : [],
       );
       const failed = results.length - extracted.length;
       setItems((current) => [...extracted, ...current]);
-      triggerToast(
-        failed === 0
-          ? `✨ AI 已成功从 ${count} 张真实照片中提取、去背景并分类！`
-          : `✨ 已完成 ${extracted.length} 张，${failed} 张识别失败，请稍后重试`,
-      );
+      await loadItems();
+      const failedNames = files.flatMap((file, index) => {
+        const result = results[index];
+        return result.status === 'rejected'
+          ? [`${file.name}（${result.reason instanceof Error ? result.reason.message : '处理失败'}）`]
+          : [];
+      });
+      setBatchResult(failed
+        ? `已录入 ${extracted.length}/${count} 张；未完成：${failedNames.join('、')}。若任务仍在后台处理，请勿重复上传。`
+        : `已录入全部 ${count} 张照片。`);
     } catch (error) {
-      triggerToast(error instanceof Error ? error.message : '批量识别失败');
+      setBatchResult(error instanceof Error ? error.message : '批量识别失败');
     } finally {
       setIsExtracting(false);
+      batchRunning.current = false;
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -459,6 +514,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
           </button>
           <button
             onClick={handleBatchImportClick}
+            disabled={isExtracting}
             className="text-[#9a442a] hover:opacity-80 transition-opacity flex items-center gap-1 text-xs font-semibold bg-[#f4dfcb]/30 px-2.5 py-1 rounded border border-[#9a442a]/20"
             title="批量导入真实衣橱"
           >
@@ -485,6 +541,17 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
           </div>
         )}
 
+        {batchProgress.length > 0 && (
+          <div role="status" aria-label="批量处理进度" className="rounded-lg border border-[#c4c6cd]/40 bg-white p-3 text-xs text-[#162839]">
+            {batchProgress.map((entry, index) => (
+              <div key={`${entry.name}-${index}`} className="flex items-start justify-between gap-3 py-1">
+                <span className="min-w-0 truncate">{entry.name}</span>
+                <span className={entry.status === 'failed' ? 'shrink-0 text-[#9a442a]' : 'shrink-0 text-[#74777d]'}>{entry.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {batchResult && <div role="status" className="rounded-lg border border-[#9a442a]/30 bg-white p-3 text-xs text-[#162839]">{batchResult}</div>}
         {/* AI Processing Status Banner (Appears ONLY AFTER image upload action) */}
         {isExtracting && (
           <div className="bg-[#162839] text-white p-4 rounded-lg shadow-md flex items-center gap-3 animate-pulse border border-[#9a442a]/40">
@@ -499,7 +566,7 @@ export const ScreenWardrobe: React.FC<ScreenWardrobeProps> = ({ onNavigate }) =>
                 </span>
               </div>
               <p className="text-[11px] text-gray-200">
-                正在识别 {extractCount} 张上传实拍照片的材质、材质落色与裁剪分类...
+                {extractProgress || `正在识别 ${extractCount} 张照片`}
               </p>
               <p className="text-[10px] text-gray-300 mt-1">
                 首次处理需要准备本地去背景模型，可能耗时 2–3 分钟；缓存后会明显加快。

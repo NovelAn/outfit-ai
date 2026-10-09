@@ -173,6 +173,124 @@ def test_manual_city_keeps_the_user_city_label(monkeypatch) -> None:
     assert weather.get_weather(city="上海").city == "上海"
 
 
+@pytest.mark.parametrize("city", ["上海", "上海市", "北京", "天津", "重庆"])
+def test_municipality_uses_city_center_without_searching_homonyms(monkeypatch, city) -> None:
+    forecast = {
+        "timezone": "Asia/Shanghai",
+        "current": {
+            "time": "2026-10-10T08:00",
+            "temperature_2m": 20.0,
+            "apparent_temperature": 20.0,
+            "relative_humidity_2m": 60,
+            "weather_code": 1,
+            "wind_speed_10m": 5.0,
+            "is_day": 1,
+            "precipitation": 0.0,
+            "rain": 0.0,
+        },
+        "hourly": {"time": ["2026-10-10T08:00"], "precipitation_probability": [0]},
+        "daily": {
+            "time": ["2026-10-10"],
+            "temperature_2m_max": [22.0],
+            "temperature_2m_min": [18.0],
+            "precipitation_probability_max": [0],
+            "precipitation_sum": [0.0],
+        },
+    }
+    requests = []
+
+    class CityClient(FakeClient):
+        def get(self, url, **kwargs):
+            requests.append((url, kwargs.get("params", {})))
+            if "geocoding-api" in url or "/search" in url:
+                raise AssertionError("municipality must not search unrelated namesakes")
+            return super().get(url, **kwargs)
+
+    weather._CACHE.clear()
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: CityClient(forecast, {"features": []}),
+    )
+
+    result = weather.get_weather(city=city)
+
+    assert result.city == city
+    assert result.temp == 20.0
+    forecast_params = next(params for url, params in requests if "/forecast" in url)
+    assert (forecast_params["latitude"], forecast_params["longitude"]) == (
+        weather._MUNICIPALITY_CENTERS[city.removesuffix("市")]
+    )
+
+
+def test_exact_city_outweighs_unrelated_non_exact_places() -> None:
+    result = weather._default_open_meteo_candidate(
+        "呼和浩特市",
+        [
+            {
+                "name": "呼和浩特市",
+                "admin1": "内蒙古自治区",
+                "admin2": "呼和浩特市",
+                "latitude": 40.818,
+                "longitude": 111.66,
+            },
+            {
+                "name": "呼和浩特市青年点",
+                "admin1": "云南省",
+                "admin2": "昆明市",
+                "latitude": 25.04,
+                "longitude": 102.71,
+            },
+        ],
+    )
+
+    assert result["admin1"] == "内蒙古自治区"
+
+
+def test_unique_exact_city_does_not_require_district_metadata() -> None:
+    result = weather._default_open_meteo_candidate(
+        "海拉尔",
+        [
+            {"name": "海拉尔", "admin1": "内蒙古", "latitude": 49.232, "longitude": 119.817},
+            {"name": "海拉尔青年点", "admin1": "云南省", "latitude": 25.04, "longitude": 102.71},
+        ],
+    )
+
+    assert result["latitude"] == 49.232
+
+
+def test_explicit_municipality_district_ignores_other_provinces() -> None:
+    class SearchClient:
+        def get(self, url, **kwargs):
+            return FakeResponse(
+                {
+                    "features": [
+                        {
+                            "properties": {
+                                "geocoding": {
+                                    "name": "宝山区",
+                                    "state": state,
+                                    "country": "中国",
+                                    "type": "district",
+                                }
+                            },
+                            "geometry": {"coordinates": coordinates},
+                        }
+                        for state, coordinates in [
+                            ("上海市", [121.49, 31.4]),
+                            ("云南省", [102.7, 25.0]),
+                        ]
+                    ]
+                }
+            )
+
+    candidates = weather._nominatim_city_candidates(SearchClient(), "上海宝山区")
+
+    assert [(candidate["name"], candidate["admin1"]) for candidate in candidates] == [
+        ("宝山区", "上海市")
+    ]
+
+
 def test_weather_cache_uses_rounded_coordinate_key(monkeypatch) -> None:
     forecast = {
         "timezone": "Asia/Shanghai",
@@ -577,9 +695,9 @@ def test_weather_keeps_ambiguity_when_admin2_missing_within_same_province(monkey
 
     assert {candidate["admin1"] for candidate in error.value.candidates} == {"山东省"}
 
-
     weather._CACHE.clear()
     weather._REVERSE_CITY_CACHE.clear()
+
 
 def test_weather_keeps_ambiguity_for_exact_matches_missing_admin2(monkeypatch) -> None:
     class AmbiguousClient(FakeClient):
@@ -621,9 +739,9 @@ def test_weather_keeps_ambiguity_for_exact_matches_missing_admin2(monkeypatch) -
 
     assert {candidate["admin1"] for candidate in error.value.candidates} == {"内蒙古"}
 
-
     weather._CACHE.clear()
     weather._REVERSE_CITY_CACHE.clear()
+
 
 def test_weather_keeps_ambiguity_for_non_exact_matches_missing_admin2(monkeypatch) -> None:
     class AmbiguousClient(FakeClient):

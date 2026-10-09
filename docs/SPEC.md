@@ -165,12 +165,12 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 6.3 recommend
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| GET | `/api/weather?city=&latitude=&longitude=&target_date=` | 输入经纬度先四舍五入至三位再用于 Open-Meteo、Nominatim、缓存和下游上下文；`target_date` 只能是今天至未来 14 天，天气从 16 日 forecast 的 daily 数组选择目标日；多城市候选返回 409 `{message,candidates:[{name,latitude,longitude,...}]}`，不能静默采用第一项；反向地理编码在市辖区/县场景优先显示上级直辖市名称，手动城市保留用户输入；天气内存缓存 30min，反查城市缓存 24h，反查失败不影响天气 | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,target_date,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
+| GET | `/api/weather?city=&latitude=&longitude=&target_date=` | 输入经纬度先四舍五入至三位再用于 Open-Meteo、Nominatim、缓存和下游上下文；`target_date` 只能是今天至未来 14 天，天气从 16 日 forecast 的 daily 数组选择目标日；上海/北京/天津/重庆等市级输入直接使用对应市中心，不被跨地区同名结果劫持；完整区县输入仍通过候选选择具体地点；多城市候选返回 409 `{message,candidates:[{name,latitude,longitude,...}]}`，不能静默采用第一项；反向地理编码在市辖区/县场景优先显示上级直辖市名称，手动城市保留用户输入；天气内存缓存 30min，反查城市缓存 24h，反查失败不影响天气 | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,target_date,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
 | POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,target_date?,local_date?,locked_item_ids?[],force_refresh?:false,refresh_tier?:safe|fresh|stretch}`；`target_date` 只能是今天至未来 14 天；显式城市不继承 Profile 旧坐标。每套 Look 为 3–6 件，必须含 top+bottom+shoes，叠穿和配饰按需加入、不凑数；普通请求先复用绑定同一城市/目标日期的完整三档组，再按 prepared 的坐标、温度带和降雨阈值判断复用，否则 guardrail→stylist→validator；缺少合适鞋履时仍可返回最近似完整 Look，并通过 `wardrobe_risk` 说明风险；`force_refresh=true` 且带 `refresh_tier` 时只生成目标档并复用另外两档 | 200 `{weather,safe,fresh,stretch}`；城市候选冲突时 409 `{message,candidates}` |
 
 核心类别约束（`services/validator.py` 硬护栏）：`outerwear`/`bottom`/`shoes` 三类每档每类最多 1 件单品，`top` 类别最多 2 件单品。两件上装是否构成合理的“轻薄内层 + 外层”由造型师根据体感温度、候选单品的 `category`、`thickness` 和风格判断，不再按 `t-shirt`/`shirt` 等类别名硬判：春秋衬衫外穿、薄针织搭配衬衫/外套以及外套搭配内搭均可成立；高温或单件已足够保暖时不强制增加内搭。如使用 `outerwear` 但没有 `top`，validator 拒绝并提示“含外套但缺少内搭上装”。这些硬护栏位于 `strict_quality` 之外，降级路径（`strict_quality=False`）仍会校验。
 
-城市候选分级：城市文本先查 Open-Meteo；唯一结果直接使用。多结果时用 Nominatim 的行政区结果消歧，仍无法判断时，只有同一省市区县内的近名结果（如海拉尔的各种青年点/站点）才取默认坐标；跨省同名候选（如不同省的朝阳区）返回 409 让用户选择。Open-Meteo 无结果时支持“北京朝阳区”“上海宝山区”“天津津南区”这类完整区县输入并交给 Nominatim。省份输入不使用全省平均天气；当前内置“内蒙古/内蒙古自治区”返回海拉尔区、额尔古纳市、阿尔山市、呼和浩特市候选。
+城市候选分级：上海、北京、天津、重庆等市级文本直接使用内置市中心；完整区县输入（如“北京朝阳区”“上海宝山区”“天津津南区”）交给 Open-Meteo/Nominatim 并按行政区返回候选，用户选择后才使用所选坐标。其他城市文本先查 Open-Meteo；唯一结果直接使用。多结果时用 Nominatim 的行政区结果消歧，仍无法判断时，只有同一省市区县内的近名结果（如海拉尔的各种青年点/站点）才取默认坐标；跨省同名候选（如不同省的朝阳区）返回 409 让用户选择。省份输入不使用全省平均天气；当前内置“内蒙古/内蒙古自治区”返回海拉尔区、额尔古纳市、阿尔山市、呼和浩特市候选。
 
 `recommend` 卡片结构（**无 base_score**）：
 ```json
@@ -240,7 +240,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 ## 8. 当前实现状态
 
 - 数据层：六张 SQLite 表和索引已实现，由 `init_db()` 初始化。`feedback_events` 是不可变学习事件账本，同一 Look 的多次真实修改会分别入库，重复事实不计数。
-- 真实衣物：上传、rembg、VLM、轮询、确认、列表、用户可编辑属性和删除已实现；AI 识图会初步返回 `轻薄`、`适中`、`厚实` 或空值，后台统一写入 `tags_json`，用户仍可在详情中手动修正；删除会清理数据库记录、原图与 `.nobg` 图片。当前 schema 不新增厚薄度列，前端把三档厚薄度作为受控标签保存。既有单品不自动回补厚薄度。
+- 真实衣物：上传、rembg、VLM、轮询、确认、列表、用户可编辑属性和删除已实现；前端批量导入最多并行 2 张，后端单进程模型识别最多并行 2 张；AI 识图会初步返回 `轻薄`、`适中`、`厚实` 或空值，后台统一写入 `tags_json`，用户仍可在详情中手动修正；删除会清理数据库记录、原图与 `.nobg` 图片。当前 schema 不新增厚薄度列，前端把三档厚薄度作为受控标签保存。既有单品不自动回补厚薄度。
 - 长期灵感：参考 Look 上传、VLM 分析、M3 合并 Style DNA、列表、重试、删除已实现。
 - 推荐：天气与季节硬边界、手动季节/厚薄覆盖、历史利用率覆盖、30 天精确 Look 去重、Safe/Fresh/Stretch 三档边界、M3 造型、单卡 `refresh_tier`、item_id 校验和历史记录已实现；衣橱识图返回的季节标签会在候选过滤时归一化，用户确认值优先。
 - 独立灵感：M3 提示词与 `image-01` 三图生成已实现。

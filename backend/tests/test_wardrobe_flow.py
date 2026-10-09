@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from threading import Event, Lock
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException, UploadFile
@@ -74,6 +76,54 @@ def test_upload_analyze_confirm_and_list_flow(monkeypatch, tmp_path) -> None:
 
     assert [item["id"] for item in listed] == [created["id"]]
     assert listed[0]["category"] == "top"
+
+
+def test_batch_analysis_limits_concurrent_model_calls(monkeypatch, tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'batch.db'}")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(analysis, "SessionLocal", lambda: Session(engine))
+    monkeypatch.setattr(analysis, "ensure_background_removed", lambda path: path)
+    with Session(engine) as db:
+        db.add_all(
+            WardrobeItem(
+                id=f"item-{index}", user_id="local", image_path="photo.jpg", status="pending"
+            )
+            for index in range(3)
+        )
+        db.commit()
+
+    lock = Lock()
+    first_two_started = Event()
+    release = Event()
+    active = 0
+    peak = 0
+
+    def fake_extract(path):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+            if active == 2:
+                first_two_started.set()
+        release.wait(timeout=5)
+        with lock:
+            active -= 1
+        return ClothingAttributes(name="衬衫", category="top", primary_color="白色"), "{}"
+
+    monkeypatch.setattr(analysis, "extract", fake_extract)
+    try:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            tasks = [pool.submit(analysis.analyze_item, f"item-{index}") for index in range(3)]
+            assert first_two_started.wait(timeout=5)
+            release.set()
+            for task in tasks:
+                task.result(timeout=5)
+    finally:
+        release.set()
+
+    assert peak == 2
+    with Session(engine) as db:
+        assert all(db.get(WardrobeItem, f"item-{index}").status == "ready" for index in range(3))
 
 
 def test_storage_rejects_invalid_image_and_removes_partial_file(tmp_path) -> None:
