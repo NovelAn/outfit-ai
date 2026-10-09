@@ -6,6 +6,7 @@ import * as profileApi from "../src/lib/api.mjs";
 import { lookStackLayout, orderLookItems } from "../src/lib/look-layout.mjs";
 import {
   displayWeatherForRecommendation,
+  formatTargetDateLabel,
   lookFeedbackKey,
   recommendationErrorMessage,
 } from "../src/lib/today-state.mjs";
@@ -39,6 +40,12 @@ test("labels cached recommendations when today's load fails", () => {
     /上一组缓存.*MiniMax 响应超时/,
   );
   assert.equal(recommendationErrorMessage(new Error("生成失败"), false), "生成失败");
+});
+
+test("formats a selected target date for the compact header trigger", () => {
+  assert.equal(formatTargetDateLabel("2026-10-12"), "10/12");
+  assert.equal(formatTargetDateLabel(""), "未选择");
+  assert.equal(formatTargetDateLabel("invalid"), "未选择");
 });
 
 test("does not apply an older context response after a destination switch", () => {

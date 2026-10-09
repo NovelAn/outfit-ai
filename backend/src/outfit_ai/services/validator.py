@@ -68,11 +68,6 @@ def validate_look(
     ]
     if len(top_items) > 2:
         return False, f"{look.tier} 上装最多两件单品"
-    if len(top_items) == 2 and not any(
-        (candidate_categories.get(item_id, "") or "").strip().lower() in BASE_LAYER_ALIASES
-        for item_id in top_items
-    ):
-        return False, f"{look.tier} 含两件上装时，其中一件必须是内搭 T 恤/打底"
     for category in core_category_names:
         if categories_list.count(category) > 1 and category != "top":
             return False, f"{look.tier} 在{core_category_names[category]}上只能有一件单品"
@@ -162,5 +157,4 @@ def validate_looks(
         ):
             return False, "Safe、Fresh、Stretch 必须在颜色、版型或风格标签上形成差异"
     return True, ""
-BASE_LAYER_ALIASES = {"t-shirt", "tee", "打底", "打底衫", "tank", "背心", "camisole", "undershirt"}
 

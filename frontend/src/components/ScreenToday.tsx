@@ -3,7 +3,7 @@ import { ScreenId, LookRating, FavoriteLook } from '../types';
 import { api, confirmFeedback, feedbackLearningNote, isCurrentContextRequest, requireHistoryId, splitFeedbackSignals } from '../lib/api.mjs';
 import { loadDailyRecommendation, resolveLocationContext, saveLocationCandidate } from '../lib/location.mjs';
 import { lookStackLayout, orderLookItems } from '../lib/look-layout.mjs';
-import { displayWeatherForRecommendation, lookFeedbackKey, recommendationErrorMessage } from '../lib/today-state.mjs';
+import { displayWeatherForRecommendation, formatTargetDateLabel, lookFeedbackKey, recommendationErrorMessage } from '../lib/today-state.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
 
@@ -436,6 +436,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
         if (requestId !== recommendationRequestRef.current || !isCurrentContextRequest(contextKey, activeContextKeyRef.current)) return;
         setWeather(latestWeather);
         weatherRef.current = latestWeather;
+        setTargetDate(latestWeather.target_date || latestWeather.local_date || '');
         setWeatherIsStale(false);
       } catch (error) {
         if (requestId === recommendationRequestRef.current && isCurrentContextRequest(contextKey, activeContextKeyRef.current)) {
@@ -591,12 +592,6 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
     } else {
       input.click();
     }
-  };
-
-  const formatTargetDateLabel = (value: string) => {
-    if (!value || !/^d{4}-d{2}-d{2}$/.test(value)) return '未选择';
-    const [, month, day] = value.split('-');
-    return `${Number(month)}/${Number(day)}`;
   };
 
   const toggleLike = async (id: string, e: React.MouseEvent) => {

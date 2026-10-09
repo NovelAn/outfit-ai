@@ -1,5 +1,5 @@
 from outfit_ai.schemas import ProposedLook
-from outfit_ai.services.validator import validate_looks
+from outfit_ai.services.validator import validate_look, validate_looks
 
 
 def _look(tier: str, item_ids: list[str]) -> ProposedLook:
@@ -350,7 +350,7 @@ def test_allows_two_tops_when_one_is_a_base_layer() -> None:
     assert ok, error
 
 
-def test_rejects_two_tops_without_a_base_layer() -> None:
+def test_allows_two_tops_as_generic_layered_items() -> None:
     categories = {
         "shirt-1": "shirt",
         "shirt-2": "shirt",
@@ -373,8 +373,23 @@ def test_rejects_two_tops_without_a_base_layer() -> None:
 
     ok, error = validate_looks(looks, categories)
 
+    assert ok, error
+
+
+def test_rejects_three_tops_even_when_one_is_a_base_layer() -> None:
+    categories = {
+        "tee-1": "t-shirt",
+        "shirt-1": "shirt",
+        "knit-1": "sweater",
+        "bottom-1": "bottom",
+        "shoes-1": "shoes",
+    }
+    looks = [_look("safe", ["tee-1", "shirt-1", "knit-1", "bottom-1", "shoes-1"])]
+
+    ok, error = validate_look(looks[0], categories)
+
     assert not ok
-    assert "内搭" in error
+    assert "上装最多两件" in error
 
 
 def test_allows_two_tops_with_non_english_base_layer_alias() -> None:
