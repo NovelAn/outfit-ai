@@ -80,7 +80,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 ### 4.2 文本造型师调用契约（services/stylist.py）
 - 模型：MiniMax-M3；通过 OpenAI SDK 调用 `/v1/chat/completions`。
 - 结构化输出：**tool use** 强制 schema（`tool_choice` 强制调 `propose_looks` 或单卡刷新时的 `propose_one_look`），解析 `tool_calls[0].function.arguments` → Pydantic。
-- tool schema：普通请求使用 `propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；单卡刷新使用 `propose_one_look(look:{tier,item_ids,reason,weather_fit,occasion_fit})`，且 tier 必须与请求一致；`reason` 为一句话搭配思路，长度 1–50 个字符，偶发超长输入会在校验前压缩为完整首句或带省略号的短句。
+- tool schema：普通请求使用 `propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；单卡刷新使用 `propose_one_look(look:{tier,item_ids,reason,weather_fit,occasion_fit})`，且 tier 必须与请求一致；`reason` 为一句话搭配思路，长度 1–50 个字符，偶发超长输入会在校验前压缩为完整首句或带省略号的短句。MiniMax 偶尔将 `item_ids` 数组包装为 `{ "item": [...] }`，解析层只展开该已知包装形态，随后仍执行完整校验。
 - 图像分工：真实衣物和参考 Look 先由 MiniMax VLM 提取结构化属性；M3 只读取这些文本属性，不重复消耗识图额度。
 - system prompt：造型师人格 + 硬规则（只用给定单品、三档各一、不重复近期 Look、locked 必含）；Safe 优先低风险与高利用率，Fresh 至少使用一个天气有效的低暴露单品，Stretch 使用不同的低暴露单品并明确说明突破点。候选充足时三档不共用任意单品，并由校验器检查颜色、版型或风格标签差异，避免只做配饰替换。候选上下文单独提供 `thickness`：高温高湿优先轻薄，低温优先适中或厚实，轻薄单品只有在叠穿成立时才使用；缺失厚薄标签不视为适中。
 - 失败重试：Stage 3 校验不过或 M3 未返回有效工具调用 → 错误回灌再调一次；两次失败抛错给前端。造型师优先读取工具调用，模型改用普通文本回复时自动从文本中提取同等 JSON 作为兜底。每日预生成最多整体执行 3 次，每次失败回滚事务。

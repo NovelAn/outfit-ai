@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -56,6 +57,59 @@ def test_stylist_falls_back_to_plain_json_when_tool_call_is_missing(monkeypatch)
     looks = stylist.propose([], None, {}, "日常", None, [], set())
 
     assert [look.tier for look in looks] == ["safe", "fresh", "stretch"]
+
+
+def test_stylist_accepts_minimax_item_ids_wrapper(monkeypatch) -> None:
+    looks = [
+        {
+            "tier": tier,
+            "item_ids": {"item": ["top", "bottom", "shoes"]},
+            "reason": tier,
+            "weather_fit": "适合",
+            "occasion_fit": "合适",
+        }
+        for tier in ("safe", "fresh", "stretch")
+    ]
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(
+            tool_calls=[SimpleNamespace(function=SimpleNamespace(
+                arguments=json.dumps({"looks": looks})
+            ))],
+            content=None,
+        ))]
+    )
+    monkeypatch.setattr(stylist, "chat_multimodal", lambda *args, **kwargs: response)
+
+    result = stylist.propose([], None, {}, "日常", None, [], set())
+
+    assert [look.tier for look in result] == ["safe", "fresh", "stretch"]
+    assert all(look.item_ids == ["top", "bottom", "shoes"] for look in result)
+
+
+def test_stylist_uses_valid_content_after_invalid_tool_arguments(monkeypatch) -> None:
+    looks = [
+        {
+            "tier": tier,
+            "item_ids": ["top", "bottom", "shoes"],
+            "reason": tier,
+            "weather_fit": "适合",
+            "occasion_fit": "合适",
+        }
+        for tier in ("safe", "fresh", "stretch")
+    ]
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(
+            tool_calls=[SimpleNamespace(function=SimpleNamespace(
+                arguments='{"looks": {"item": "invalid"}}'
+            ))],
+            content=json.dumps({"looks": looks}),
+        ))]
+    )
+    monkeypatch.setattr(stylist, "chat_multimodal", lambda *args, **kwargs: response)
+
+    assert [look.tier for look in stylist.propose([], None, {}, "日常", None, [], set())] == [
+        "safe", "fresh", "stretch"
+    ]
 
 
 def test_stylist_tier_falls_back_to_plain_json(monkeypatch) -> None:

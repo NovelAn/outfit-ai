@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from typing import TypeVar
+
 from pydantic import BaseModel, Field, ValidationError
 
 from ..schemas import ProposedLook
@@ -11,6 +14,9 @@ class ProposedLooks(BaseModel):
 
 class ProposedSingleLook(BaseModel):
     look: ProposedLook
+
+
+_Validated = TypeVar("_Validated")
 
 
 def _message(response) -> object:
@@ -28,6 +34,50 @@ def _tool_call_arguments(message) -> str | None:
         return calls[0].function.arguments
     except (AttributeError, IndexError, KeyError, TypeError):
         return None
+
+
+def _normalize_look_item_ids(value: dict) -> dict:
+    """Repair the known MiniMax tool-shape variant without weakening validation."""
+    looks = value.get("looks")
+    if isinstance(looks, list):
+        for look in looks:
+            if not isinstance(look, dict):
+                continue
+            item_ids = look.get("item_ids")
+            if isinstance(item_ids, dict) and isinstance(item_ids.get("item"), list):
+                look["item_ids"] = item_ids["item"]
+    look = value.get("look")
+    if isinstance(look, dict):
+        item_ids = look.get("item_ids")
+        if isinstance(item_ids, dict) and isinstance(item_ids.get("item"), list):
+            look["item_ids"] = item_ids["item"]
+    return value
+
+
+def _request_validated(
+    messages: list[dict],
+    schema: dict,
+    function_name: str,
+    validate: Callable[[dict], _Validated],
+) -> _Validated:
+    response = chat_multimodal(
+        messages,
+        tools=[schema],
+        tool_choice={"type": "function", "function": {"name": function_name}},
+    )
+    message = _message(response)
+    payloads = (_tool_call_arguments(message), getattr(message, "content", None))
+    last_error: Exception | None = None
+    for payload in payloads:
+        if not payload:
+            continue
+        try:
+            return validate(_normalize_look_item_ids(_parse_json_object(payload)))
+        except (ValueError, ValidationError, TypeError, KeyError) as exc:
+            last_error = exc
+    raise LLMResponseError(
+        f"造型师未返回有效的 {function_name} 工具调用；参数结构校验失败"
+    ) from last_error
 
 
 _LOOKS_SCHEMA = {
@@ -82,29 +132,22 @@ def propose(
     )
     if correction:
         content += f"\n上次结果错误，请修正：{correction}"
-    response = chat_multimodal(
-        [
-            {
-                "role": "system",
-                "content": stylist_system(locked_ids, coverage_targets=coverage_targets),
-            },
-            {"role": "user", "content": content},
-        ],
-        tools=[_LOOKS_SCHEMA],
-        tool_choice={"type": "function", "function": {"name": "propose_looks"}},
+    messages = [
+        {
+            "role": "system",
+            "content": stylist_system(locked_ids, coverage_targets=coverage_targets)
+            + " 输出字段必须严格符合工具参数：looks 是三项数组。"
+            "每项含 tier、item_ids 字符串数组、reason、weather_fit、occasion_fit。",
+        },
+        {"role": "user", "content": content},
+    ]
+    result = _request_validated(
+        messages,
+        _LOOKS_SCHEMA,
+        "propose_looks",
+        lambda arguments: ProposedLooks.model_validate(arguments).looks,
     )
-    message = _message(response)
-    try:
-        arguments = _tool_call_arguments(message)
-        if arguments is not None:
-            return ProposedLooks.model_validate_json(arguments).looks
-    except (ValueError, ValidationError):
-        pass
-    try:
-        content = getattr(message, "content", "") or ""
-        return ProposedLooks.model_validate(_parse_json_object(content)).looks
-    except (ValueError, ValidationError) as exc:
-        raise LLMResponseError("造型师未返回有效的 propose_looks 工具调用") from exc
+    return result
 
 
 def propose_tier(
@@ -142,29 +185,19 @@ def propose_tier(
     content += f"\n这次只替换 {tier} 档，返回一个 tier 为 {tier} 的 look。"
     if correction:
         content += f"\n上次结果错误，请修正：{correction}"
-    response = chat_multimodal(
-        [
-            {"role": "system", "content": stylist_system(locked_ids, tier, coverage_targets)},
-            {"role": "user", "content": content},
-        ],
-        tools=[_SINGLE_LOOK_SCHEMA],
-        tool_choice={"type": "function", "function": {"name": "propose_one_look"}},
-    )
-    message = _message(response)
-    try:
-        arguments = _tool_call_arguments(message)
-        if arguments is not None:
-            look = ProposedSingleLook.model_validate_json(arguments).look
-            if look.tier != tier:
-                raise ValueError(f"tier 必须为 {tier}")
-            return look
-    except (ValueError, ValidationError):
-        pass
-    try:
-        content = getattr(message, "content", "") or ""
-        look = ProposedSingleLook.model_validate(_parse_json_object(content)).look
+    messages = [
+        {
+            "role": "system",
+            "content": stylist_system(locked_ids, tier, coverage_targets)
+            + " 输出字段必须严格符合工具参数，item_ids 必须是字符串数组。",
+        },
+        {"role": "user", "content": content},
+    ]
+
+    def validate_single(arguments: dict) -> ProposedLook:
+        look = ProposedSingleLook.model_validate(arguments).look
         if look.tier != tier:
             raise ValueError(f"tier 必须为 {tier}")
         return look
-    except (ValueError, ValidationError) as exc:
-        raise LLMResponseError("造型师未返回有效的 propose_one_look 工具调用") from exc
+
+    return _request_validated(messages, _SINGLE_LOOK_SCHEMA, "propose_one_look", validate_single)

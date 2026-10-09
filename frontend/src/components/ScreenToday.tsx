@@ -254,6 +254,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       return null;
     }
   });
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
 
   // Rating & Swap states per look
   const [ratings, setRatings] = useState<Record<string, LookRating>>({});
@@ -365,6 +366,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       ? { ...liveLooks, [targetTier]: recommendation[targetTier] }
       : recommendation;
     setLiveLooks(nextRecommendation);
+    setRecommendationError(null);
     localStorage.setItem('OUTFIT_AI_LATEST_RECOMMENDATION', JSON.stringify(nextRecommendation));
     const displayWeather = displayWeatherForRecommendation(currentWeather, recommendation);
     if (displayWeather) {
@@ -407,6 +409,8 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       );
       activeContextKeyRef.current = contextKey;
       if (!isCurrentContextRequest(contextKey, activeContextKeyRef.current)) return;
+      setRecommendationError(null);
+      const hasRetainedLooks = Boolean(liveLooks) && !switchedContext && !cachedContextChanged;
       if (switchedContext || cachedContextChanged) {
         setWeather(null);
         weatherRef.current = null;
@@ -452,8 +456,10 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
           applyRecommendation(recommendation, latestWeather);
         }
       } catch (error) {
-        if (requestId === recommendationRequestRef.current) {
-          triggerToast(recommendationErrorMessage(error, Boolean(liveLooks)));
+        if (requestId === recommendationRequestRef.current && isCurrentContextRequest(contextKey, activeContextKeyRef.current)) {
+          const message = recommendationErrorMessage(error, hasRetainedLooks);
+          setRecommendationError(message);
+          triggerToast(message);
         }
       }
     })();
@@ -728,7 +734,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
   const tagOptions = [...new Set([...recentTags, ...selectedTags, ...FEEDBACK_TAG_OPTIONS])];
 
   return (
-    <div className={`min-h-screen bg-[#fbf9f4] text-[#1b1c19] pb-[100px] ${isCompareMode ? 'pt-[250px]' : 'pt-[132px]'}`}>
+    <div className={`min-h-screen bg-[#fbf9f4] text-[#1b1c19] pb-[100px] ${isCompareMode ? 'pt-[250px]' : 'pt-[160px]'}`}>
       {/* Side Drawer Menu */}
       <SideDrawer
         isOpen={isDrawerOpen}
@@ -739,7 +745,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       />
 
       {/* Header */}
-      <header className="fixed inset-x-0 top-0 z-40 bg-[#fbf9f4]/95 backdrop-blur-md px-6 py-4 flex flex-col items-center border-b border-[#e4e2dd]">
+      <header className="fixed inset-x-0 top-0 z-40 bg-[#fbf9f4]/95 backdrop-blur-md px-5 py-2.5 flex flex-col items-center border-b border-[#e4e2dd]">
         <div className="w-full flex flex-col gap-1 max-w-md mx-auto">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-4">
@@ -798,7 +804,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
               min={new Date().toISOString().slice(0, 10)}
               max={new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)}
               onChange={(event) => changeTargetDate(event.target.value)}
-              className="rounded border border-[#c4c6cd]/50 bg-white px-2 py-1 text-[11px] text-[#162839]"
+              className="h-7 rounded border border-[#c4c6cd]/50 bg-white px-1.5 py-0.5 text-[10px] text-[#162839]"
             />
           </label>
           {locationCandidates.length > 0 && (
@@ -868,6 +874,19 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       </header>
 
       <main className="max-w-md mx-auto">
+        {recommendationError && (
+          <div role="alert" className="mx-4 mb-3 rounded-lg border border-[#9a442a]/30 bg-[#9a442a]/5 p-3 text-xs text-[#162839]">
+            <p className="font-semibold">本次推荐没有生成</p>
+            <p className="mt-1 leading-relaxed">{recommendationError}</p>
+            <button
+              type="button"
+              onClick={() => void refreshDailyContext()}
+              className="mt-2 rounded-full border border-[#9a442a]/50 bg-white px-3 py-1 font-bold text-[#9a442a]"
+            >
+              重试推荐
+            </button>
+          </div>
+        )}
         {/* Safe Category */}
         {(() => {
           const currentSafe = liveLooks?.safe || EMPTY_LOOKS.safe;

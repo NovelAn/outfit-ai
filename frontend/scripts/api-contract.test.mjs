@@ -372,7 +372,6 @@ test("uses a vertical ordered Look flow", () => {
   assert.doesNotMatch(today, /compact-look-collage/);
   assert.doesNotMatch(today, /look-item-rail/);
   assert.match(today, /header className="fixed inset-x-0 top-0/);
-  assert.match(today, /pt-\[132px\]/);
 });
 
 test("shows the selected recommendation item image and attributes in its detail modal", () => {

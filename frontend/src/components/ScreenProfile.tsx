@@ -216,7 +216,8 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
     }
   };
 
-  const ratingList: LookRating[] = Object.values(ratings);
+  const ratingList: LookRating[] = Object.values(ratings).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const visibleRatingList = ratingList.slice(0, 3);
   const ratingCount = ratingList.length;
   const tagPreferences = profile?.style_tag_preferences || EMPTY_TAG_PREFERENCES;
   const normalizeTag = (tag: string) => tagPreferences.aliases?.[tag] || tag;
@@ -438,7 +439,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
                   {ratingCount} 条
                 </span>
               </div>
-            <p className="text-[10px] text-[#74777d] mt-0.5">查看及修改你的历史打分与 AI 搭配调整意见</p>
+            <p className="text-[10px] text-[#74777d] mt-0.5">最近 3 条品味反馈；其余记录可在管理全部中查看</p>
             </div>
             <button
               onClick={() => setModalType('ratings')}
@@ -452,7 +453,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
           {/* Grouped List Cards for Ratings */}
           <div className="space-y-2.5">
             {ratingList.length > 0 ? (
-              ratingList.map((item) => {
+              visibleRatingList.map((item) => {
                 return (
                   <div
                     key={item.lookId}
@@ -524,7 +525,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
             </button>
           </div>
           <div className="space-y-2">
-            <p className="rounded-lg border border-[#c4c6cd]/30 bg-[#f8f6f0] p-2.5 text-xs leading-relaxed text-[#162839]">
+            <p className="line-clamp-3 rounded-lg border border-[#c4c6cd]/30 bg-[#f8f6f0] p-2.5 text-xs leading-relaxed text-[#162839]">
               {profile?.taste_memo || '反馈达到学习阈值后，这里会显示 AI 对你品味的自然语言理解。'}
             </p>
             {profile?.taste_memo_last_change && (
