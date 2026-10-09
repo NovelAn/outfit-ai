@@ -46,10 +46,36 @@ def validate_look(
     missing_locked = locked_ids - set(look.item_ids)
     if missing_locked:
         return False, f"{look.tier} 缺少锁定单品: {', '.join(sorted(missing_locked))}"
-    categories = {canonical_category(candidate_categories[item_id]) for item_id in look.item_ids}
+    categories_list = [
+        canonical_category(candidate_categories[item_id]) for item_id in look.item_ids
+    ]
+    categories = set(categories_list)
+    if "outerwear" in categories and "top" not in categories:
+        return False, f"{look.tier} 含外套但缺少内搭上装"
     missing = {"top", "bottom", "shoes"} - categories
     if missing:
         return False, f"{look.tier} 缺少类别: {', '.join(sorted(missing))}"
+    core_category_names = {
+        "top": "上装",
+        "bottom": "下装",
+        "shoes": "鞋履",
+        "outerwear": "外套",
+    }
+    top_items = [
+        item_id
+        for item_id, category in zip(look.item_ids, categories_list, strict=True)
+        if category == "top"
+    ]
+    if len(top_items) > 2:
+        return False, f"{look.tier} 上装最多两件单品"
+    if len(top_items) == 2 and not any(
+        (candidate_categories.get(item_id, "") or "").strip().lower() in BASE_LAYER_ALIASES
+        for item_id in top_items
+    ):
+        return False, f"{look.tier} 含两件上装时，其中一件必须是内搭 T 恤/打底"
+    for category in core_category_names:
+        if categories_list.count(category) > 1 and category != "top":
+            return False, f"{look.tier} 在{core_category_names[category]}上只能有一件单品"
     return True, ""
 
 
@@ -136,3 +162,5 @@ def validate_looks(
         ):
             return False, "Safe、Fresh、Stretch 必须在颜色、版型或风格标签上形成差异"
     return True, ""
+BASE_LAYER_ALIASES = {"t-shirt", "tee", "打底", "打底衫", "tank", "背心", "camisole", "undershirt"}
+

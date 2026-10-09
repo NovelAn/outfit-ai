@@ -243,3 +243,164 @@ def test_rejects_three_tiers_with_identical_style_signature() -> None:
 
     assert not ok
     assert "颜色、版型或风格标签" in error
+
+
+def test_rejects_look_with_duplicate_bottom() -> None:
+    categories = {
+        "top-1": "top",
+        "top-2": "top",
+        "top-3": "top",
+        "bottom-1": "bottom",
+        "bottom-2": "pants",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["top-1", "bottom-1", "bottom-2", "shoes-1"]),
+        _look("fresh", ["top-2", "bottom-3", "shoes-2"]),
+        _look("stretch", ["top-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories)
+
+    assert not ok
+    assert "下装" in error
+
+
+def test_rejects_outerwear_without_inner_top() -> None:
+    categories = {
+        "top-1": "top",
+        "top-2": "top",
+        "top-3": "top",
+        "jacket-1": "outerwear",
+        "jacket-2": "outerwear",
+        "jacket-3": "outerwear",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["jacket-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["jacket-2", "top-2", "bottom-2", "shoes-2"]),
+        _look("stretch", ["jacket-3", "top-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories)
+
+    assert not ok
+    assert "外套" in error and "内搭" in error
+
+
+def test_allows_outerwear_with_inner_top() -> None:
+    categories = {
+        "top-1": "top",
+        "top-2": "top",
+        "top-3": "top",
+        "jacket-1": "outerwear",
+        "jacket-2": "outerwear",
+        "jacket-3": "outerwear",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["jacket-1", "top-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["jacket-2", "top-2", "bottom-2", "shoes-2"]),
+        _look("stretch", ["jacket-3", "top-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories)
+
+    assert ok, error
+
+
+
+
+def test_allows_two_tops_when_one_is_a_base_layer() -> None:
+    categories = {
+        "tee-1": "t-shirt",
+        "tee-2": "tee",
+        "tee-3": "t-shirt",
+        "shirt-1": "shirt",
+        "shirt-2": "shirt",
+        "shirt-3": "shirt",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["tee-1", "shirt-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["tee-2", "shirt-2", "bottom-2", "shoes-2"]),
+        _look("stretch", ["tee-3", "shirt-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories)
+
+    assert ok, error
+
+
+def test_rejects_two_tops_without_a_base_layer() -> None:
+    categories = {
+        "shirt-1": "shirt",
+        "shirt-2": "shirt",
+        "shirt-3": "shirt",
+        "hoodie-1": "hoodie",
+        "hoodie-2": "hoodie",
+        "hoodie-3": "hoodie",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["shirt-1", "hoodie-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["shirt-2", "hoodie-2", "bottom-2", "shoes-2"]),
+        _look("stretch", ["shirt-3", "hoodie-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories)
+
+    assert not ok
+    assert "内搭" in error
+
+
+def test_allows_two_tops_with_non_english_base_layer_alias() -> None:
+    from outfit_ai.services.categories import canonical_category
+
+    canonical_category("背心")
+    categories = {
+        "shell-1": "背心",
+        "shell-2": "背心",
+        "shell-3": "背心",
+        "shirt-1": "shirt",
+        "shirt-2": "shirt",
+        "shirt-3": "shirt",
+        "bottom-1": "bottom",
+        "bottom-2": "bottom",
+        "bottom-3": "bottom",
+        "shoes-1": "shoes",
+        "shoes-2": "shoes",
+        "shoes-3": "shoes",
+    }
+    looks = [
+        _look("safe", ["shell-1", "shirt-1", "bottom-1", "shoes-1"]),
+        _look("fresh", ["shell-2", "shirt-2", "bottom-2", "shoes-2"]),
+        _look("stretch", ["shell-3", "shirt-3", "bottom-3", "shoes-3"]),
+    ]
+
+    ok, error = validate_looks(looks, categories)
+
+    assert ok, error
