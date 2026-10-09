@@ -163,21 +163,6 @@ const EMPTY_LOOKS: Record<'safe' | 'fresh' | 'stretch', any> = {
   stretch: { title: 'Look 03 / 突破 (STRETCH)', tag: '工装廓形', description: '等待从真实衣橱生成', imageUrl: '', items: EMPTY_ITEMS },
 };
 
-const toISODate = (value: Date) => {
-  const local = new Date(value);
-  local.setHours(12, 0, 0, 0);
-  return local.toISOString().slice(0, 10);
-};
-
-const TARGET_DATE_OPTIONS = Array.from({ length: 15 }, (_, index) => {
-  const value = new Date();
-  value.setDate(value.getDate() + index);
-  return {
-    value: toISODate(value),
-    label: `${value.getMonth() + 1}/${value.getDate()} ${['日', '一', '二', '三', '四', '五', '六'][value.getDay()]}`,
-  };
-});
-
 const LookItems = ({ items = [], expanded, onExpandedChange, onSelect }: {
   items: any[];
   expanded: boolean;
@@ -247,12 +232,9 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
   const [locationCandidates, setLocationCandidates] = useState<any[]>([]);
   const [targetDate, setTargetDate] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem('OUTFIT_AI_TARGET_DATE') || '';
-      return TARGET_DATE_OPTIONS.some((option) => option.value === saved)
-        ? saved
-        : TARGET_DATE_OPTIONS[0].value;
+      return localStorage.getItem('OUTFIT_AI_TARGET_DATE') || '';
     } catch {
-      return TARGET_DATE_OPTIONS[0].value;
+      return '';
     }
   });
   const locationRef = useRef<any>({ source: 'missing' });
@@ -815,14 +797,15 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
             </button>
           </div>
           <label className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-[#74777d]">
-            <span className="shrink-0">日期</span>
-            <select aria-label="目标日期" value={targetDate} onChange={(event) => changeTargetDate(event.target.value)} className="h-6 w-[86px] rounded-full border border-[#c4c6cd]/50 bg-white px-1.5 text-[10px] font-semibold text-[#162839]">
-              {TARGET_DATE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <span className="shrink-0">目标日期（今天起 14 天内）</span>
+            <input
+              type="date"
+              value={targetDate}
+              min={new Date().toISOString().slice(0, 10)}
+              max={new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)}
+              onChange={(event) => changeTargetDate(event.target.value)}
+              className="h-5 w-[104px] rounded border border-[#c4c6cd]/50 bg-white px-1 py-0 text-[9px] leading-none text-[#162839]"
+            />
           </label>
           {locationCandidates.length > 0 && (
             <div className="mt-2 rounded border border-[#c4c6cd]/50 bg-white p-2">
