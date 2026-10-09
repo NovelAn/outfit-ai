@@ -246,6 +246,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
   const lastResumeRefreshRef = useRef(0);
   const recommendationRequestRef = useRef(0);
   const swapInFlightRef = useRef(false);
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
   const [liveLooks, setLiveLooks] = useState<any>(() => {
     try {
       const cached = localStorage.getItem('OUTFIT_AI_LATEST_RECOMMENDATION');
@@ -582,6 +583,22 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
     }
   };
 
+  const openTargetDatePicker = () => {
+    const input = dateInputRef.current;
+    if (!input) return;
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+    } else {
+      input.click();
+    }
+  };
+
+  const formatTargetDateLabel = (value: string) => {
+    if (!value || !/^d{4}-d{2}-d{2}$/.test(value)) return '未选择';
+    const [, month, day] = value.split('-');
+    return `${Number(month)}/${Number(day)}`;
+  };
+
   const toggleLike = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!liveLooks?.[id]) {
@@ -799,13 +816,23 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
           <label className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] text-[#74777d]">
             <span className="shrink-0">目标日期（今天起 14 天内）</span>
             <input
+              ref={dateInputRef}
               type="date"
               value={targetDate}
               min={new Date().toISOString().slice(0, 10)}
               max={new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)}
               onChange={(event) => changeTargetDate(event.target.value)}
-              className="h-5 w-[104px] rounded border border-[#c4c6cd]/50 bg-white px-1 py-0 text-[9px] leading-none text-[#162839]"
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
             />
+            <button
+              type="button"
+              onClick={openTargetDatePicker}
+              className="text-[10px] font-normal text-[#74777d] underline-offset-2 hover:text-[#162839] hover:underline"
+            >
+              {formatTargetDateLabel(targetDate)}
+            </button>
           </label>
           {locationCandidates.length > 0 && (
             <div className="mt-2 rounded border border-[#c4c6cd]/50 bg-white p-2">
