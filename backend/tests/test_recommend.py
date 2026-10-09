@@ -1015,6 +1015,69 @@ def test_recommend_passes_usage_targets_and_recent_looks_to_stylist(monkeypatch)
     assert isinstance(captured["recent_looks"], list)
 
 
+def test_recommend_returns_complete_looks_after_overlap_retry_fails(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    calls = []
+
+    def overlapping_propose(*args, **kwargs):
+        correction = args[7]
+        calls.append(correction)
+        looks = _looks(kwargs["coverage_targets"])
+        protected = set(kwargs["coverage_targets"].values())
+        shared = next(
+            item_id for item_id in looks[1].item_ids if item_id not in protected
+        )
+        category = shared.split("-", 1)[0]
+        stretch_index = next(
+            index
+            for index, item_id in enumerate(looks[2].item_ids)
+            if item_id.startswith(f"{category}-")
+        )
+        looks[2].item_ids[stretch_index] = shared
+        return looks
+
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "propose", overlapping_propose)
+
+    with Session(engine) as db:
+        db.add_all(_recommendation_items())
+        db.commit()
+        result = recommend_service.recommend(db, RecommendRequest(city="上海"))
+
+        fresh_ids = {item["id"] for item in result["fresh"]["items"]}
+        stretch_ids = {item["id"] for item in result["stretch"]["items"]}
+        assert fresh_ids & stretch_ids
+        assert len(calls) == 2
+        assert "不应共用" in calls[1]
+
+
+def test_recommend_does_not_reuse_stale_look_after_provider_retry_fails(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    calls = []
+
+    def propose_once_then_fail(*args, **kwargs):
+        calls.append(args[7])
+        if len(calls) == 2:
+            raise LLMResponseError("造型师未返回有效的 propose_looks 工具调用")
+        looks = _looks(kwargs["coverage_targets"])
+        looks[2].item_ids[0] = looks[1].item_ids[0]
+        return looks
+
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "propose", propose_once_then_fail)
+
+    with Session(engine) as db:
+        db.add_all(_recommendation_items())
+        db.commit()
+
+        with pytest.raises(LLMResponseError, match="propose_looks"):
+            recommend_service.recommend(db, RecommendRequest(city="上海"))
+
+
 def test_recommend_does_not_prune_old_ordinary_history(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

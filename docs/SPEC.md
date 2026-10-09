@@ -83,7 +83,7 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 - tool schema：普通请求使用 `propose_looks(looks:[{tier:"safe"|"fresh"|"stretch", item_ids:[str], reason, weather_fit, occasion_fit}])`；单卡刷新使用 `propose_one_look(look:{tier,item_ids,reason,weather_fit,occasion_fit})`，且 tier 必须与请求一致；`reason` 为一句话搭配思路，长度 1–50 个字符，偶发超长输入会在校验前压缩为完整首句或带省略号的短句。MiniMax 偶尔将 `item_ids` 数组包装为 `{ "item": [...] }`，解析层只展开该已知包装形态，随后仍执行完整校验。
 - 图像分工：真实衣物和参考 Look 先由 MiniMax VLM 提取结构化属性；M3 只读取这些文本属性，不重复消耗识图额度。
 - system prompt：造型师人格 + 硬规则（只用给定单品、三档各一、不重复近期 Look、locked 必含）；Safe 优先低风险与高利用率，Fresh 至少使用一个天气有效的低暴露单品，Stretch 使用不同的低暴露单品并明确说明突破点。候选充足时三档不共用任意单品，并由校验器检查颜色、版型或风格标签差异，避免只做配饰替换。候选上下文单独提供 `thickness`：高温高湿优先轻薄，低温优先适中或厚实，轻薄单品只有在叠穿成立时才使用；缺失厚薄标签不视为适中。
-- 失败重试：Stage 3 校验不过或 M3 未返回有效工具调用 → 错误回灌再调一次；两次失败抛错给前端。造型师优先读取工具调用，模型改用普通文本回复时自动从文本中提取同等 JSON 作为兜底。每日预生成最多整体执行 3 次，每次失败回滚事务。
+- 失败重试：Stage 3 校验不过或 M3 未返回有效工具调用 → 错误回灌再调一次；两次失败时，若仅违反“三档不共用/风格差异”这类质量增强规则，而类别、真实 item_id、锁定单品、覆盖目标和近 30 天完整 Look 去重等硬护栏全部通过，则降级返回完整三档并记录 warning；硬护栏失败仍抛错给前端。造型师优先读取工具调用，模型改用普通文本回复时自动从文本中提取同等 JSON 作为兜底。每日预生成最多整体执行 3 次，每次失败回滚事务。
 
 ### 4.3 品味备忘录（taste memo）—— "越用越懂"的载体（services/taste_memo.py）
 - **是什么**：LLM 维护的自然语言档案，记录"我对你品味的理解"。段落：偏好的颜色/调色板、偏好的版型/廓形、常用搭配公式、忌讳项、近期想突破的方向、从反馈学到的东西。
@@ -167,6 +167,8 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 |---|---|---|---|
 | GET | `/api/weather?city=&latitude=&longitude=&target_date=` | 输入经纬度先四舍五入至三位再用于 Open-Meteo、Nominatim、缓存和下游上下文；`target_date` 只能是今天至未来 14 天，天气从 16 日 forecast 的 daily 数组选择目标日；多城市候选返回 409 `{message,candidates:[{name,latitude,longitude,...}]}`，不能静默采用第一项；反向地理编码在市辖区/县场景优先显示上级直辖市名称，手动城市保留用户输入；天气内存缓存 30min，反查城市缓存 24h，反查失败不影响天气 | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,target_date,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
 | POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,target_date?,local_date?,locked_item_ids?[],force_refresh?:false,refresh_tier?:safe|fresh|stretch}`；`target_date` 只能是今天至未来 14 天；显式城市不继承 Profile 旧坐标。每套 Look 为 3–6 件，含 top/bottom/shoes，叠穿和配饰按需加入、不凑数；普通请求先复用绑定同一城市/目标日期的完整三档组，再按 prepared 的坐标、温度带和降雨阈值判断复用，否则 guardrail→stylist→validator；缺少合适鞋履时仍可返回最近似完整 Look，并通过 `wardrobe_risk` 说明风险；`force_refresh=true` 且带 `refresh_tier` 时只生成目标档并复用另外两档 | 200 `{weather,safe,fresh,stretch}`；城市候选冲突时 409 `{message,candidates}` |
+
+城市候选分级：城市文本先查 Open-Meteo；唯一结果直接使用。多结果时用 Nominatim 的行政区结果消歧，仍无法判断时，只有同一省市区县内的近名结果（如海拉尔的各种青年点/站点）才取默认坐标；跨省同名候选（如不同省的朝阳区）返回 409 让用户选择。Open-Meteo 无结果时支持“北京朝阳区”“上海宝山区”“天津津南区”这类完整区县输入并交给 Nominatim。省份输入不使用全省平均天气；当前内置“内蒙古/内蒙古自治区”返回海拉尔区、额尔古纳市、阿尔山市、呼和浩特市候选。
 
 `recommend` 卡片结构（**无 base_score**）：
 ```json

@@ -35,6 +35,14 @@ _WMO_CONDITION = {
 }
 _CACHE: dict[str, tuple[datetime, "WeatherData"]] = {}
 _REVERSE_CITY_CACHE: dict[str, tuple[datetime, str | None]] = {}
+_PROVINCE_DESTINATIONS = {
+    "内蒙古": [
+        {"name": "海拉尔区", "latitude": 49.232, "longitude": 119.817, "admin1": "内蒙古自治区"},
+        {"name": "额尔古纳市", "latitude": 51.672, "longitude": 120.781, "admin1": "内蒙古自治区"},
+        {"name": "阿尔山市", "latitude": 47.126, "longitude": 120.397, "admin1": "内蒙古自治区"},
+        {"name": "呼和浩特市", "latitude": 40.818, "longitude": 111.66, "admin1": "内蒙古自治区"},
+    ],
+}
 
 
 class WeatherInputError(ValueError):
@@ -137,6 +145,104 @@ def _rain_window(current_time: str, hourly: dict) -> str | None:
     return f"{first:%H:%M}–{last:%H:%M}"
 
 
+def _normalized_region(city: str) -> str:
+    return (
+        city.replace("壮族自治区", "")
+        .replace("回族自治区", "")
+        .replace("维吾尔自治区", "")
+        .replace("自治区", "")
+        .replace("省", "")
+    )
+
+
+def _nominatim_city_candidates(client: httpx.Client, query: str) -> list[dict]:
+    try:
+        features = (
+            client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={
+                    "q": query,
+                    "format": "geocodejson",
+                    "accept-language": "zh-CN",
+                    "limit": 5,
+                },
+                headers={"User-Agent": "Outfit-AI/0.1"},
+            )
+            .raise_for_status()
+            .json()
+            .get("features", [])
+        )
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        return []
+
+    candidates: list[dict] = []
+    administrative: list[dict] = []
+    for feature in features:
+        try:
+            geocoding = feature["properties"]["geocoding"]
+            longitude, latitude = feature["geometry"]["coordinates"]
+            candidate = {
+                "name": geocoding.get("name") or geocoding.get("city") or geocoding.get("county"),
+                "latitude": latitude,
+                "longitude": longitude,
+                "admin1": geocoding.get("state"),
+                "admin2": geocoding.get("city") or geocoding.get("county"),
+                "country": geocoding.get("country"),
+            }
+        except (IndexError, KeyError, TypeError, ValueError):
+            continue
+        if not candidate["name"]:
+            continue
+        candidates.append(candidate)
+        if geocoding.get("type") in {"state", "city", "county", "district"}:
+            administrative.append(candidate)
+
+    chinese = [candidate for candidate in candidates if candidate.get("country") == "中国"]
+    pool = chinese or candidates
+    administrative = [candidate for candidate in administrative if candidate in pool]
+    return administrative or pool
+
+
+def _default_open_meteo_candidate(query: str, results: list[dict]) -> dict | None:
+    chinese_results = [result for result in results if result.get("country_code") == "CN"]
+    pool = chinese_results or results
+    if not pool:
+        return None
+    if chinese_results and pool[0].get("country_code") != "CN":
+        return None
+    admin1s = {result.get("admin1") for result in pool if result.get("admin1")}
+    if not admin1s or len(admin1s) > 1:
+        return None
+    exact = [result for result in pool if result.get("name") == query]
+    if exact:
+        exact_with_admin2 = [result for result in exact if result.get("admin2")]
+        if len(exact_with_admin2) != len(exact):
+            return None
+        admin2s = {result.get("admin2") for result in exact}
+        if not admin2s or len(admin2s) > 1:
+            return None
+        ranked = sorted(
+            exact,
+            key=lambda result: (
+                result.get("population") or 0,
+                1 if result.get("feature_code") == "PPLC" else 0,
+            ),
+            reverse=True,
+        )
+        if len(ranked) == 1 or (ranked[0].get("population") or 0) > (
+            ranked[1].get("population") or 0
+        ):
+            return ranked[0]
+        return None
+    pool_with_admin2 = [result for result in pool if result.get("admin2")]
+    if len(pool_with_admin2) != len(pool):
+        return None
+    admin2s = {result.get("admin2") for result in pool}
+    if not admin2s or len(admin2s) > 1:
+        return None
+    return pool[0]
+
+
 def get_weather(
     city: str | None = None,
     *,
@@ -160,6 +266,9 @@ def get_weather(
     cached = _CACHE.get(key)
     if cached and datetime.now() - cached[0] < timedelta(minutes=30):
         return cached[1]
+    province_destinations = _PROVINCE_DESTINATIONS.get(_normalized_region(city or ""))
+    if province_destinations:
+        raise WeatherAmbiguousError(province_destinations)
     try:
         # Weather providers are public endpoints; do not inherit a developer's
         # local SOCKS/HTTP proxy configuration into the backend runtime.
@@ -177,25 +286,37 @@ def get_weather(
                     .get("results", [])
                 )
                 if not result:
-                    raise WeatherInputError(f"找不到城市：{city}")
+                    resolved = _nominatim_city_candidates(client, city)
+                    if len(resolved) == 1:
+                        result = resolved
+                    elif len(resolved) > 1:
+                        raise WeatherAmbiguousError(resolved)
+                    else:
+                        raise WeatherInputError(f"找不到城市：{city}")
                 if len(result) > 1:
-                    raise WeatherAmbiguousError(
-                        [
-                            {
-                                key: candidate[key]
-                                for key in (
-                                    "name",
-                                    "latitude",
-                                    "longitude",
-                                    "admin1",
-                                    "admin2",
-                                    "country",
-                                )
-                                if candidate.get(key) is not None
-                            }
-                            for candidate in result
-                        ]
-                    )
+                    resolved = _nominatim_city_candidates(client, city)
+                    if len(resolved) == 1:
+                        result = resolved
+                    else:
+                        default = _default_open_meteo_candidate(city, result)
+                        if default is None:
+                            candidates = resolved or [
+                                {
+                                    key: candidate[key]
+                                    for key in (
+                                        "name",
+                                        "latitude",
+                                        "longitude",
+                                        "admin1",
+                                        "admin2",
+                                        "country",
+                                    )
+                                    if candidate.get(key) is not None
+                                }
+                                for candidate in result
+                            ]
+                            raise WeatherAmbiguousError(candidates)
+                        result = [default]
                 latitude, longitude = result[0]["latitude"], result[0]["longitude"]
                 latitude, longitude = round(latitude, 3), round(longitude, 3)
             payload = (

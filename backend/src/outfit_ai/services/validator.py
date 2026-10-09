@@ -61,6 +61,7 @@ def validate_looks(
     coverage_targets: dict[str, str] | None = None,
     recent_look_keys: set[tuple[str, ...]] | None = None,
     candidate_attributes: dict[str, dict[str, Any]] | None = None,
+    strict_quality: bool = True,
 ) -> tuple[bool, str]:
     locked_ids = locked_ids or set()
     coverage_targets = coverage_targets or {}
@@ -87,7 +88,9 @@ def validate_looks(
     core_counts = Counter(
         canonical_category(category) for category in candidate_categories.values()
     )
-    if all(core_counts[category] >= 3 for category in ("top", "bottom", "shoes")):
+    if strict_quality and all(
+        core_counts[category] >= 3 for category in ("top", "bottom", "shoes")
+    ):
         by_tier = {look.tier: set(look.item_ids) for look in looks}
         if len(candidate_categories) >= 9:
             for left, right in (("safe", "fresh"), ("safe", "stretch"), ("fresh", "stretch")):
@@ -117,7 +120,7 @@ def validate_looks(
                 category_names = {"top": "上装", "bottom": "下装", "shoes": "鞋履"}
                 names = ", ".join(category_names[name] for name in categories)
                 return False, f"{left} 与 {right} 不应共用核心类别: {names}"
-    if candidate_attributes:
+    if strict_quality and candidate_attributes:
         signatures = {
             look.tier: _style_signature(look.item_ids, candidate_attributes)
             for look in looks

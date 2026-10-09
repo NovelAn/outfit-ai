@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, datetime
 from math import asin, cos, radians, sin, sqrt
 from uuid import uuid4
@@ -28,6 +29,8 @@ from .style_references import get_reference_analyses
 from .stylist import propose, propose_tier
 from .validator import validate_look, validate_looks
 from .weather import get_weather
+
+logger = logging.getLogger(__name__)
 
 
 def _season(temp: float) -> str:
@@ -527,6 +530,7 @@ def recommend(db: Session, request: RecommendRequest, *, history_action: str = "
             return result
 
     error = ""
+    provider_error: LLMResponseError | None = None
     for _ in range(2):
         try:
             looks = propose(
@@ -547,7 +551,9 @@ def recommend(db: Session, request: RecommendRequest, *, history_action: str = "
             )
         except LLMResponseError as exc:
             ok, error = False, str(exc)
+            provider_error = exc
         else:
+            provider_error = None
             ok, error = validate_looks(
                 looks,
                 categories,
@@ -559,7 +565,19 @@ def recommend(db: Session, request: RecommendRequest, *, history_action: str = "
         if ok:
             break
     else:
-        raise ValueError(f"造型师结果校验失败：{error}")
+        if provider_error is not None:
+            raise provider_error
+        relaxed_ok, _ = validate_looks(
+            looks,
+            categories,
+            locked_ids=set(request.locked_item_ids),
+            coverage_targets=coverage_targets,
+            recent_look_keys=recent_look_keys,
+            strict_quality=False,
+        )
+        if not relaxed_ok:
+            raise ValueError(f"造型师结果校验失败：{error}")
+        logger.warning("推荐保留完整三档，降级接受质量校验失败： %s", error)
     by_id = {item.id: item for item in candidates}
     context_base = {
         "latitude": round(latitude, 3) if latitude is not None else None,

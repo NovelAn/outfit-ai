@@ -391,6 +391,8 @@ test("keeps mobile header and bottom navigation fixed during scrolling", () => {
   const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
   const nav = readFileSync(new URL("../src/components/BottomNav.tsx", import.meta.url), "utf8");
   assert.match(today, /header className="fixed inset-x-0 top-0/);
+  assert.match(today, /select[^\n]*aria-label="目标日期"/);
+  assert.doesNotMatch(today, /type="date"/);
   assert.match(nav, /nav aria-label="主导航" className="fixed inset-x-0 bottom-0/);
   assert.match(nav, /safe-area-inset-bottom/);
 });

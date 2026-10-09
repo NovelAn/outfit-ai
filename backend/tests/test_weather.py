@@ -356,7 +356,232 @@ def test_weather_selects_a_future_target_date_from_daily_forecast(monkeypatch) -
     assert forecast_params["forecast_days"] == 16
 
 
-def test_weather_requires_user_choice_when_city_has_multiple_candidates(monkeypatch) -> None:
+def test_weather_uses_default_candidate_for_same_district_matches(monkeypatch) -> None:
+    forecast = {
+        "timezone": "Asia/Shanghai",
+        "current": {
+            "time": "2026-10-09T08:00",
+            "temperature_2m": 5.1,
+            "apparent_temperature": 7.4,
+            "relative_humidity_2m": 60,
+            "weather_code": 61,
+            "wind_speed_10m": 11.5,
+            "is_day": 1,
+            "precipitation": 4.4,
+            "rain": 4.4,
+        },
+        "hourly": {"time": ["2026-10-09T08:00"], "precipitation_probability": [20]},
+        "daily": {
+            "time": ["2026-10-09"],
+            "temperature_2m_max": [7.4],
+            "temperature_2m_min": [2.8],
+            "precipitation_probability_max": [61],
+            "precipitation_sum": [4.4],
+        },
+    }
+
+    class AmbiguousClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "海拉尔电厂青年点",
+                                "latitude": 49.2,
+                                "longitude": 119.7,
+                                "admin1": "内蒙古",
+                                "admin2": "呼伦贝尔市",
+                            },
+                            {
+                                "name": "海拉尔市毛纺厂青年点",
+                                "latitude": 49.3,
+                                "longitude": 119.8,
+                                "admin1": "内蒙古",
+                                "admin2": "呼伦贝尔市",
+                            },
+                        ]
+                    }
+                )
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse({"features": []})
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: AmbiguousClient(forecast, {"features": []}),
+    )
+    weather._CACHE.clear()
+
+    result = weather.get_weather(city="海拉尔")
+
+    assert result.city == "海拉尔"
+    assert result.temp == 5.1
+
+
+def test_weather_requires_choice_for_candidates_in_different_provinces(monkeypatch) -> None:
+    class AmbiguousClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "朝阳区",
+                                "latitude": 39.9,
+                                "longitude": 116.4,
+                                "admin1": "北京市",
+                            },
+                            {
+                                "name": "朝阳区",
+                                "latitude": 43.8,
+                                "longitude": 125.3,
+                                "admin1": "吉林省",
+                            },
+                        ]
+                    }
+                )
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse({"features": []})
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: AmbiguousClient({}, {"features": []}),
+    )
+
+    with pytest.raises(weather.WeatherAmbiguousError) as error:
+        weather.get_weather(city="朝阳区")
+
+    assert {candidate["admin1"] for candidate in error.value.candidates} == {"北京市", "吉林省"}
+
+
+def test_weather_keeps_ambiguity_for_populated_cross_province_matches(monkeypatch) -> None:
+    class AmbiguousClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "朝阳区",
+                                "latitude": 39.9,
+                                "longitude": 116.4,
+                                "admin1": "北京市",
+                                "admin2": "北京市",
+                                "population": 2000000,
+                            },
+                            {
+                                "name": "朝阳区",
+                                "latitude": 43.8,
+                                "longitude": 125.3,
+                                "admin1": "吉林省",
+                                "admin2": "长春市",
+                                "population": 600000,
+                            },
+                        ]
+                    }
+                )
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse({"features": []})
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: AmbiguousClient({}, {"features": []}),
+    )
+
+    with pytest.raises(weather.WeatherAmbiguousError) as error:
+        weather.get_weather(city="朝阳区")
+
+    assert {candidate["admin1"] for candidate in error.value.candidates} == {"北京市", "吉林省"}
+
+
+def test_weather_keeps_ambiguity_when_admin_levels_are_incomplete(monkeypatch) -> None:
+    class AmbiguousClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "朝阳区",
+                                "latitude": 39.9,
+                                "longitude": 116.4,
+                                "admin1": "北京市",
+                            },
+                            {
+                                "name": "朝阳区",
+                                "latitude": 43.8,
+                                "longitude": 125.3,
+                                "admin1": "吉林省",
+                                "admin2": "长春市",
+                            },
+                        ]
+                    }
+                )
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse({"features": []})
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: AmbiguousClient({}, {"features": []}),
+    )
+
+    with pytest.raises(weather.WeatherAmbiguousError) as error:
+        weather.get_weather(city="朝阳区")
+
+    assert {candidate["admin1"] for candidate in error.value.candidates} == {"北京市", "吉林省"}
+
+
+def test_weather_keeps_ambiguity_when_admin2_missing_within_same_province(monkeypatch) -> None:
+    class AmbiguousClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "环翠区",
+                                "latitude": 37.5,
+                                "longitude": 122.1,
+                                "admin1": "山东省",
+                                "admin2": "威海市",
+                            },
+                            {
+                                "name": "环翠区",
+                                "latitude": 36.6,
+                                "longitude": 117.0,
+                                "admin1": "山东省",
+                            },
+                        ]
+                    }
+                )
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse({"features": []})
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: AmbiguousClient({}, {"features": []}),
+    )
+
+    with pytest.raises(weather.WeatherAmbiguousError) as error:
+        weather.get_weather(city="环翠区")
+
+    assert {candidate["admin1"] for candidate in error.value.candidates} == {"山东省"}
+
+
+    weather._CACHE.clear()
+    weather._REVERSE_CITY_CACHE.clear()
+
+def test_weather_keeps_ambiguity_for_exact_matches_missing_admin2(monkeypatch) -> None:
     class AmbiguousClient(FakeClient):
         def get(self, url, **kwargs):
             if "geocoding-api" in url:
@@ -368,12 +593,126 @@ def test_weather_requires_user_choice_when_city_has_multiple_candidates(monkeypa
                                 "latitude": 49.2,
                                 "longitude": 119.7,
                                 "admin1": "内蒙古",
+                                "admin2": "呼伦贝尔市",
+                                "population": 200000,
                             },
                             {
-                                "name": "海拉尔区",
+                                "name": "海拉尔",
                                 "latitude": 49.3,
                                 "longitude": 119.8,
                                 "admin1": "内蒙古",
+                                "population": 50000,
+                            },
+                        ]
+                    }
+                )
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse({"features": []})
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: AmbiguousClient({}, {"features": []}),
+    )
+
+    with pytest.raises(weather.WeatherAmbiguousError) as error:
+        weather.get_weather(city="海拉尔")
+
+    assert {candidate["admin1"] for candidate in error.value.candidates} == {"内蒙古"}
+
+
+    weather._CACHE.clear()
+    weather._REVERSE_CITY_CACHE.clear()
+
+def test_weather_keeps_ambiguity_for_non_exact_matches_missing_admin2(monkeypatch) -> None:
+    class AmbiguousClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "海拉尔电厂青年点",
+                                "latitude": 49.2,
+                                "longitude": 119.7,
+                                "admin1": "内蒙古",
+                                "admin2": "呼伦贝尔市",
+                            },
+                            {
+                                "name": "海拉尔市毛纺厂青年点",
+                                "latitude": 49.3,
+                                "longitude": 119.8,
+                                "admin1": "内蒙古",
+                            },
+                        ]
+                    }
+                )
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse({"features": []})
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: AmbiguousClient({}, {"features": []}),
+    )
+
+    with pytest.raises(weather.WeatherAmbiguousError) as error:
+        weather.get_weather(city="海拉尔")
+
+    assert {candidate["admin1"] for candidate in error.value.candidates} == {"内蒙古"}
+
+
+def test_weather_keeps_ambiguity_when_nominatim_returns_distinct_regions(monkeypatch) -> None:
+    class AmbiguousClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "朝阳区",
+                                "latitude": 39.9,
+                                "longitude": 116.4,
+                                "admin1": "北京市",
+                                "admin2": "北京市",
+                            },
+                            {
+                                "name": "朝阳区",
+                                "latitude": 43.8,
+                                "longitude": 125.3,
+                                "admin1": "吉林省",
+                                "admin2": "长春市",
+                            },
+                        ]
+                    }
+                )
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse(
+                    {
+                        "features": [
+                            {
+                                "properties": {
+                                    "geocoding": {
+                                        "name": "朝阳区",
+                                        "state": "北京市",
+                                        "country": "中国",
+                                        "type": "district",
+                                    }
+                                },
+                                "geometry": {"coordinates": [116.44, 39.92]},
+                            },
+                            {
+                                "properties": {
+                                    "geocoding": {
+                                        "name": "朝阳区",
+                                        "state": "吉林省",
+                                        "country": "中国",
+                                        "type": "district",
+                                    }
+                                },
+                                "geometry": {"coordinates": [125.3, 43.88]},
                             },
                         ]
                     }
@@ -387,6 +726,78 @@ def test_weather_requires_user_choice_when_city_has_multiple_candidates(monkeypa
     )
 
     with pytest.raises(weather.WeatherAmbiguousError) as error:
-        weather.get_weather(city="海拉尔")
+        weather.get_weather(city="朝阳区")
 
-    assert [candidate["name"] for candidate in error.value.candidates] == ["海拉尔", "海拉尔区"]
+    assert {candidate["admin1"] for candidate in error.value.candidates} == {"北京市", "吉林省"}
+
+
+def test_weather_resolves_explicit_district_with_nominatim(monkeypatch) -> None:
+    forecast = {
+        "timezone": "Asia/Shanghai",
+        "current": {
+            "time": "2026-10-09T08:00",
+            "temperature_2m": 18.0,
+            "apparent_temperature": 18.0,
+            "relative_humidity_2m": 50,
+            "weather_code": 1,
+            "wind_speed_10m": 5.0,
+            "is_day": 1,
+            "precipitation": 0.0,
+            "rain": 0.0,
+        },
+        "hourly": {"time": ["2026-10-09T08:00"], "precipitation_probability": [10]},
+        "daily": {
+            "time": ["2026-10-09"],
+            "temperature_2m_max": [22.0],
+            "temperature_2m_min": [14.0],
+            "precipitation_probability_max": [10],
+            "precipitation_sum": [0.0],
+        },
+    }
+    search = {
+        "features": [
+            {
+                "properties": {
+                    "geocoding": {
+                        "name": "朝阳区",
+                        "state": "北京市",
+                        "country": "中国",
+                        "type": "district",
+                    }
+                },
+                "geometry": {"coordinates": [116.4369109, 39.9204498]},
+            }
+        ]
+    }
+
+    class DistrictClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse({"results": []})
+            if "nominatim.openstreetmap.org/search" in url:
+                return FakeResponse(search)
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: DistrictClient(forecast, {"features": []}),
+    )
+    weather._CACHE.clear()
+
+    result = weather.get_weather(city="北京朝阳区")
+
+    assert result.city == "北京朝阳区"
+    assert result.temp == 18.0
+
+
+def test_province_query_returns_destinations_instead_of_province_weather() -> None:
+    with pytest.raises(weather.WeatherAmbiguousError) as error:
+        weather.get_weather(city="内蒙古")
+
+    assert [candidate["name"] for candidate in error.value.candidates] == [
+        "海拉尔区",
+        "额尔古纳市",
+        "阿尔山市",
+        "呼和浩特市",
+    ]
