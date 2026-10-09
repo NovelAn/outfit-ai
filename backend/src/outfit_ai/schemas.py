@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -159,6 +159,14 @@ class ProfileOut(ProfileIn):
     user_id: str
     taste_memo_updated_at: datetime | None = None
     feedback_since_refresh: int = 0
+    feedback_batch_size: int = 4
+    feedback_remaining: int = 4
+    taste_memo_last_change: str = ""
+    taste_memo_source_feedback_ids: list[str] = Field(default_factory=list)
+    taste_memo_source_event_ids: list[str] = Field(default_factory=list)
+    taste_memo_refresh_status: Literal["idle", "running", "failed"] = "idle"
+    taste_memo_refresh_error: str | None = None
+    taste_memo_revision: int = 0
 
 
 class RecommendRequest(BaseModel):
@@ -171,6 +179,7 @@ class RecommendRequest(BaseModel):
     city: str | None = None
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
+    target_date: date | None = None
     local_date: date | None = None
     locked_item_ids: list[str] = Field(default_factory=list)
     force_refresh: bool = False
@@ -180,6 +189,17 @@ class RecommendRequest(BaseModel):
     def require_force_refresh_for_tier(self):
         if self.refresh_tier and not self.force_refresh:
             raise ValueError("refresh_tier 只能与 force_refresh=true 一起使用")
+        return self
+
+    @model_validator(mode="after")
+    def validate_target_date(self):
+        if self.target_date is None:
+            return self
+        today = date.today()
+        if self.target_date < today:
+            raise ValueError("target_date 只能是今天或未来日期")
+        if self.target_date > today + timedelta(days=14):
+            raise ValueError("target_date 只能在未来 14 天内")
         return self
 
 
@@ -210,5 +230,11 @@ class FeedbackIn(BaseModel):
     occasion_type: str | None = None
     sentiment: str | None = None
     compliments: list[str] = Field(default_factory=list)
+    negative_signals: list[str] = Field(default_factory=list)
+    adjustment_signals: list[str] = Field(default_factory=list)
     didnt_work: str | None = None
     learnings: str | None = None
+
+
+class TasteMemoCorrectionIn(BaseModel):
+    taste_memo: str = Field(min_length=1, max_length=4000)

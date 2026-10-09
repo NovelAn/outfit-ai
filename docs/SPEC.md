@@ -32,7 +32,7 @@
 | 结构化输出 | M3 造型师使用 **tool use** 强制 schema；VLM 文本响应由 Pydantic 校验 |
 | **推荐引擎** | **品味驱动（文本造型师）**，见 §4。**已废弃** OutfAI 规则评分方案 |
 | 天气 | Open-Meteo（免 key） |
-| 数据 | 5 张 SQLite 表：profile / wardrobe_items / style_references / outfit_history / feedback |
+| 数据 | 6 张 SQLite 表：profile / wardrobe_items / style_references / outfit_history / feedback / feedback_events |
 | 前端 | 用户确认的 Stitch ZIP 原版 React 19 + Vite 6 + Tailwind CSS 4，v0 跑 `npm run dev` |
 | 用户模型 | **单用户 v0**，`USER_ID=local`，不做鉴权 |
 | 本地存储 | 默认 `~/.outfit-ai/`；支持 `DATABASE_URL`、`UPLOAD_DIR` 环境覆盖 |
@@ -87,8 +87,8 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 
 ### 4.3 品味备忘录（taste memo）—— "越用越懂"的载体（services/taste_memo.py）
 - **是什么**：LLM 维护的自然语言档案，记录"我对你品味的理解"。段落：偏好的颜色/调色板、偏好的版型/廓形、常用搭配公式、忌讳项、近期想突破的方向、从反馈学到的东西。
-- **存哪**：`profile.taste_memo`(Text) + `taste_memo_updated_at` + `feedback_since_refresh`(计数器)。`feedback` 表与 `outfit_history.action` 是刷新输入。
-- **怎么更新**：触发式——`POST /api/feedback` 时 `feedback_since_refresh += 1`，到 **4** 触发一次 LLM 刷新（读旧 memo + 新反馈 → 输出新 memo），`BackgroundTasks` 执行，刷新后计数清零。另有 `POST /api/profile/taste-memo/refresh` 手动触发。v0 不上 cron。
+- **存哪**：`profile.taste_memo`(Text) + `taste_memo_updated_at` + `feedback_since_refresh`(计数器) + `taste_memo_last_change` + `taste_memo_source_feedback_ids_json` + `taste_memo_source_event_ids_json` + `taste_memo_refresh_status/error` + `taste_memo_revision`(手动修正版本栅栏)。`feedback` 表保存稳定的 `history_id`、最终 `action/rating`、`created_at`、`updated_at` 及喜欢/不喜欢/想调整三类信号；`feedback_events` 表保存每次真实可学习变化的不可变事件快照。
+- **怎么更新**：只有最终事实发生真实变化且包含可学习信号时，`POST /api/feedback` 才增加计数、更新时间戳并插入一条 `feedback_events`；同一 history 重复收藏、取消、穿过或重复评分不会重复计数，评分编辑和动作变化会分别形成可学习事件。达到后端返回的 `feedback_batch_size=4` 后由 `BackgroundTasks` 刷新，批次按 `feedback_events.event_at` 取样；同一 history 的多次真实变化可组成同一批。旧版 feedback 行没有事件时，刷新前按其最终事实回填一条 `legacy-{feedback_id}` 等价事件。成功清零并记录本轮变化、来源 feedback/event id；失败保留计数并公开 `failed/error`，可由 retry 接口再次执行。手动修正会递增 `taste_memo_revision`，在途刷新使用版本栅栏，不能覆盖手动修正或清掉其后的待学习反馈。另有 `POST /api/profile/taste-memo/refresh` 手动触发。v0 不上 cron。
 - **冷启动**：onboarding 由 Style DNA + 风格样例图 LLM 生成初版 memo。
 - **版本**：v0 直接覆盖更新；旧版归档留作后期"风格漂移"分析（YAGNI，先不做）。
 
@@ -98,9 +98,9 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 > 抽象自 `googlarz/fashion-skill`（CC BY 4.0，**仅字段结构，不抄 prompt**）。JSON 列用 `Text` 存 JSON 字符串。
 
 ### 5.1 `profile`（Style DNA + 品味备忘录，1 行/用户）
-`user_id`(PK) · `body_json`(Text) · `color_season`? · `color_undertone`? · `palette_json` · `style_keywords_json` · `avoids_json` · `preferred_colors_json`（onboarding 结构化偏好，喂造型师作上下文） · `preferred_styles_json` · `brand_sizes_json` · `city`? · `climate`? · `occasions_json` · `budget_*_cents` ×3 · `learned_from_feedback_json` · `formulas_json` · `last_profile_refresh`? · **`taste_memo`**(Text) · **`taste_memo_updated_at`**(DateTime?) · **`feedback_since_refresh`**(Integer default 0)
+`user_id`(PK) · `body_json`(Text) · `color_season`? · `color_undertone`? · `palette_json` · `style_keywords_json` · `avoids_json` · `preferred_colors_json`（onboarding 结构化偏好，喂造型师作上下文） · `preferred_styles_json` · `brand_sizes_json` · `city`? · `climate`? · `occasions_json` · `budget_*_cents` ×3 · `learned_from_feedback_json` · `formulas_json` · `last_profile_refresh`? · **`taste_memo`**(Text) · **`taste_memo_updated_at`**(DateTime?) · **`feedback_since_refresh`**(Integer default 0) · `taste_memo_last_change` · `taste_memo_source_feedback_ids_json` · `taste_memo_source_event_ids_json` · `taste_memo_refresh_status/error` · **`taste_memo_revision`**(Integer default 0)
 
-不新增表或列：`learned_from_feedback_json` 兼容旧版 `list[str]`（直接作为 `learnings` 读取），新版为以下 version-1 封套；损坏数据安全回退为空值。
+不新增学习权重表：`learned_from_feedback_json` 继续兼容旧版 `list[str]`（直接作为 `learnings` 读取），新版为以下 version-1 封套；损坏数据安全回退为空值。反馈事实与刷新状态使用上文列出的加法式 SQLite 列迁移。
 
 ```json
 {"version":1,"learnings":[],"recent_style_signals":[],"style_tag_preferences":{"pinned":[],"hidden":[],"aliases":{}},"last_location":null}
@@ -122,11 +122,15 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 （**已删 `base_score`**——规则评分产物，新架构无此数）
 索引：`(user_id,date)`、`(user_id,action)`
 
-`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`weather`、`local_date`、`prepared_at`、`prepared`、`recommendation_set_id`、`recommendation_set_created_at`、`weather_fit`、`occasion_fit`。一次成功生成的 Safe/Fresh/Stretch 三档共享一个 `recommendation_set_id`；同一天的普通请求只复用最新**完整**三档组，旧行没有 set id 时才按每档最新记录兼容回退。完整 `force_refresh=true` 请求另建一组；带 `refresh_tier=safe|fresh|stretch` 的单卡刷新只调用 M3 生成目标档，并在当前完整普通组（无普通组时为 prepared 组）中追加目标档最新 history，另外两档原记录与 history_id 不变；没有完整组时返回明确的重新加载错误，不退化为三档生成。任何不完整或生成失败的组均不可复用，单卡失败不写入新 history。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作。应用启动不因本功能迁移、改写或清理既有用户数据；运行期保留清理只在成功写入新推荐后执行，且仅作用于 §6.6 定义的临时记录。
+`context_json` 仅在保存带上下文的推荐时写入；其对象键固定为 `latitude`、`longitude`（均为粗略坐标）、`city`、`target_date`、`weather`、`local_date`、`prepared_at`、`prepared`、`recommendation_set_id`、`recommendation_set_created_at`、`weather_fit`、`occasion_fit`、`wardrobe_risk`、`missing_categories`。一次成功生成的 Safe/Fresh/Stretch 三档共享一个 `recommendation_set_id`；同一天的普通请求只复用最新**完整**三档组，旧行没有 set id 时才按每档最新记录兼容回退。完整 `force_refresh=true` 请求另建一组；带 `refresh_tier=safe|fresh|stretch` 的单卡刷新只调用 M3 生成目标档，并在当前完整普通组（无普通组时为 prepared 组）中追加目标档最新 history，另外两档原记录与 history_id 不变；没有完整组时返回明确的重新加载错误，不退化为三档生成。任何不完整或生成失败的组均不可复用，单卡失败不写入新 history。`prepared=true` 标记由每日预生成写入，即使之后用户操作把 `action` 改为 `shown` 或 `worn`，当天仍可作为 prepared 候选；普通 `shown` 推荐不会带此标记。`prepared` action 是每日预生成的内部历史状态，不是反馈接口可提交的用户操作。应用启动不因本功能迁移、改写或清理既有用户数据；运行期保留清理只在成功写入新推荐后执行，且仅作用于 §6.6 定义的临时记录。
 
 ### 5.5 `feedback`
-`id`(PK) · `user_id` · `date` · `items_worn_json` · `occasion`? · `occasion_type`? · `sentiment`? · `compliments_json` · `didnt_work`? · `learnings`?
-索引：`(user_id,date)`、`(user_id,occasion_type,date)`
+`id`(PK) · `user_id` · `history_id`?（推荐 identity） · `date` · `items_worn_json` · `action`? · `rating`? · `created_at` · **`updated_at`** · `occasion`? · `occasion_type`? · `sentiment`? · `positive_signals_json` · `negative_signals_json` · `adjustment_signals_json` · `compliments_json`（兼容正向字段） · `didnt_work`? · `learnings`? · `wore_it`
+索引：`(user_id,date)`、`(user_id,occasion_type,date)`；有 history identity 的反馈按 `user_id + history_id` 更新最终事实，不按同日单品集合猜关联。
+
+### 5.6 `feedback_events`（不可变学习事件账本）
+`id`(PK) · `feedback_id` · `user_id` · `history_id`? · `date` · `event_at` · `items_worn_json` · `action`? · `rating`? · `occasion`? · `occasion_type`? · `sentiment`? · `positive_signals_json` · `negative_signals_json` · `adjustment_signals_json` · `didnt_work`? · `learnings`? · `wore_it`
+索引：`(user_id,event_at)`、`(feedback_id,event_at)`。每行对应一次真实、可学习的最终事实变化；应用只插入和查询，不更新或删除。刷新按 `event_at` 倒序取样并要求事件数等于 `feedback_since_refresh`；legacy feedback 没有事件时，首次刷新前回填一条 `legacy-{feedback_id}` 等价事件，回填保留原 history、动作、评分和信号，不复制重复提交。
 
 > **已移除** `learned_weights` 表（数值权重学习表，与品味驱动设计冲突）。
 
@@ -153,20 +157,23 @@ GNN、FAISS、多模态 RAG、虚拟试衣、3D、Postgres、Redis/arq、Alembic
 | PUT | `/api/profile` | upsert（手动编辑保存） | 200 `Profile` |
 | POST | `/api/profile/style-dna/draft` | body `{samples:[url], text}` → LLM 草稿 | 200 `{draft:Profile}` |
 | POST | `/api/profile/taste-memo/refresh` | 手动触发 LLM 刷新品味备忘录 | 202 `{ok:true}` |
+| POST | `/api/profile/taste-memo/retry` | 刷新失败后保留待学习反馈并重试 | 202 `{ok:true}` |
+| POST | `/api/profile/taste-memo/correct` | 用户纠正服务端自然语言 memo | 200 `Profile` |
 
-`Profile` 保持既有字段，并新增 `recent_style_signals:list[str]`、`style_tag_preferences:{pinned:list[str],hidden:list[str],aliases:object}` 和 `last_location:object|null`。旧客户端仍可只提交既有字段，未提交的新字段会保留现有值。
+`Profile` 保持既有字段，并新增 `recent_style_signals:list[str]`、`style_tag_preferences:{pinned:list[str],hidden:list[str],aliases:object}`、`last_location:object|null`、`feedback_batch_size`、`feedback_remaining`、`taste_memo_last_change`、`taste_memo_source_feedback_ids`、`taste_memo_source_event_ids`、`taste_memo_refresh_status/error`、`taste_memo_revision`。旧客户端仍可只提交既有字段，未提交的新字段会保留现有值；普通 Profile PUT 不拥有也不能覆盖 `taste_memo` 及其服务端状态字段。
 
 ### 6.3 recommend
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| GET | `/api/weather?city=` | 输入经纬度先四舍五入至三位再用于 Open-Meteo、Nominatim、缓存和下游上下文；反向地理编码在市辖区/县场景优先显示上级直辖市名称，手动城市保留用户输入；天气内存缓存 30min，反查城市缓存 24h，反查失败不影响天气 | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
-| POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,local_date?,locked_item_ids?[],force_refresh?:false,refresh_tier?:safe|fresh|stretch}`；每套 Look 为 3–6 件，含 top/bottom/shoes，叠穿和配饰按需加入、不凑数；普通请求先复用本地当天最新完整普通三档组，再按 prepared 的坐标、温度带和降雨阈值判断复用，否则 guardrail→stylist→validator；`force_refresh=true` 且带 `refresh_tier` 时只生成目标档并复用另外两档 | 200 `{weather,safe,fresh,stretch}` |
+| GET | `/api/weather?city=&latitude=&longitude=&target_date=` | 输入经纬度先四舍五入至三位再用于 Open-Meteo、Nominatim、缓存和下游上下文；`target_date` 只能是今天至未来 14 天，天气从 16 日 forecast 的 daily 数组选择目标日；多城市候选返回 409 `{message,candidates:[{name,latitude,longitude,...}]}`，不能静默采用第一项；反向地理编码在市辖区/县场景优先显示上级直辖市名称，手动城市保留用户输入；天气内存缓存 30min，反查城市缓存 24h，反查失败不影响天气 | 200 `{temp,feels_like,condition,humidity,wind_speed,is_daytime,temp_max,temp_min,city,target_date,local_date,timezone,precipitation,rain,precipitation_probability_max,precipitation_sum,rain_window}` |
+| POST | `/api/recommend` | body `{occasion,scene?,mood?,season?,style_note?,reference_ids?[],city?,latitude?,longitude?,target_date?,local_date?,locked_item_ids?[],force_refresh?:false,refresh_tier?:safe|fresh|stretch}`；`target_date` 只能是今天至未来 14 天；显式城市不继承 Profile 旧坐标。每套 Look 为 3–6 件，含 top/bottom/shoes，叠穿和配饰按需加入、不凑数；普通请求先复用绑定同一城市/目标日期的完整三档组，再按 prepared 的坐标、温度带和降雨阈值判断复用，否则 guardrail→stylist→validator；缺少合适鞋履时仍可返回最近似完整 Look，并通过 `wardrobe_risk` 说明风险；`force_refresh=true` 且带 `refresh_tier` 时只生成目标档并复用另外两档 | 200 `{weather,safe,fresh,stretch}`；城市候选冲突时 409 `{message,candidates}` |
 
 `recommend` 卡片结构（**无 base_score**）：
 ```json
 {"history_id":"...","items":[{"id","name","category","image_url","primary_color"}],
  "reason":"...","weather_fit":"...","occasion_fit":"...",
- "pick_mode":"safe|fresh|stretch"}
+ "pick_mode":"safe|fresh|stretch","wardrobe_risk":"...",
+ "missing_categories":[]}
 ```
 
 每次新生成推荐会把粗略经纬度、返回城市、时区和更新时间写入 Profile 的 `last_location`，完整三档会写入同一个 recommendation set id。普通请求会在天气、坐标和 MiniMax Key 校验前复用当地日期最新完整的非 prepared 三档组；`local_date` 由请求提供时优先使用，否则用已保存定位的时区计算本地日期。prepared 组不会遮蔽较早的普通完整组；因此页面导航或重复打开不会重复生成。完整 `force_refresh=true` 和预生成调用都明确跳过这一路径；单卡刷新同样跳过复用检查，但只调用一次目标档 M3，并保留另外两档。prepared 三档仍须满足：距离不超过 20km、温度未跨越 `<=12` / `13–24` / `>=25`、当天降水概率未跨越 50%；命中后按卡片结构重建返回，不调用 MiniMax。预生成调用使用 `history_action="prepared"`。
@@ -192,10 +199,10 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 ### 6.6 feedback / history
 | Method | Path | 说明 | 返回 |
 |---|---|---|---|
-| POST | `/api/feedback` | body `{history_id?,items_worn:[],action?:shown/saved/skipped/worn,rating?:1..5,occasion?,occasion_type?,sentiment?,compliments?:[],didnt_work?,learnings?}`；可仅提交 rating；有 `history_id` 时 rating/action 与 feedback 同一事务提交。`worn` 只置 `wore_it=true`，不会覆盖既有 `saved`，后续收藏、取消或评分也不会清除穿着标记 | 200 `{ok:true}` |
+| POST | `/api/feedback` | body `{history_id?,items_worn:[],action?:shown/saved/skipped/worn,rating?:1..5,occasion?,occasion_type?,sentiment?,compliments?:[],negative_signals?:[],adjustment_signals?:[],didnt_work?,learnings?}`；可仅提交 rating；有 `history_id` 时最终 action/rating/极性事实与 history 同一事务提交并写入 `created_at`。`worn` 只置 `wore_it=true`，不会覆盖既有 `saved`，后续收藏、取消或评分也不会清除穿着标记 | 200 `{ok:true}` |
 | GET | `/api/history?limit=20&scope=recent|archive` | 不传 scope 保持旧版最近记录兼容；`recent` 为临时记录，`archive` 为收藏、穿过或评分至少 4 的记录；每项返回 `scope` 和 `rating` | 200 `[OutfitHistory]` |
 
-页面上对既有 Look 的收藏、取消收藏、穿过和评分必须带该 Look 的 `history_id`；客户端只能在上表返回 200 后更新显示状态。没有 `history_id` 的本地后备卡不可提交持久反馈。每个成功提交仍会令 `feedback_since_refresh` 增加，到 4 后异步刷新 taste memo。
+页面上对既有 Look 的收藏、取消收藏、穿过和评分必须带该 Look 的 `history_id`；客户端只能在上表返回 200 后更新显示状态。没有 `history_id` 的本地后备卡不可提交持久反馈。历史重载从服务端 `feedback` 恢复标签和评论，不按日期/单品集合猜测。每个真实变化且可学习的提交才会令 `feedback_since_refresh` 增加，到阈值后异步刷新 taste memo；刷新失败时 Profile 返回可见状态和错误，前端提供重试。
 
 `recent` 精确定义为非 `saved`、未穿过，且未评分或评分低于 4；`archive` 精确定义为 `saved`、已穿过或评分至少 4。普通推荐历史不再因生成新推荐而清理，历史记录用于长期覆盖率、重复 Look 和品味学习；`action=prepared` 的每日预生成内部记录不计入单品使用暴露。失败的 LLM 生成不会写入新组或触发任何历史变化。
 
@@ -212,7 +219,8 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 - `services/validator.py`（**新**）：`validate_looks(looks, candidate_ids)->(ok, error)`（item_id 真实、3–6 件、无重复、含 top+bottom+shoes；候选充足时三档不共用任意单品，并检查颜色、版型或风格标签差异）。来源：ai-closet 校验链，port 为内部自检 + `tests/test_validation.py`
 - `services/recommend.py`（**新**，编排）：当日完整 recommendation set 复用、prepared 复用/卡片重建或 guardrail→stylist→validator(重试)→返回三卡；prepared 复用阈值为 20km、三个温度带和 50% 降雨概率
 - `precompute_daily.py`：每日 CLI，读取 Profile `last_location` 后强制生成 `prepared` 三档；由生产调度器调用，不安装本地调度
-- `services/taste_memo.py`（**新**）：`refresh(db,user_id)`（旧 memo + 新 feedback → LLM → 新 memo）；`seed(onboarding)`（Style DNA+样例图→初版）
+- `services/taste_memo.py`（**新**）：`refresh(user_id,force=False)`（旧 memo + 按 `event_at` 取批的不可变学习事件，事件含 history/action/rating/time/极性 → LLM → 新 memo；legacy feedback 先安全回填等价事件；以 `taste_memo_revision` 防止覆盖手动修正，失败保留计数并记录状态）；`seed(onboarding)`（Style DNA+样例图→初版）
+- `db.py`：`_run_additive_migrations()` 仅追加缺失 SQLite 列；有本地备份路径时先保留副本，DDL 在事务内执行，失败可回滚且不删除历史。
 - `services/weather.py`：`get_weather(city?,latitude?,longitude?)->WeatherData`；输入/解析出的坐标先统一到三位小数，再用于外部请求、缓存和推荐上下文；返回本地日期/时区、当前降水与雨量、当天降水概率/总量，以及未来 12 小时首段 `>=50%` 的连续降雨窗口。手动城市保留用户输入名称；Nominatim 反向结果若为市辖区/县且上级为直辖市则显示上级市名。Open-Meteo 天气缓存 30min；Nominatim 反查城市缓存 24h，反查失败只返回 `city:null`。天气 HTTP 客户端显式 `trust_env=False`，不继承本机 SOCKS/HTTP 代理环境，避免本地代理配置导致推荐接口在天气阶段返回 500。使用 Nominatim/OpenStreetMap 数据的用户可见界面必须显示 OpenStreetMap attribution。`_WMO_CONDITION` dict。来源：Hangar（删 Redis）
 - `services/history.py`：`get_item_usage_stats`（按历史 Look 统计使用次数和最近使用日期）、`get_recent_look_keys`（30 天精确 Look 去重）、`get_recent_item_ids`、`get_recent_outfits(limit=7)`、`get_latest_recommendation_set(local_date)`、`get_prepared_outfits(local_date)`、`get_history_outfits(scope)`、`record_outfit(action, context)`。来源：ai-closet
 - `services/collage.py`：`render(images,output_io,item_width=420,padding=6)`。来源：ai-closet（零摩擦 port）
@@ -227,7 +235,7 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 
 ## 8. 当前实现状态
 
-- 数据层：五张 SQLite 表和索引已实现，由 `init_db()` 初始化。
+- 数据层：六张 SQLite 表和索引已实现，由 `init_db()` 初始化。`feedback_events` 是不可变学习事件账本，同一 Look 的多次真实修改会分别入库，重复事实不计数。
 - 真实衣物：上传、rembg、VLM、轮询、确认、列表、用户可编辑属性和删除已实现；AI 识图会初步返回 `轻薄`、`适中`、`厚实` 或空值，后台统一写入 `tags_json`，用户仍可在详情中手动修正；删除会清理数据库记录、原图与 `.nobg` 图片。当前 schema 不新增厚薄度列，前端把三档厚薄度作为受控标签保存。既有单品不自动回补厚薄度。
 - 长期灵感：参考 Look 上传、VLM 分析、M3 合并 Style DNA、列表、重试、删除已实现。
 - 推荐：天气与季节硬边界、手动季节/厚薄覆盖、历史利用率覆盖、30 天精确 Look 去重、Safe/Fresh/Stretch 三档边界、M3 造型、单卡 `refresh_tier`、item_id 校验和历史记录已实现；衣橱识图返回的季节标签会在候选过滤时归一化，用户确认值优先。
@@ -238,18 +246,21 @@ MiniMax Key 只在 prepared 无法复用、确需生成新搭配时校验；因�
 ---
 
 ## 9. 验收 / Definition of Done
-- [x] `init_db()` 建出五张当前表
+- [x] `init_db()` 建出六张当前表
 - [x] 真实衣物上传→去背景→识图→确认
 - [x] 参考 Look→Style DNA
 - [x] Safe/Fresh/Stretch 仅返回真实候选 item_id
 - [x] 独立灵感一次返回三图并带免责声明
 - [x] feedback 与 history 闭环
+- [x] Q5 feedback provenance、最终事实去重、memo 所有权、失败可重试和幂等加法迁移
 - [x] 后端测试、ruff、前端契约测试、TypeScript 和生产构建通过
 - [x] Stitch React 五页浏览器走查，控制台无错误
 - [ ] 使用用户真实图片与 MiniMax 配额完成一次人工端到端验收
 - [ ] 生产对象存储、HTTPS 与部署
 
 ## 10. 部署卡点
+
+旅行推荐补充契约：`target_date` 只能是今天至未来 14 天，天气从 Open-Meteo 16 日 forecast 的 daily 数组选择目标日；城市检索返回多个候选时以 409 携带 `candidates`，前端必须让用户选择具体城市/区县，不能静默采用第一项。普通 recommendation set 与 prepared 组都绑定目标日期、城市和粗略坐标，显式城市不会继承 Profile 旧坐标。衣橱当季过滤排除了普通非凉鞋 sneaker 时，非极寒/非雪天可返回最近似完整 Look，并在卡片 `wardrobe_risk` 明示保暖鞋履缺口；极寒或雪天提示雪地靴/户外靴风险。
 
 后端需要 HTTPS；生产图片需从本地目录迁移到对象存储。微信小程序/App 如需上线，另行选择能保留当前 React 界面与交互的容器方案，不回退旧 uni-app 设计。
 

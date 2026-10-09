@@ -54,14 +54,24 @@ async function request(path, options = {}) {
     return response.status === 204 ? null : response.json();
   }
   let detail = `请求失败（${response.status}）`;
+  let candidates = [];
   try {
     const body = await response.json();
     if (typeof body.detail === "string") detail = body.detail;
+    if (body.detail && typeof body.detail === "object") {
+      detail = body.detail.message || detail;
+      candidates = Array.isArray(body.detail.candidates) ? body.detail.candidates : [];
+    }
   } catch {
     // Keep the status-based message when the server did not return JSON.
   }
-  throw new Error(detail);
+  const error = new Error(detail);
+  error.candidates = candidates;
+  throw error;
 }
+
+export const isCurrentContextRequest = (requestContextKey, currentContextKey) =>
+  Boolean(requestContextKey) && requestContextKey === currentContextKey;
 
 function upload(path, file) {
   const body = new FormData();
@@ -90,10 +100,31 @@ export function categoryCode(label) {
 // Keep in sync with backend outfit_ai.services.taste_memo.FEEDBACK_BATCH_SIZE.
 export const FEEDBACK_BATCH_SIZE = 4;
 
+export function splitFeedbackSignals(tags = []) {
+  const negative = /过于|缺乏|不太|不喜欢|不适合|不满意/;
+  const adjustment = /想|希望|换|调整|叠穿/;
+  return tags.reduce(
+    (result, tag) => {
+      if (negative.test(tag)) result.negative_signals.push(tag);
+      else if (adjustment.test(tag)) result.adjustment_signals.push(tag);
+      else result.compliments.push(tag);
+      return result;
+    },
+    { compliments: [], negative_signals: [], adjustment_signals: [] },
+  );
+}
+
 export function feedbackLearningNote(profile) {
   const since = profile?.feedback_since_refresh ?? 0;
-  if (since >= FEEDBACK_BATCH_SIZE) return "已记录，正在触发 AI 品味备忘录刷新";
-  if (since > 0) return `已记录，累计 ${since}/${FEEDBACK_BATCH_SIZE} 条反馈后刷新品味备忘录`;
+  const batchSize = profile?.feedback_batch_size || FEEDBACK_BATCH_SIZE;
+  if (profile?.taste_memo_refresh_status === "failed") {
+    return profile.taste_memo_refresh_error
+      ? `品味备忘录刷新失败：${profile.taste_memo_refresh_error}`
+      : "品味备忘录刷新失败，可重试";
+  }
+  if (profile?.taste_memo_refresh_status === "running") return "AI 正在刷新品味备忘录";
+  if (since >= batchSize) return "已记录，正在触发 AI 品味备忘录刷新";
+  if (since > 0) return `已记录，累计 ${since}/${batchSize} 条反馈后刷新品味备忘录`;
   return profile?.taste_memo_updated_at ? "已记录，将并入下一批品味学习" : "已记录，AI 品味备忘录仍在学习中";
 }
 
@@ -170,6 +201,19 @@ export function mapHistoryLook(row, wardrobeById = new Map()) {
     .filter(Boolean)
     .map((item) => ({ name: item.name, category: item.category, img: item.imageUrl }));
   const tier = row.pick_mode === "safe" ? "稳妥" : row.pick_mode === "fresh" ? "新鲜" : "突破";
+  const feedback = row.feedback
+    ? {
+        historyId: row.feedback.history_id || row.id,
+        action: row.feedback.action,
+        rating: row.feedback.rating,
+        comment: row.feedback.sentiment || "",
+        positiveSignals: row.feedback.positive_signals || row.feedback.compliments || [],
+        negativeSignals: row.feedback.negative_signals || [],
+        adjustmentSignals: row.feedback.adjustment_signals || [],
+        didntWork: row.feedback.didnt_work || "",
+        learnings: row.feedback.learnings || "",
+      }
+    : undefined;
   return {
     id: row.id,
     historyId: row.id,
@@ -185,6 +229,7 @@ export function mapHistoryLook(row, wardrobeById = new Map()) {
     rating: row.rating,
     woreIt: Boolean(row.wore_it),
     scope: row.scope,
+    feedback,
   };
 }
 
@@ -281,6 +326,13 @@ export const api = {
   uploadReference: (file) => upload("/api/style-references/upload", file),
   deleteReference: (id) => request(`/api/style-references/${id}`, { method: "DELETE" }),
   profile: () => request("/api/profile"),
+  retryTasteMemo: () => request("/api/profile/taste-memo/retry", { method: "POST" }),
+  correctTasteMemo: (taste_memo) =>
+    request("/api/profile/taste-memo/correct", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taste_memo }),
+    }),
   saveProfile: (profile) =>
     request("/api/profile", {
       method: "PUT",
@@ -294,11 +346,12 @@ export const api = {
     const query = params.toString();
     return request(`/api/history${query ? `?${query}` : ""}`);
   },
-  weather: ({ city, latitude, longitude } = {}) => {
+  weather: ({ city, latitude, longitude, target_date } = {}) => {
     const params = new URLSearchParams();
     if (city) params.set("city", city);
     if (latitude !== undefined) params.set("latitude", String(latitude));
     if (longitude !== undefined) params.set("longitude", String(longitude));
+    if (target_date) params.set("target_date", target_date);
     const query = params.toString();
     return request(`/api/weather${query ? `?${query}` : ""}`);
   },

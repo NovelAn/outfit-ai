@@ -1,9 +1,64 @@
 const CACHE_KEY = "OUTFIT_AI_LOCATION";
 const CITY_KEY = "OUTFIT_AI_CITY";
 const LOCATION_MODE_KEY = "OUTFIT_AI_LOCATION_MODE";
+const TARGET_DATE_KEY = "OUTFIT_AI_TARGET_DATE";
+const SELECTED_LOCATION_KEY = "OUTFIT_AI_SELECTED_LOCATION";
 const CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const GEOLOCATION_TIMEOUT_MS = 8_000;
 const GEOLOCATION_MAX_AGE_MS = 5 * 60 * 1000;
+
+const validTargetDate = (value, now = new Date()) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
+  const target = new Date(`${value}T00:00:00`);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const days = (target.getTime() - today.getTime()) / 86_400_000;
+  return Number.isInteger(days) && days >= 0 && days <= 14;
+};
+
+const readTargetDate = (storage, now) => {
+  try {
+    const value = storage?.getItem(TARGET_DATE_KEY);
+    return validTargetDate(value, now()) ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const withTargetDate = (context, storage, now) => {
+  const targetDate = readTargetDate(storage, now);
+  return targetDate ? { ...context, target_date: targetDate } : context;
+};
+
+const readSelectedLocation = (storage) => {
+  try {
+    const value = JSON.parse(storage?.getItem(SELECTED_LOCATION_KEY) || "null");
+    return value?.city && validCoordinates(value)
+      ? { city: value.city, latitude: roundCoordinate(value.latitude), longitude: roundCoordinate(value.longitude) }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveLocationCandidate = (candidate, storage = globalThis.localStorage) => {
+  if (!candidate?.name || !validCoordinates(candidate)) return false;
+  try {
+    storage?.setItem(
+      SELECTED_LOCATION_KEY,
+      JSON.stringify({
+        city: candidate.name,
+        latitude: roundCoordinate(candidate.latitude),
+        longitude: roundCoordinate(candidate.longitude),
+      }),
+    );
+    storage?.setItem(CITY_KEY, candidate.name);
+    storage?.setItem(LOCATION_MODE_KEY, "manual");
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const roundCoordinate = (value) => Number(Number(value).toFixed(3));
 
@@ -60,7 +115,11 @@ export async function resolveLocationContext({
   try {
     const mode = storage?.getItem(LOCATION_MODE_KEY);
     const city = storage?.getItem(CITY_KEY)?.trim();
-    if (mode === "manual" && city) return { city, source: "manual" };
+    const selected = readSelectedLocation(storage);
+    if (mode === "manual" && city) {
+      const context = selected?.city === city ? { ...selected, source: "manual" } : { city, source: "manual" };
+      return withTargetDate(context, storage, now);
+    }
   } catch {
     // Invalid local storage must not prevent automatic location lookup.
   }
@@ -73,18 +132,18 @@ export async function resolveLocationContext({
       } catch {
         // The current location is still usable when local storage is blocked.
       }
-      return { ...coordinates, source: "current" };
+      return withTargetDate({ ...coordinates, source: "current" }, storage, now);
     }
   } catch {
     // Fall through to cached coordinates, then the user's manual city.
   }
 
   const cached = readCachedLocation(storage, now);
-  if (cached) return cached;
+  if (cached) return withTargetDate(cached, storage, now);
 
   try {
     const city = storage?.getItem(CITY_KEY)?.trim();
-    if (city) return { city, source: "manual" };
+    if (city) return withTargetDate({ city, source: "manual" }, storage, now);
   } catch {
     // Missing local storage is the same as no configured city.
   }
@@ -97,6 +156,7 @@ export async function loadDailyRecommendation({
   weather,
   forceRefresh = false,
   refreshTier = null,
+  targetDate = null,
 }) {
   const references = await api.references().catch(() => []);
   return api.recommend({
@@ -105,7 +165,9 @@ export async function loadDailyRecommendation({
     city: weather?.city || context.city,
     latitude: context.latitude,
     longitude: context.longitude,
-    ...(weather?.local_date ? { local_date: weather.local_date } : {}),
+    ...((targetDate || context.target_date || weather?.target_date || weather?.local_date)
+      ? { target_date: targetDate || context.target_date || weather?.target_date || weather?.local_date }
+      : {}),
     ...(forceRefresh ? { force_refresh: true } : {}),
     ...(refreshTier ? { refresh_tier: refreshTier } : {}),
     reference_ids: references

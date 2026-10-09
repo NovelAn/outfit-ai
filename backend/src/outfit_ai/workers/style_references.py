@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import update
+from sqlalchemy import or_, update
 
 from ..config import settings
 from ..db import SessionLocal
@@ -49,6 +49,9 @@ def process_reference(reference_id: str) -> None:
             if not profile:
                 profile = Profile(user_id=settings.user_id)
                 db.add(profile)
+                db.flush()
+            feedback_count = profile.feedback_since_refresh or 0
+            memo_updated_at = profile.taste_memo_updated_at
             for field in (
                 "style_keywords",
                 "palette",
@@ -68,7 +71,29 @@ def process_reference(reference_id: str) -> None:
                 style_tag_preferences=state["style_tag_preferences"],
                 last_location=state["last_location"],
             )
-            profile.taste_memo = merged.taste_memo
+            # Keep a feedback refresh that claimed the profile after this
+            # worker read it. The memo write is conditional on both the
+            # counter and memo timestamp remaining unchanged.
+            memo_update = db.execute(
+                update(Profile)
+                .where(
+                    Profile.user_id == settings.user_id,
+                    Profile.feedback_since_refresh == feedback_count,
+                    Profile.taste_memo_refresh_status != "running",
+                    or_(
+                        Profile.taste_memo_updated_at == memo_updated_at,
+                        Profile.taste_memo_updated_at.is_(None)
+                        if memo_updated_at is None
+                        else False,
+                    ),
+                )
+                .values(
+                    taste_memo=merged.taste_memo,
+                    taste_memo_last_change="参考图合并后的品味理解",
+                )
+            )
+            if memo_update.rowcount == 1:
+                profile.taste_memo = merged.taste_memo
             reference.status = "ready"
         except Exception as exc:
             reference.ai_raw_response = str(exc)[:500]

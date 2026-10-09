@@ -242,7 +242,7 @@ def test_memo_refresh_uses_complete_feedback_and_worn_item_attributes(
     taste_memo.refresh("local", force=True)
 
     assert captured["feedback"][0]["items_worn"] == ["boot-1"]
-    assert captured["feedback"][0]["compliments"] == ["配色好"]
+    assert captured["feedback"][0]["positive_signals"] == ["配色好"]
     assert captured["wardrobe_items"][0]["material"] == "皮革"
     assert captured["wardrobe_items"][0]["styles"] == ["经典"]
 
@@ -307,7 +307,7 @@ def test_new_feedback_during_refresh_is_learned_in_second_distinct_batch(
             db.commit()
 
     def generate_json(system, user, schema_hint):
-        batches.append([row["id"] for row in json.loads(user)["feedback"]])
+        batches.append([row["feedback_id"] for row in json.loads(user)["feedback"]])
         if len(batches) == 1:
             add_feedback(8, 16)
         return {"taste_memo": f"memo-{len(batches)}"}

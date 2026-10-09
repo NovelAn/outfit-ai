@@ -43,9 +43,10 @@ def _haversine_km(
 ) -> float:
     latitude_delta = radians(latitude_b - latitude_a)
     longitude_delta = radians(longitude_b - longitude_a)
-    distance = sin(latitude_delta / 2) ** 2 + cos(radians(latitude_a)) * cos(
-        radians(latitude_b)
-    ) * sin(longitude_delta / 2) ** 2
+    distance = (
+        sin(latitude_delta / 2) ** 2
+        + cos(radians(latitude_a)) * cos(radians(latitude_b)) * sin(longitude_delta / 2) ** 2
+    )
     return 6371 * 2 * asin(sqrt(distance))
 
 
@@ -66,6 +67,10 @@ def _effective_coordinates(
 ) -> tuple[float | None, float | None]:
     if request.latitude is not None or request.longitude is not None:
         return request.latitude, request.longitude
+    # A manual destination is a new context. Never silently attach the last
+    # browser coordinates to it; geocoding must resolve the destination.
+    if request.city:
+        return None, None
     state = decode_profile_state(profile.learned_from_feedback_json) if profile else {}
     location = state.get("last_location") or {}
     latitude, longitude = location.get("latitude"), location.get("longitude")
@@ -82,7 +87,13 @@ def _effective_coordinates(
 
 
 def _prepared_matches(
-    prepared: list, latitude: float | None, longitude: float | None, weather: object
+    prepared: list,
+    latitude: float | None,
+    longitude: float | None,
+    weather: object,
+    *,
+    city: str | None = None,
+    target_date: date | None = None,
 ) -> bool:
     weather_context = _weather_context(weather)
     for history in prepared:
@@ -95,6 +106,15 @@ def _prepared_matches(
             prepared_rain = prepared_weather.get("precipitation_probability_max", 0)
             prepared_lat = context.get("latitude")
             prepared_lon = context.get("longitude")
+            prepared_city = context.get("city") or prepared_weather.get("city")
+            if city and (
+                not prepared_city or str(prepared_city).strip() != city.strip()
+            ):
+                return False
+            if target_date is not None:
+                prepared_target = context.get("target_date") or context.get("local_date")
+                if prepared_target != target_date.isoformat():
+                    return False
             request_has_coords = latitude is not None and longitude is not None
             prepared_has_coords = prepared_lat is not None and prepared_lon is not None
             if request_has_coords and prepared_has_coords:
@@ -145,17 +165,39 @@ def _card(history: object, items: dict[str, WardrobeItem]) -> dict | None:
         "weather_fit": context.get("weather_fit", ""),
         "occasion_fit": context.get("occasion_fit", ""),
         "pick_mode": history.pick_mode,
+        "wardrobe_risk": context.get("wardrobe_risk", ""),
+        "missing_categories": context.get("missing_categories", []),
     }
 
 
 def _reuse_same_day(
-    db: Session, items: dict[str, WardrobeItem], local_date: date
+    db: Session,
+    items: dict[str, WardrobeItem],
+    local_date: date,
+    request: RecommendRequest,
 ) -> dict | None:
-    looks = get_latest_recommendation_set(
-        db, settings.user_id, local_date, prepared=False
-    )
+    looks = get_latest_recommendation_set(db, settings.user_id, local_date, prepared=False)
     if not looks:
         return None
+    first_context = _history_context(looks[0])
+    requested_target = request.target_date.isoformat() if request.target_date else None
+    stored_target = first_context.get("target_date") or first_context.get("local_date")
+    if requested_target and stored_target != requested_target:
+        return None
+    stored_city = first_context.get("city") or (_history_weather(looks[0]) or {}).get("city")
+    if request.city and (not stored_city or str(stored_city).strip() != request.city.strip()):
+        return None
+    if request.latitude is not None and first_context.get("latitude") is not None:
+        if (
+            _haversine_km(
+                float(first_context["latitude"]),
+                float(first_context["longitude"]),
+                float(request.latitude),
+                float(request.longitude),
+            )
+            > 20
+        ):
+            return None
     cards = {history.pick_mode: _card(history, items) for history in looks}
     weather = _history_weather(looks[0])
     if weather is None or any(card is None for card in cards.values()):
@@ -172,7 +214,17 @@ def _history_weather(history: object) -> dict | None:
     return weather if isinstance(weather, dict) else None
 
 
+def _history_context(history: object) -> dict:
+    try:
+        context = json.loads(history.context_json or "{}")
+    except (AttributeError, TypeError, ValueError):
+        return {}
+    return context if isinstance(context, dict) else {}
+
+
 def _request_local_date(profile: Profile | None, request: RecommendRequest) -> date:
+    if request.target_date is not None:
+        return request.target_date
     if request.local_date is not None:
         return request.local_date
     state = decode_profile_state(profile.learned_from_feedback_json) if profile else {}
@@ -191,11 +243,23 @@ def _reuse_prepared(
     longitude: float | None,
     weather: object,
     items: dict[str, WardrobeItem],
+    *,
+    city: str | None = None,
+    target_date: date | None = None,
 ) -> dict | None:
     prepared = get_prepared_outfits(
-        db, settings.user_id, getattr(weather, "local_date", date.today())
+        db,
+        settings.user_id,
+        getattr(weather, "target_date", getattr(weather, "local_date", date.today())),
     )
-    if not prepared or not _prepared_matches(prepared, latitude, longitude, weather):
+    if not prepared or not _prepared_matches(
+        prepared,
+        latitude,
+        longitude,
+        weather,
+        city=city,
+        target_date=target_date,
+    ):
         return None
     cards = {history.pick_mode: _card(history, items) for history in prepared}
     if any(card is None for card in cards.values()):
@@ -206,16 +270,15 @@ def _reuse_prepared(
     return {"weather": weather.model_dump(), **cards}
 
 
-def recommend(
-    db: Session, request: RecommendRequest, *, history_action: str = "shown"
-) -> dict:
+def recommend(db: Session, request: RecommendRequest, *, history_action: str = "shown") -> dict:
     profile = db.get(Profile, settings.user_id)
-    items = list(
-        db.scalars(select(WardrobeItem).where(WardrobeItem.user_id == settings.user_id))
-    )
+    items = list(db.scalars(select(WardrobeItem).where(WardrobeItem.user_id == settings.user_id)))
     if not request.force_refresh and history_action != "prepared":
         reused = _reuse_same_day(
-            db, {item.id: item for item in items}, _request_local_date(profile, request)
+            db,
+            {item.id: item for item in items},
+            request.target_date or _request_local_date(profile, request),
+            request,
         )
         if reused is not None:
             return reused
@@ -230,7 +293,10 @@ def recommend(
     latitude, longitude = _effective_coordinates(profile, request)
     city = request.city or (profile.city if profile else None)
     weather = get_weather(
-        city, latitude=request.latitude, longitude=request.longitude
+        city,
+        latitude=latitude,
+        longitude=longitude,
+        target_date=request.target_date,
     )
     if profile is None:
         profile = Profile(user_id=settings.user_id)
@@ -245,13 +311,21 @@ def recommend(
     )
     if not request.force_refresh and history_action != "prepared":
         reused = _reuse_prepared(
-            db, latitude, longitude, weather, {item.id: item for item in items}
+            db,
+            latitude,
+            longitude,
+            weather,
+            {item.id: item for item in items},
+            city=request.city,
+            target_date=request.target_date,
         )
         if reused is not None:
             db.commit()
             return reused
     require_api_key()
-    recommendation_date = getattr(weather, "local_date", local_date)
+    recommendation_date = request.target_date or getattr(
+        weather, "target_date", getattr(weather, "local_date", local_date)
+    )
     usage_stats = get_item_usage_stats(
         db,
         settings.user_id,
@@ -264,11 +338,52 @@ def recommend(
         recent_item_ids=get_recent_item_ids(db, settings.user_id, skip_shoes=False),
         usage_stats=usage_stats,
     )
+    wardrobe_risk = ""
+    candidate_ids = {item.id for item in candidates}
+    candidate_categories = {canonical_category(item.category) for item in candidates}
+    if _season(weather.temp) == "winter" and "雪" not in weather.condition:
+        has_warm_shoe = any(
+            any(token in (item.name or "").lower() for token in ("靴", "boot", "皮鞋"))
+            for item in candidates
+            if canonical_category(item.category) == "shoes"
+        )
+        if not has_warm_shoe:
+            wardrobe_risk = "当前鞋履更适合普通冬日，极寒、积雪或长时间户外请替换为雪地靴或户外靴。"
+    if "shoes" not in candidate_categories:
+        available_shoes = [
+            item
+            for item in items
+            if item.id not in candidate_ids
+            and item.confirmed_by_user
+            and item.status == "ready"
+            and canonical_category(item.category) == "shoes"
+        ]
+        is_snow_or_extreme_cold = weather.temp <= -15 or "雪" in weather.condition
+        if available_shoes:
+            fallback = next(
+                (
+                    item
+                    for item in available_shoes
+                    if any(
+                        token in (item.name or "").lower()
+                        for token in ("sneaker", "运动鞋", "板鞋", "德训", "鞋")
+                    )
+                ),
+                available_shoes[0],
+            )
+            candidates.append(fallback)
+            if is_snow_or_extreme_cold:
+                wardrobe_risk = (
+                    "当前没有适合极寒或雪地的鞋履，已使用最接近的普通运动鞋；普通运动鞋不适合极寒/雪地，"
+                    "缺少雪地靴或户外靴，请尽快替换。"
+                )
+            else:
+                wardrobe_risk = (
+                    "当前没有标注为当季的鞋履，已使用最接近的日常鞋；雨雪或骤冷时请替换为更保暖的鞋。"
+                )
     unavailable_locked = set(request.locked_item_ids) - {item.id for item in candidates}
     if unavailable_locked:
-        raise ValueError(
-            f"锁定单品不可用: {', '.join(sorted(unavailable_locked))}"
-        )
+        raise ValueError(f"锁定单品不可用: {', '.join(sorted(unavailable_locked))}")
     categories = {item.id: item.category or "" for item in candidates}
     candidate_attributes = {
         item.id: {
@@ -283,7 +398,7 @@ def recommend(
     if not {"top", "bottom", "shoes"} <= {
         canonical_category(value) for value in categories.values()
     }:
-        raise ValueError("已确认衣橱不足：至少需要上装、下装和鞋履")
+        raise ValueError("已确认衣橱不足：至少需要上装、下装和鞋履；请补充缺失类别")
     recent = get_recent_outfits(db, settings.user_id)
     recent_looks = []
     for outfit in recent:
@@ -381,6 +496,12 @@ def recommend(
                 "local_date": getattr(weather, "local_date", date.today()).isoformat(),
                 "prepared_at": datetime.now().astimezone().isoformat(),
                 "prepared": False,
+                "city": getattr(weather, "city", None) or city,
+                "target_date": getattr(
+                    weather, "target_date", getattr(weather, "local_date", local_date)
+                ).isoformat(),
+                "wardrobe_risk": wardrobe_risk,
+                "missing_categories": [],
                 "recommendation_set_created_at": datetime.now().astimezone().isoformat(),
             }
             history = record_outfit(
@@ -399,7 +520,7 @@ def recommend(
                 },
                 recommendation_set_id=existing_set_id,
             )
-            history.date = getattr(weather, "local_date", local_date)
+            history.date = recommendation_date
             result = {"weather": weather.model_dump(), **base_cards}
             result[target.tier] = _card(history, base_items)
             db.commit()
@@ -447,6 +568,12 @@ def recommend(
         "local_date": getattr(weather, "local_date", date.today()).isoformat(),
         "prepared_at": datetime.now().astimezone().isoformat(),
         "prepared": history_action == "prepared",
+        "city": getattr(weather, "city", None) or city,
+        "target_date": getattr(
+            weather, "target_date", getattr(weather, "local_date", local_date)
+        ).isoformat(),
+        "wardrobe_risk": wardrobe_risk,
+        "missing_categories": [],
         "recommendation_set_created_at": datetime.now().astimezone().isoformat(),
     }
     recommendation_set_id = uuid4().hex
@@ -468,7 +595,7 @@ def recommend(
             },
             recommendation_set_id=recommendation_set_id,
         )
-        history.date = getattr(weather, "local_date", date.today())
+        history.date = recommendation_date
         result[look.tier] = {
             "history_id": history.id,
             "items": [
@@ -485,6 +612,8 @@ def recommend(
             "weather_fit": look.weather_fit,
             "occasion_fit": look.occasion_fit,
             "pick_mode": look.tier,
+            "wardrobe_risk": wardrobe_risk,
+            "missing_categories": [],
         }
     db.commit()
     return result

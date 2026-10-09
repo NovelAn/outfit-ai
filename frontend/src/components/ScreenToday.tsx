@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenId, LookRating, FavoriteLook } from '../types';
-import { api, confirmFeedback, feedbackLearningNote, requireHistoryId } from '../lib/api.mjs';
-import { loadDailyRecommendation, resolveLocationContext } from '../lib/location.mjs';
+import { api, confirmFeedback, feedbackLearningNote, isCurrentContextRequest, requireHistoryId, splitFeedbackSignals } from '../lib/api.mjs';
+import { loadDailyRecommendation, resolveLocationContext, saveLocationCandidate } from '../lib/location.mjs';
 import { lookStackLayout, orderLookItems } from '../lib/look-layout.mjs';
 import { displayWeatherForRecommendation, lookFeedbackKey, recommendationErrorMessage } from '../lib/today-state.mjs';
 import { BottomNav } from './BottomNav';
@@ -229,11 +229,20 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
   const [activeModalItem, setActiveModalItem] = useState<ReturnType<typeof toModalItem> | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [locationContext, setLocationContext] = useState<any>({ source: 'missing' });
+  const [locationCandidates, setLocationCandidates] = useState<any[]>([]);
+  const [targetDate, setTargetDate] = useState<string>(() => {
+    try {
+      return localStorage.getItem('OUTFIT_AI_TARGET_DATE') || '';
+    } catch {
+      return '';
+    }
+  });
   const locationRef = useRef<any>({ source: 'missing' });
   const [weather, setWeather] = useState<any>(null);
   const [weatherIsStale, setWeatherIsStale] = useState(false);
   const weatherRef = useRef<any>(null);
   const dailyRefreshRef = useRef<Promise<any> | null>(null);
+  const activeContextKeyRef = useRef('');
   const lastResumeRefreshRef = useRef(0);
   const recommendationRequestRef = useRef(0);
   const swapInFlightRef = useRef(false);
@@ -384,20 +393,54 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
     const requestId = ++recommendationRequestRef.current;
     const task = (async () => {
       const context = await resolveLocationContext({ storage: localStorage });
+      if (requestId !== recommendationRequestRef.current) return;
+      const contextKey = `${context.city || ''}|${context.latitude ?? ''},${context.longitude ?? ''}|${context.target_date || ''}`;
+      const switchedContext = Boolean(activeContextKeyRef.current && activeContextKeyRef.current !== contextKey);
+      const cachedWeather = liveLooks?.weather;
+      const cachedContextChanged = Boolean(
+        liveLooks
+        && cachedWeather
+        && ((context.city && cachedWeather.city && context.city !== cachedWeather.city)
+          || ((context.target_date || '')
+            && (cachedWeather.target_date || cachedWeather.local_date || '')
+            && context.target_date !== (cachedWeather.target_date || cachedWeather.local_date))),
+      );
+      activeContextKeyRef.current = contextKey;
+      if (!isCurrentContextRequest(contextKey, activeContextKeyRef.current)) return;
+      if (switchedContext || cachedContextChanged) {
+        setWeather(null);
+        weatherRef.current = null;
+        setLiveLooks(null);
+        try {
+          localStorage.removeItem('OUTFIT_AI_LATEST_RECOMMENDATION');
+        } catch {
+          // Cached UI is optional; the new destination remains authoritative.
+        }
+      }
       setLocationContext(context);
       locationRef.current = context;
+      setTargetDate(context.target_date || '');
+      setLocationCandidates([]);
       if (context.source === 'missing') {
-        setWeatherIsStale(Boolean(weatherRef.current));
+        setWeatherIsStale(false);
         return;
       }
-      let latestWeather = weatherRef.current;
+      let latestWeather = null;
       try {
         latestWeather = await api.weather(context);
+        if (requestId !== recommendationRequestRef.current || !isCurrentContextRequest(contextKey, activeContextKeyRef.current)) return;
         setWeather(latestWeather);
         weatherRef.current = latestWeather;
         setWeatherIsStale(false);
-      } catch {
-        setWeatherIsStale(Boolean(weatherRef.current));
+      } catch (error) {
+        if (requestId === recommendationRequestRef.current && isCurrentContextRequest(contextKey, activeContextKeyRef.current)) {
+          setWeatherIsStale(!switchedContext);
+          const candidates = error instanceof Error && Array.isArray((error as Error & { candidates?: unknown[] }).candidates)
+            ? (error as Error & { candidates?: unknown[] }).candidates || []
+            : [];
+          setLocationCandidates(candidates);
+        }
+        return;
       }
       try {
         const recommendation = await loadDailyRecommendation({
@@ -405,7 +448,9 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
           context,
           weather: latestWeather,
         });
-        if (requestId === recommendationRequestRef.current) applyRecommendation(recommendation, latestWeather);
+        if (requestId === recommendationRequestRef.current && isCurrentContextRequest(contextKey, activeContextKeyRef.current)) {
+          applyRecommendation(recommendation, latestWeather);
+        }
       } catch (error) {
         if (requestId === recommendationRequestRef.current) {
           triggerToast(recommendationErrorMessage(error, Boolean(liveLooks)));
@@ -476,7 +521,12 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
 
       const handleStorageChange = () => {
         loadFavorites();
-        void refreshDailyContext();
+        const inFlight = dailyRefreshRef.current;
+        if (inFlight) {
+          void inFlight.then(() => refreshDailyContext(), () => refreshDailyContext());
+        } else {
+          void refreshDailyContext();
+        }
       };
       const refreshOnResume = () => {
         if (document.visibilityState === 'hidden') return;
@@ -514,6 +564,17 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
     : weather
       ? `降雨概率 ${weather.precipitation_probability_max ?? 0}%${weather.precipitation_sum ? ` · ${weather.precipitation_sum} mm` : ''}`
       : '';
+
+  const changeTargetDate = (value: string) => {
+    setTargetDate(value);
+    try {
+      if (value) localStorage.setItem('OUTFIT_AI_TARGET_DATE', value);
+      else localStorage.removeItem('OUTFIT_AI_TARGET_DATE');
+      window.dispatchEvent(new Event('storage'));
+    } catch {
+      // Target-date persistence is optional; the current screen remains usable.
+    }
+  };
 
   const toggleLike = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -639,12 +700,13 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
       }).catch(() => undefined);
     };
     try {
+      const signals = splitFeedbackSignals(selectedTags);
       await confirmFeedback(api.feedback, {
         history_id: historyId,
         items_worn: activeRatingModal.items.map((item: any) => item.id),
         rating: currentStars,
         sentiment: commentText || `${currentStars} 星`,
-        compliments: selectedTags,
+        ...signals,
       }, commit, (error: unknown) => {
         triggerToast(error instanceof Error ? error.message : '反馈同步失败');
       });
@@ -691,7 +753,7 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
               <div className="flex flex-col">
                 <span className="font-semibold text-[10px] tracking-widest text-[#43474c]">{locationLabel}</span>
                 <span className="font-semibold text-[10px] uppercase tracking-widest text-[#43474c]">
-                  {weather ? `${weather.local_date} · ${rainSummary}${weatherIsStale ? ' · 上次更新' : ''}` : ''}
+                  {weather ? `${weather.target_date || weather.local_date} · ${rainSummary}${weatherIsStale ? ' · 上次更新' : ''}` : ''}
                 </span>
               </div>
             </div>
@@ -728,6 +790,39 @@ export const ScreenToday: React.FC<ScreenTodayProps> = ({ onNavigate, expandedLo
               {isCompareMode ? '退出对比' : '对比模式'}
             </button>
           </div>
+          <label className="mt-2 flex items-center justify-between gap-2 text-[10px] text-[#74777d]">
+            <span>目标日期（今天起 14 天内）</span>
+            <input
+              type="date"
+              value={targetDate}
+              min={new Date().toISOString().slice(0, 10)}
+              max={new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)}
+              onChange={(event) => changeTargetDate(event.target.value)}
+              className="rounded border border-[#c4c6cd]/50 bg-white px-2 py-1 text-[11px] text-[#162839]"
+            />
+          </label>
+          {locationCandidates.length > 0 && (
+            <div className="mt-2 rounded border border-[#c4c6cd]/50 bg-white p-2">
+              <p className="mb-1 text-[10px] font-semibold text-[#9a442a]">请选择具体城市或区县</p>
+              <div className="flex flex-wrap gap-1">
+                {locationCandidates.map((candidate) => (
+                  <button
+                    key={`${candidate.name}-${candidate.latitude}-${candidate.longitude}`}
+                    type="button"
+                    onClick={() => {
+                      if (saveLocationCandidate(candidate)) {
+                        setLocationCandidates([]);
+                        window.dispatchEvent(new Event('storage'));
+                      }
+                    }}
+                    className="rounded border border-[#c4c6cd] px-2 py-1 text-[10px] text-[#162839]"
+                  >
+                    {candidate.name}{candidate.admin1 ? ` · ${candidate.admin1}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Comparison Banner when Comparison Mode is active */}
           {isCompareMode && (

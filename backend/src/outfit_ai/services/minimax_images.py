@@ -1,6 +1,7 @@
 import base64
 import binascii
 import json
+import logging
 import mimetypes
 import os
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ _REGIONS = {
     "cn": "https://api.minimaxi.com",
     "global": "https://api.minimax.io",
 }
+_MAX_TRANSIENT_ATTEMPTS = 2
+logger = logging.getLogger(__name__)
 
 
 class MiniMaxUnavailableError(RuntimeError):
@@ -81,36 +84,55 @@ def _provider_error(status: int, body: dict[str, Any]) -> Exception:
     code = base_resp.get("status_code") if isinstance(base_resp, dict) else None
     if status in {401, 403}:
         return MiniMaxUnavailableError("MiniMax API Key 无效或无权限")
-    if status == 429 or code in {1028, 1030, 2061}:
+    if code in {1028, 1030, 2061}:
         return MiniMaxQuotaError("MiniMax 图片额度不足，请稍后重试")
     return MiniMaxUnavailableError("MiniMax 图片服务调用失败")
 
 
 def _post_json(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     access = resolve_minimax_access()
-    try:
-        with httpx.Client(timeout=120, trust_env=False) as client:
-            response = client.post(
-                f"{access.base_url}{path}",
-                headers={"Authorization": f"Bearer {access.api_key}"},
-                json=payload,
-            )
-    except httpx.TimeoutException as exc:
-        raise MiniMaxUnavailableError("MiniMax 图片服务响应超时") from exc
-    except httpx.HTTPError as exc:
-        raise MiniMaxUnavailableError("无法连接 MiniMax 图片服务") from exc
+    phase = "vlm" if "vlm" in path else "image_request"
+    for attempt in range(_MAX_TRANSIENT_ATTEMPTS):
+        logger.info("MiniMax image phase=%s attempt=%d", phase, attempt + 1)
+        try:
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                response = client.post(
+                    f"{access.base_url}{path}",
+                    headers={"Authorization": f"Bearer {access.api_key}"},
+                    json=payload,
+                )
+        except httpx.TimeoutException as exc:
+            if attempt == 0:
+                logger.warning("MiniMax image phase=%s transient=timeout", phase)
+                continue
+            raise MiniMaxUnavailableError("MiniMax 图片服务响应超时") from exc
+        except httpx.HTTPError as exc:
+            if attempt == 0:
+                logger.warning("MiniMax image phase=%s transient=network", phase)
+                continue
+            raise MiniMaxUnavailableError("无法连接 MiniMax 图片服务") from exc
 
-    try:
-        body = response.json()
-    except ValueError as exc:
-        raise MiniMaxResponseError("MiniMax 图片服务返回格式错误") from exc
-    if not isinstance(body, dict):
-        raise MiniMaxResponseError("MiniMax 图片服务返回格式错误")
-    base_resp = body.get("base_resp")
-    failed = isinstance(base_resp, dict) and base_resp.get("status_code") not in {None, 0}
-    if response.status_code >= 400 or failed:
-        raise _provider_error(response.status_code, body)
-    return body
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise MiniMaxResponseError("MiniMax 图片服务返回格式错误") from exc
+        if not isinstance(body, dict):
+            raise MiniMaxResponseError("MiniMax 图片服务返回格式错误")
+        base_resp = body.get("base_resp")
+        code = base_resp.get("status_code") if isinstance(base_resp, dict) else None
+        failed = isinstance(base_resp, dict) and code not in {None, 0}
+        if response.status_code >= 400 or failed:
+            if code in {1028, 1030, 2061}:
+                raise MiniMaxQuotaError("MiniMax 图片额度不足，请稍后重试")
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt == 0:
+                    logger.warning(
+                        "MiniMax image phase=%s transient_status=%d", phase, response.status_code
+                    )
+                    continue
+            raise _provider_error(response.status_code, body)
+        return body
+    raise MiniMaxUnavailableError("MiniMax 图片服务调用失败")
 
 
 def image_data_url(path: str | Path) -> str:
@@ -133,6 +155,7 @@ def describe_image(path: str | Path, prompt: str) -> str:
 def generate_images(prompt: str, *, count: int) -> list[bytes]:
     if not 1 <= count <= 9:
         raise ValueError("图片数量需要在 1–9 之间")
+    logger.info("MiniMax image phase=prompt count=%d", count)
     body = _post_json(
         "/v1/image_generation",
         {
@@ -166,10 +189,8 @@ def generate_images(prompt: str, *, count: int) -> list[bytes]:
         for url in image_urls:
             if not isinstance(url, str) or not url.startswith(("http://", "https://")):
                 continue
-            try:
-                response = httpx.get(url, timeout=120, trust_env=False)
-                response.raise_for_status()
-            except httpx.HTTPError:
+            response = _download_image(url)
+            if response is None:
                 continue
             if response.content:
                 images.append(response.content)
@@ -177,6 +198,30 @@ def generate_images(prompt: str, *, count: int) -> list[bytes]:
     if not images:
         raise MiniMaxResponseError("MiniMax 未返回有效图片")
     return images[:count]
+
+
+def _download_image(url: str):
+    logger.info("MiniMax image phase=download")
+    for attempt in range(_MAX_TRANSIENT_ATTEMPTS):
+        status = 0
+        try:
+            response = httpx.get(url, timeout=120, trust_env=False)
+            status = getattr(response, "status_code", 200)
+            if status == 429 or status >= 500:
+                if attempt == 0:
+                    continue
+                return None
+            response.raise_for_status()
+            return response
+        except httpx.TimeoutException:
+            if attempt == 0:
+                continue
+            return None
+        except httpx.HTTPError:
+            if attempt == 0 and (status == 0 or status >= 500):
+                continue
+            return None
+    return None
 
 
 def generate_image(prompt: str) -> bytes:

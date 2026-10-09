@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,7 +8,13 @@ from ..db import get_db
 from ..schemas import RecommendRequest
 from ..services.llm import LLMResponseError, LLMUnavailableError
 from ..services.recommend import recommend
-from ..services.weather import WeatherData, WeatherInputError, WeatherServiceError, get_weather
+from ..services.weather import (
+    WeatherAmbiguousError,
+    WeatherData,
+    WeatherInputError,
+    WeatherServiceError,
+    get_weather,
+)
 
 router = APIRouter(tags=["recommend"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -18,9 +25,20 @@ def weather(
     city: str | None = None,
     latitude: float | None = Query(None, ge=-90, le=90),
     longitude: float | None = Query(None, ge=-180, le=180),
+    target_date: date | None = None,
 ):
     try:
-        return get_weather(city, latitude=latitude, longitude=longitude).model_dump()
+        return get_weather(
+            city,
+            latitude=latitude,
+            longitude=longitude,
+            target_date=target_date,
+        ).model_dump()
+    except WeatherAmbiguousError as exc:
+        raise HTTPException(
+            409,
+            {"message": str(exc), "candidates": exc.candidates},
+        ) from exc
     except WeatherInputError as exc:
         raise HTTPException(400, str(exc)) from exc
     except WeatherServiceError as exc:
@@ -35,6 +53,11 @@ def recommendation(payload: RecommendRequest, db: DbSession):
         raise HTTPException(503, str(exc)) from exc
     except LLMResponseError as exc:
         raise HTTPException(502, str(exc)) from exc
+    except WeatherAmbiguousError as exc:
+        raise HTTPException(
+            409,
+            {"message": str(exc), "candidates": exc.candidates},
+        ) from exc
     except WeatherServiceError as exc:
         raise HTTPException(502, str(exc)) from exc
     except ValueError as exc:

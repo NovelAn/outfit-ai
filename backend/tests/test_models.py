@@ -4,12 +4,13 @@ from outfit_ai import models  # noqa: F401
 from outfit_ai.db import Base, _add_outfit_history_context_column
 
 
-def test_schema_has_five_tables_and_no_weight_table() -> None:
+def test_schema_has_six_tables_and_no_weight_table() -> None:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
 
     assert set(inspect(engine).get_table_names()) == {
         "feedback",
+        "feedback_events",
         "outfit_history",
         "profile",
         "style_references",

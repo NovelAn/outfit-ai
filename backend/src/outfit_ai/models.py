@@ -36,6 +36,12 @@ class Profile(Base):
     taste_memo: Mapped[str] = mapped_column(Text, default="")
     taste_memo_updated_at: Mapped[datetime | None] = mapped_column(DateTime)
     feedback_since_refresh: Mapped[int] = mapped_column(Integer, default=0)
+    taste_memo_last_change: Mapped[str] = mapped_column(Text, default="")
+    taste_memo_source_feedback_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    taste_memo_source_event_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    taste_memo_refresh_status: Mapped[str] = mapped_column(String, default="idle")
+    taste_memo_refresh_error: Mapped[str | None] = mapped_column(Text)
+    taste_memo_revision: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class WardrobeItem(Base):
@@ -123,11 +129,49 @@ class Feedback(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str] = mapped_column(String)
+    history_id: Mapped[str | None] = mapped_column(String)
     date: Mapped[date] = mapped_column(Date, default=date.today)
     items_worn_json: Mapped[str] = mapped_column(Text, default="[]")
+    action: Mapped[str | None] = mapped_column(String)
+    rating: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     occasion: Mapped[str | None]
     occasion_type: Mapped[str | None]
     sentiment: Mapped[str | None]
+    positive_signals_json: Mapped[str] = mapped_column(Text, default="[]")
+    negative_signals_json: Mapped[str] = mapped_column(Text, default="[]")
+    adjustment_signals_json: Mapped[str] = mapped_column(Text, default="[]")
     compliments_json: Mapped[str] = mapped_column(Text, default="[]")
     didnt_work: Mapped[str | None] = mapped_column(Text)
     learnings: Mapped[str | None] = mapped_column(Text)
+    wore_it: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class FeedbackEvent(Base):
+    """Immutable learning facts; one row per real, learnable feedback change."""
+
+    __tablename__ = "feedback_events"
+    __table_args__ = (
+        Index("ix_feedback_event_user_time", "user_id", "event_at"),
+        Index("ix_feedback_event_feedback", "feedback_id", "event_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    feedback_id: Mapped[str] = mapped_column(String)
+    user_id: Mapped[str] = mapped_column(String)
+    history_id: Mapped[str | None] = mapped_column(String)
+    date: Mapped[date] = mapped_column(Date, default=date.today)
+    event_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    items_worn_json: Mapped[str] = mapped_column(Text, default="[]")
+    action: Mapped[str | None] = mapped_column(String)
+    rating: Mapped[int | None] = mapped_column(Integer)
+    occasion: Mapped[str | None]
+    occasion_type: Mapped[str | None]
+    sentiment: Mapped[str | None]
+    positive_signals_json: Mapped[str] = mapped_column(Text, default="[]")
+    negative_signals_json: Mapped[str] = mapped_column(Text, default="[]")
+    adjustment_signals_json: Mapped[str] = mapped_column(Text, default="[]")
+    didnt_work: Mapped[str | None] = mapped_column(Text)
+    learnings: Mapped[str | None] = mapped_column(Text)
+    wore_it: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -40,9 +40,7 @@ def test_access_falls_back_to_mmx_config(monkeypatch, tmp_path) -> None:
     assert access.base_url == "https://example.minimax.test"
 
 
-def test_access_rejects_invalid_config_without_leaking_contents(
-    monkeypatch, tmp_path
-) -> None:
+def test_access_rejects_invalid_config_without_leaking_contents(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.setenv("MMX_CONFIG_DIR", str(tmp_path))
     (tmp_path / "config.json").write_text('{"api_key":"secret"', encoding="utf-8")
@@ -85,13 +83,7 @@ def test_generate_images_requests_and_decodes_three_images(monkeypatch) -> None:
 
     def fake_post(path, payload):
         captured.update(path=path, payload=payload)
-        return {
-            "data": {
-                "image_base64": [
-                    base64.b64encode(image).decode() for image in expected
-                ]
-            }
-        }
+        return {"data": {"image_base64": [base64.b64encode(image).decode() for image in expected]}}
 
     monkeypatch.setattr(minimax_images, "_post_json", fake_post)
 
@@ -144,3 +136,120 @@ def test_generate_images_accepts_image_urls(monkeypatch) -> None:
 
     assert minimax_images.generate_images("一套编辑画报", count=1) == [expected]
     assert captured == {"timeout": 120, "trust_env": False}
+
+
+def test_post_json_retries_one_transient_server_failure(monkeypatch) -> None:
+    attempts = []
+
+    class Response:
+        status_code = 503
+
+        def json(self):
+            return {"message": "temporary"}
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, *args, **kwargs):
+            attempts.append(1)
+            if len(attempts) == 1:
+                return Response()
+            return type(
+                "Success",
+                (),
+                {
+                    "status_code": 200,
+                    "json": lambda self: {
+                        "data": {"image_base64": [base64.b64encode(b"ok").decode()]}
+                    },
+                },
+            )()
+
+    monkeypatch.setattr(
+        minimax_images,
+        "resolve_minimax_access",
+        lambda: minimax_images.MiniMaxAccess("key", "https://example.test"),
+    )
+    monkeypatch.setattr(minimax_images.httpx, "Client", Client)
+
+    assert minimax_images.generate_images("稳定重试", count=1) == [b"ok"]
+    assert attempts == [1, 1]
+
+
+def test_post_json_does_not_retry_quota_failure(monkeypatch) -> None:
+    attempts = []
+
+    class Response:
+        status_code = 429
+
+        def json(self):
+            return {"base_resp": {"status_code": 1028}}
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, *args, **kwargs):
+            attempts.append(1)
+            return Response()
+
+    monkeypatch.setattr(
+        minimax_images,
+        "resolve_minimax_access",
+        lambda: minimax_images.MiniMaxAccess("key", "https://example.test"),
+    )
+    monkeypatch.setattr(minimax_images.httpx, "Client", Client)
+
+    with pytest.raises(minimax_images.MiniMaxQuotaError):
+        minimax_images.generate_images("额度错误", count=1)
+    assert attempts == [1]
+
+
+def test_image_logs_have_phase_only_and_never_prompt_text(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(
+        minimax_images,
+        "_post_json",
+        lambda *_args, **_kwargs: {"data": {"image_base64": [base64.b64encode(b"ok").decode()]}},
+    )
+
+    with caplog.at_level("INFO", logger="outfit_ai.services.minimax_images"):
+        minimax_images.generate_images("不要写入日志的 prompt", count=1)
+
+    assert "phase=prompt" in caplog.text
+    assert "不要写入日志的 prompt" not in caplog.text
+
+
+def test_download_image_retries_a_transient_timeout(monkeypatch) -> None:
+    attempts = []
+
+    class Response:
+        content = b"downloaded-after-timeout"
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise minimax_images.httpx.ReadTimeout("temporary download timeout")
+        return Response()
+
+    monkeypatch.setattr(minimax_images.httpx, "get", fake_get)
+
+    response = minimax_images._download_image("https://cdn.test/look.jpg")
+
+    assert response.content == b"downloaded-after-timeout"
+    assert attempts == [1, 1]

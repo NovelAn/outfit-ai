@@ -1,7 +1,9 @@
 """SQLAlchemy 同步引擎 + SQLite。单用户零运维。"""
 
 from collections.abc import Generator
+from datetime import datetime
 from pathlib import Path
+from shutil import copy2
 
 from sqlalchemy import create_engine, inspect, text, update
 from sqlalchemy.engine import Engine
@@ -50,6 +52,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _add_outfit_history_context_column(engine)
+    _run_additive_migrations(engine, backup_path=_default_migration_backup_path(engine))
     with SessionLocal() as db:
         recover_interrupted_analyses(db)
         recover_interrupted_references(db)
@@ -66,6 +69,79 @@ def _add_outfit_history_context_column(db_engine: Engine) -> None:
         return
     with db_engine.begin() as connection:
         connection.execute(text("ALTER TABLE outfit_history ADD COLUMN context_json TEXT"))
+
+
+_ADDITIVE_COLUMNS = {
+    "profile": {
+        "taste_memo_last_change": "TEXT NOT NULL DEFAULT ''",
+        "taste_memo_source_feedback_ids_json": "TEXT NOT NULL DEFAULT '[]'",
+        "taste_memo_source_event_ids_json": "TEXT NOT NULL DEFAULT '[]'",
+        "taste_memo_refresh_status": "TEXT NOT NULL DEFAULT 'idle'",
+        "taste_memo_refresh_error": "TEXT",
+        "taste_memo_revision": "INTEGER NOT NULL DEFAULT 0",
+    },
+    "feedback": {
+        "history_id": "TEXT",
+        "action": "TEXT",
+        "rating": "INTEGER",
+        "created_at": "DATETIME",
+        "updated_at": "DATETIME",
+        "positive_signals_json": "TEXT NOT NULL DEFAULT '[]'",
+        "negative_signals_json": "TEXT NOT NULL DEFAULT '[]'",
+        "adjustment_signals_json": "TEXT NOT NULL DEFAULT '[]'",
+        "wore_it": "INTEGER NOT NULL DEFAULT 0",
+    },
+}
+
+
+def _default_migration_backup_path(db_engine: Engine) -> Path | None:
+    if db_engine.dialect.name != "sqlite" or not db_engine.url.database:
+        return None
+    database = Path(db_engine.url.database)
+    if not database.exists():
+        return None
+    return database.with_name(
+        f"{database.name}.pre-migration-{datetime.now():%Y%m%d%H%M%S}.bak"
+    )
+
+
+def _run_additive_migrations(
+    db_engine: Engine,
+    backup_path: Path | None = None,
+) -> bool:
+    """Add missing SQLite columns transactionally, preserving all existing rows.
+
+    A caller may provide ``backup_path`` for a recoverable local snapshot. SQLite
+    rolls back the DDL transaction on failure; the snapshot is retained so a
+    local operator can restore it if a later verification step fails.
+    """
+    if db_engine.dialect.name != "sqlite":
+        return False
+    inspector = inspect(db_engine)
+    tables = set(inspector.get_table_names())
+    missing: list[tuple[str, str, str]] = []
+    for table, columns in _ADDITIVE_COLUMNS.items():
+        if table not in tables:
+            continue
+        existing = {column["name"] for column in inspector.get_columns(table)}
+        missing.extend(
+            (table, name, definition)
+            for name, definition in columns.items()
+            if name not in existing
+        )
+    if not missing:
+        return False
+
+    if backup_path is not None and db_engine.url.database:
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        copy2(Path(db_engine.url.database), backup_path)
+
+    with db_engine.begin() as connection:
+        for table, name, definition in missing:
+            connection.execute(
+                text(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}')
+            )
+    return True
 
 
 def recover_interrupted_analyses(db: Session) -> int:

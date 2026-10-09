@@ -3,7 +3,7 @@ import test from "node:test";
 
 import * as location from "../src/lib/location.mjs";
 
-const { resolveLocationContext } = location;
+const { resolveLocationContext, saveLocationCandidate } = location;
 
 const memoryStorage = (initial = {}) => {
   const values = new Map(Object.entries(initial));
@@ -46,6 +46,27 @@ test("uses an explicit manual city override before browser location", async () =
   });
 
   assert.deepEqual(context, { city: "杭州", source: "manual" });
+});
+
+test("uses the coordinates of the selected city candidate", async () => {
+  const storage = memoryStorage();
+  assert.equal(
+    saveLocationCandidate(
+      { name: "额尔古纳", latitude: 50.24, longitude: 120.18 },
+      storage,
+    ),
+    true,
+  );
+  const context = await resolveLocationContext({
+    geolocation: deniedGeolocation(),
+    storage,
+  });
+  assert.deepEqual(context, {
+    city: "额尔古纳",
+    latitude: 50.24,
+    longitude: 120.18,
+    source: "manual",
+  });
 });
 
 test("falls back when the browser never resolves the location callback", async () => {
@@ -124,7 +145,7 @@ test("loads the daily prepared recommendation without forcing regeneration", asy
     city: "上海",
     latitude: 31.23,
     longitude: 121.474,
-    local_date: "2026-08-04",
+    target_date: "2026-08-04",
     reference_ids: ["ready"],
     locked_item_ids: [],
   }]);
@@ -160,4 +181,20 @@ test("sends only the selected tier for an explicit swap", async () => {
 
   assert.equal(calls[0].force_refresh, true);
   assert.equal(calls[0].refresh_tier, "fresh");
+});
+
+test("sends one explicit travel target date instead of treating weather local date as the target", async () => {
+  const calls = [];
+  await location.loadDailyRecommendation({
+    api: {
+      references: async () => [],
+      recommend: async (payload) => calls.push(payload) || {},
+    },
+    context: { city: "呼伦贝尔", source: "manual" },
+    weather: { city: "呼伦贝尔", local_date: "2026-08-04" },
+    targetDate: "2026-08-10",
+  });
+
+  assert.equal(calls[0].target_date, "2026-08-10");
+  assert.equal(calls[0].local_date, undefined);
 });

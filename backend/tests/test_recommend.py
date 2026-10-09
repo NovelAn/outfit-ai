@@ -177,6 +177,12 @@ def test_prepared_matches_without_coordinates_checks_weather_only() -> None:
 
     assert recommend_service._prepared_matches(prepared, None, None, _weather(temp=22)) is True
     assert recommend_service._prepared_matches(prepared, None, None, _weather(temp=30)) is False
+    assert (
+        recommend_service._prepared_matches(
+            prepared, None, None, _weather(temp=22), city="呼伦贝尔"
+        )
+        is False
+    )
 
 
 def test_recommend_request_limits_refresh_tier() -> None:
@@ -185,6 +191,252 @@ def test_recommend_request_limits_refresh_tier() -> None:
         RecommendRequest(refresh_tier="unknown")
     with pytest.raises(ValueError, match="force_refresh"):
         RecommendRequest(refresh_tier="safe")
+
+
+def test_recommend_request_accepts_only_today_through_fourteen_days() -> None:
+    today = date.today()
+    assert RecommendRequest(target_date=today).target_date == today
+    assert RecommendRequest(
+        target_date=today + timedelta(days=14)
+    ).target_date == today + timedelta(days=14)
+    with pytest.raises(ValueError, match="未来 14 天"):
+        RecommendRequest(target_date=today + timedelta(days=15))
+    with pytest.raises(ValueError, match="今天或未来"):
+        RecommendRequest(target_date=today - timedelta(days=1))
+
+
+def test_explicit_city_does_not_inherit_saved_coordinates(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    calls = []
+
+    def fake_weather(city, **kwargs):
+        calls.append((city, kwargs))
+        return _weather()
+
+    monkeypatch.setattr(recommend_service, "get_weather", fake_weather)
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service, "propose", lambda *args, **kwargs: _looks(kwargs.get("coverage_targets"))
+    )
+
+    with Session(engine) as db:
+        db.add_all(_recommendation_items())
+        db.add(
+            recommend_service.Profile(
+                user_id="local",
+                city="上海",
+                learned_from_feedback_json=encode_profile_state(
+                    learnings=[],
+                    recent_style_signals=[],
+                    style_tag_preferences={},
+                    last_location={"latitude": 31.23, "longitude": 121.474},
+                ),
+            )
+        )
+        db.commit()
+        recommend_service.recommend(db, RecommendRequest(city="呼伦贝尔", force_refresh=True))
+
+    assert calls[0] == (
+        "呼伦贝尔",
+        {"latitude": None, "longitude": None, "target_date": None},
+    )
+
+
+def test_same_day_reuse_is_bound_to_destination_context(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    calls = []
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: calls.append(1) or _looks(kwargs.get("coverage_targets")),
+    )
+
+    with Session(engine) as db:
+        rows = _same_day_set_rows("shanghai", created_at="2026-07-31T08:30:00+08:00")
+        for row in rows:
+            context = json.loads(row.context_json)
+            context["city"] = "上海"
+            context["latitude"] = 31.23
+            context["longitude"] = 121.474
+            row.context_json = json.dumps(context, default=str)
+        db.add_all(_recommendation_items() + rows)
+        db.commit()
+
+        result = recommend_service.recommend(db, RecommendRequest(city="呼伦贝尔"))
+
+    assert calls == [1]
+    assert result["safe"]["history_id"] != "shanghai-safe"
+
+
+def test_winter_recommendation_uses_a_non_sandal_sneaker_with_explicit_risk(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    weather = SimpleNamespace(
+        temp=-8,
+        condition="晴",
+        city="呼伦贝尔",
+        local_date=date.today(),
+        target_date=date.today(),
+        timezone="Asia/Shanghai",
+        model_dump=lambda: {
+            "temp": -8,
+            "condition": "晴",
+            "city": "呼伦贝尔",
+            "local_date": date.today(),
+            "target_date": date.today(),
+            "timezone": "Asia/Shanghai",
+            "precipitation_probability_max": 10,
+        },
+    )
+    captured = {}
+
+    def fake_propose(candidates, *args, **kwargs):
+        captured["ids"] = {item.id for item in candidates}
+        targets = kwargs["coverage_targets"]
+
+        def look_ids(tier, index):
+            target = targets.get(tier)
+            if target and target.startswith("top-"):
+                return [target, f"bottom-{index}", "sneaker"]
+            if target and target.startswith("bottom-"):
+                return [f"top-{index}", target, "sneaker"]
+            return [f"top-{index}", f"bottom-{index}", "sneaker"]
+
+        return [
+            ProposedLook(
+                tier=tier,
+                item_ids=look_ids(tier, index),
+                reason="保暖层次",
+                weather_fit="鞋履保暖风险",
+                occasion_fit="日常",
+            )
+            for index, tier in enumerate(("safe", "fresh", "stretch"), 1)
+        ]
+
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: weather)
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(recommend_service, "propose", fake_propose)
+
+    with Session(engine) as db:
+        db.add_all(
+            [
+                _item("top-1", "top"),
+                _item("top-2", "top"),
+                _item("top-3", "top"),
+                _item("bottom-1", "bottom"),
+                _item("bottom-2", "bottom"),
+                _item("bottom-3", "bottom"),
+                _item("sneaker", "sneakers"),
+            ]
+        )
+        result = recommend_service.recommend(db, RecommendRequest(city="呼伦贝尔"))
+
+    assert "sneaker" in captured["ids"]
+    assert result["safe"]["wardrobe_risk"]
+
+
+def test_extreme_cold_recommendation_uses_closest_shoe_with_boot_risk(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    weather = SimpleNamespace(
+        temp=-20,
+        condition="大雪",
+        city="呼伦贝尔",
+        local_date=date.today(),
+        target_date=date.today(),
+        timezone="Asia/Shanghai",
+        model_dump=lambda: {
+            "temp": -20,
+            "condition": "大雪",
+            "city": "呼伦贝尔",
+            "local_date": date.today(),
+            "target_date": date.today(),
+            "timezone": "Asia/Shanghai",
+            "precipitation_probability_max": 90,
+        },
+    )
+    captured = {}
+
+    def fake_propose(candidates, *args, **kwargs):
+        captured["ids"] = {item.id for item in candidates}
+        targets = kwargs["coverage_targets"]
+
+        def look_ids(tier, index):
+            target = targets.get(tier)
+            if target and target.startswith("top-"):
+                return [target, f"bottom-{index}", "sneaker"]
+            if target and target.startswith("bottom-"):
+                return [f"top-{index}", target, "sneaker"]
+            return [f"top-{index}", f"bottom-{index}", "sneaker"]
+
+        return [
+            ProposedLook(
+                tier=tier,
+                item_ids=look_ids(tier, index),
+                reason="最接近的可用鞋履",
+                weather_fit="极端天气鞋履风险",
+                occasion_fit="日常",
+            )
+            for index, tier in enumerate(("safe", "fresh", "stretch"), 1)
+        ]
+
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: weather)
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(recommend_service, "propose", fake_propose)
+
+    sneaker = _item("sneaker", "sneakers")
+    sneaker.seasons_json = json.dumps(["summer"])
+    with Session(engine) as db:
+        db.add_all(
+            [
+                _item("top-1", "top"),
+                _item("top-2", "top"),
+                _item("top-3", "top"),
+                _item("bottom-1", "bottom"),
+                _item("bottom-2", "bottom"),
+                _item("bottom-3", "bottom"),
+                sneaker,
+            ]
+        )
+        result = recommend_service.recommend(db, RecommendRequest(city="呼伦贝尔"))
+
+    assert "sneaker" in captured["ids"]
+    assert "雪地靴" in result["safe"]["wardrobe_risk"]
+
+
+def test_prepared_recommendation_is_not_reused_across_cities(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    calls = []
+    monkeypatch.setattr(recommend_service, "get_weather", lambda *args, **kwargs: _weather())
+    monkeypatch.setattr(recommend_service, "require_api_key", lambda: None)
+    monkeypatch.setattr(recommend_service, "get_recent_item_ids", lambda *args, **kwargs: set())
+    monkeypatch.setattr(
+        recommend_service,
+        "propose",
+        lambda *args, **kwargs: calls.append(1) or _looks(kwargs.get("coverage_targets")),
+    )
+
+    with Session(engine) as db:
+        prepared = _prepared_rows()
+        for row in prepared:
+            context = json.loads(row.context_json)
+            context["city"] = "上海"
+            row.context_json = json.dumps(context, ensure_ascii=False)
+        db.add_all(_recommendation_items() + prepared)
+        db.commit()
+
+        recommend_service.recommend(db, RecommendRequest(city="呼伦贝尔"))
+
+    assert calls == [1]
 
 
 def test_normal_request_reuses_latest_complete_same_day_set_for_manual_city(monkeypatch) -> None:
@@ -415,7 +667,7 @@ def test_same_day_reuse_skips_latest_prepared_group_before_weather(monkeypatch) 
         db.add_all(_recommendation_items() + ordinary + prepared)
         db.commit()
 
-        result = recommend_service.recommend(db, RecommendRequest(city="上海"))
+        result = recommend_service.recommend(db, RecommendRequest())
 
         assert [result[tier]["history_id"] for tier in ("safe", "fresh", "stretch")] == [
             "ordinary-safe",
@@ -531,10 +783,12 @@ def test_recommend_reuses_prepared_looks_with_saved_coordinates(monkeypatch) -> 
         )
         db.commit()
 
-        result = recommend_service.recommend(db, RecommendRequest(city="上海"))
+        result = recommend_service.recommend(db, RecommendRequest())
 
         assert result["safe"]["history_id"] == "prepared-safe"
-        assert weather_calls == [("上海", {"latitude": None, "longitude": None})]
+    assert weather_calls == [
+        ("上海", {"latitude": 31.23, "longitude": 121.474, "target_date": None})
+    ]
 
 
 def test_recommend_regenerates_for_malformed_prepared_weather_context(monkeypatch) -> None:

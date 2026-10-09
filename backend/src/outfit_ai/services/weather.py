@@ -41,6 +41,12 @@ class WeatherInputError(ValueError):
     pass
 
 
+class WeatherAmbiguousError(WeatherInputError):
+    def __init__(self, candidates: list[dict]):
+        super().__init__("城市匹配到多个候选，请先选择具体城市或区县")
+        self.candidates = candidates
+
+
 class WeatherServiceError(RuntimeError):
     pass
 
@@ -64,6 +70,7 @@ class WeatherData(BaseModel):
     precipitation_probability_max: int
     precipitation_sum: float
     rain_window: str | None
+    target_date: date | None = None
 
 
 def _coordinate_key(latitude: float, longitude: float) -> str:
@@ -135,14 +142,21 @@ def get_weather(
     *,
     latitude: float | None = None,
     longitude: float | None = None,
+    target_date: date | None = None,
 ) -> WeatherData:
+    if target_date is not None:
+        today = date.today()
+        if target_date < today or target_date > today + timedelta(days=14):
+            raise WeatherInputError("target_date 只能是今天或未来 14 天内")
     latitude = round(latitude, 3) if latitude is not None else None
     longitude = round(longitude, 3) if longitude is not None else None
+    target_key = target_date.isoformat() if target_date else "current"
     key = (
         _coordinate_key(latitude, longitude)
         if latitude is not None and longitude is not None
         else city or ""
     )
+    key = f"{key}|{target_key}"
     cached = _CACHE.get(key)
     if cached and datetime.now() - cached[0] < timedelta(minutes=30):
         return cached[1]
@@ -156,7 +170,7 @@ def get_weather(
                 result = (
                     client.get(
                         "https://geocoding-api.open-meteo.com/v1/search",
-                        params={"name": city, "count": 1, "language": "zh"},
+                        params={"name": city, "count": 5, "language": "zh"},
                     )
                     .raise_for_status()
                     .json()
@@ -164,6 +178,24 @@ def get_weather(
                 )
                 if not result:
                     raise WeatherInputError(f"找不到城市：{city}")
+                if len(result) > 1:
+                    raise WeatherAmbiguousError(
+                        [
+                            {
+                                key: candidate[key]
+                                for key in (
+                                    "name",
+                                    "latitude",
+                                    "longitude",
+                                    "admin1",
+                                    "admin2",
+                                    "country",
+                                )
+                                if candidate.get(key) is not None
+                            }
+                            for candidate in result
+                        ]
+                    )
                 latitude, longitude = result[0]["latitude"], result[0]["longitude"]
                 latitude, longitude = round(latitude, 3), round(longitude, 3)
             payload = (
@@ -177,8 +209,8 @@ def get_weather(
                         "precipitation,rain",
                         "hourly": "precipitation_probability",
                         "daily": "temperature_2m_max,temperature_2m_min,"
-                        "precipitation_probability_max,precipitation_sum",
-                        "forecast_days": 1,
+                        "precipitation_probability_max,precipitation_sum,weather_code",
+                        "forecast_days": 16 if target_date else 1,
                         "timezone": "auto",
                     },
                 )
@@ -187,23 +219,50 @@ def get_weather(
             )
             reverse_city = _reverse_city(client, latitude, longitude)
         current, daily = payload["current"], payload["daily"]
+        current_date = datetime.fromisoformat(current["time"]).date()
+        wanted_date = target_date or current_date
+        daily_index = daily.get("time", []).index(wanted_date.isoformat())
+        hourly = payload["hourly"]
+        target_current = (
+            current
+            if wanted_date == current_date
+            else {
+                "temperature_2m": (
+                    (daily.get("temperature_2m_max") or [])[daily_index]
+                    + (daily.get("temperature_2m_min") or [])[daily_index]
+                )
+                / 2,
+                "apparent_temperature": (daily.get("temperature_2m_max") or [])[daily_index],
+                "relative_humidity_2m": current["relative_humidity_2m"],
+                "weather_code": current["weather_code"],
+                "wind_speed_10m": current["wind_speed_10m"],
+                "is_day": current["is_day"],
+                "precipitation": daily.get("precipitation_sum", [0])[daily_index],
+                "rain": daily.get("precipitation_sum", [0])[daily_index],
+            }
+        )
+        if wanted_date != current_date and daily.get("weather_code"):
+            target_current["weather_code"] = daily["weather_code"][daily_index]
         weather = WeatherData(
-            temp=current["temperature_2m"],
-            feels_like=current["apparent_temperature"],
-            condition=_WMO_CONDITION.get(current["weather_code"], "未知"),
-            humidity=current["relative_humidity_2m"],
-            wind_speed=current["wind_speed_10m"],
-            is_daytime=bool(current["is_day"]),
-            temp_max=daily["temperature_2m_max"][0],
-            temp_min=daily["temperature_2m_min"][0],
+            temp=target_current["temperature_2m"],
+            feels_like=target_current["apparent_temperature"],
+            condition=_WMO_CONDITION.get(target_current["weather_code"], "未知"),
+            humidity=target_current["relative_humidity_2m"],
+            wind_speed=target_current["wind_speed_10m"],
+            is_daytime=bool(target_current["is_day"]),
+            temp_max=daily["temperature_2m_max"][daily_index],
+            temp_min=daily["temperature_2m_min"][daily_index],
             city=city.strip() if city else reverse_city,
-            local_date=datetime.fromisoformat(current["time"]).date(),
+            local_date=current_date,
             timezone=payload["timezone"],
-            precipitation=current["precipitation"],
-            rain=current["rain"],
-            precipitation_probability_max=daily["precipitation_probability_max"][0],
-            precipitation_sum=daily["precipitation_sum"][0],
-            rain_window=_rain_window(current["time"], payload["hourly"]),
+            precipitation=target_current["precipitation"],
+            rain=target_current["rain"],
+            precipitation_probability_max=daily["precipitation_probability_max"][daily_index],
+            precipitation_sum=daily["precipitation_sum"][daily_index],
+            rain_window=_rain_window(current["time"], hourly)
+            if wanted_date == current_date
+            else None,
+            target_date=wanted_date,
         )
     except WeatherInputError:
         raise

@@ -82,6 +82,17 @@ export interface HistoryLook {
   rating?: number;
   woreIt?: boolean;
   scope?: 'recent' | 'archive';
+  feedback?: {
+    historyId: string;
+    action?: string;
+    rating?: number | null;
+    comment?: string;
+    positiveSignals: string[];
+    negativeSignals: string[];
+    adjustmentSignals: string[];
+    didntWork?: string;
+    learnings?: string;
+  };
 }
 
 export interface LookRating {

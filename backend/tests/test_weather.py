@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import httpx
 import pytest
 from fastapi import HTTPException
@@ -126,9 +128,7 @@ def test_reverse_city_failure_does_not_fail_weather(monkeypatch) -> None:
 
 
 def test_reverse_city_uses_municipality_name_for_district(monkeypatch) -> None:
-    reverse = {
-        "features": [{"properties": {"geocoding": {"city": "黄浦区", "state": "上海市"}}}]
-    }
+    reverse = {"features": [{"properties": {"geocoding": {"city": "黄浦区", "state": "上海市"}}}]}
 
     assert weather._reverse_city(FakeClient({}, reverse), 31.231, 121.475) == "上海市"
 
@@ -156,9 +156,7 @@ def test_manual_city_keeps_the_user_city_label(monkeypatch) -> None:
             "precipitation_sum": [0.0],
         },
     }
-    reverse = {
-        "features": [{"properties": {"geocoding": {"city": "黄浦区", "state": "上海市"}}}]
-    }
+    reverse = {"features": [{"properties": {"geocoding": {"city": "黄浦区", "state": "上海市"}}}]}
 
     class CityClient(FakeClient):
         def get(self, url, **kwargs):
@@ -304,3 +302,91 @@ def test_weather_route_maps_provider_failure_to_502(monkeypatch) -> None:
         recommend_router.weather(city="上海")
 
     assert error.value.status_code == 502
+
+
+def test_weather_selects_a_future_target_date_from_daily_forecast(monkeypatch) -> None:
+    today = date.today()
+    target = today + timedelta(days=4)
+    forecast = {
+        "timezone": "Asia/Shanghai",
+        "current": {
+            "time": f"{today.isoformat()}T08:00",
+            "temperature_2m": 27.1,
+            "apparent_temperature": 30.2,
+            "relative_humidity_2m": 81,
+            "weather_code": 61,
+            "wind_speed_10m": 8.0,
+            "is_day": 1,
+            "precipitation": 0.2,
+            "rain": 0.2,
+        },
+        "hourly": {"time": [f"{target.isoformat()}T08:00"], "precipitation_probability": [20]},
+        "daily": {
+            "time": [(today + timedelta(days=index)).isoformat() for index in range(5)],
+            "temperature_2m_max": [31, 32, 30, 29, 24],
+            "temperature_2m_min": [25, 26, 24, 23, 19],
+            "precipitation_probability_max": [20, 20, 30, 40, 80],
+            "precipitation_sum": [0, 0, 1, 2, 8],
+        },
+    }
+    requests = []
+
+    class RecordingClient(FakeClient):
+        def get(self, url, **kwargs):
+            requests.append((url, kwargs.get("params", {})))
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {"results": [{"name": "呼伦贝尔", "latitude": 49.2, "longitude": 119.7}]}
+                )
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: RecordingClient(forecast, {"features": []}),
+    )
+
+    result = weather.get_weather(city="呼伦贝尔", target_date=target)
+
+    assert result.target_date == target
+    assert result.temp_max == 24
+    assert result.temp_min == 19
+    assert result.precipitation_probability_max == 80
+    forecast_params = next(params for url, params in requests if "forecast" in url)
+    assert forecast_params["forecast_days"] == 16
+
+
+def test_weather_requires_user_choice_when_city_has_multiple_candidates(monkeypatch) -> None:
+    class AmbiguousClient(FakeClient):
+        def get(self, url, **kwargs):
+            if "geocoding-api" in url:
+                return FakeResponse(
+                    {
+                        "results": [
+                            {
+                                "name": "海拉尔",
+                                "latitude": 49.2,
+                                "longitude": 119.7,
+                                "admin1": "内蒙古",
+                            },
+                            {
+                                "name": "海拉尔区",
+                                "latitude": 49.3,
+                                "longitude": 119.8,
+                                "admin1": "内蒙古",
+                            },
+                        ]
+                    }
+                )
+            return super().get(url, **kwargs)
+
+    monkeypatch.setattr(
+        weather.httpx,
+        "Client",
+        lambda **kwargs: AmbiguousClient({}, {"features": []}),
+    )
+
+    with pytest.raises(weather.WeatherAmbiguousError) as error:
+        weather.get_weather(city="海拉尔")
+
+    assert [candidate["name"] for candidate in error.value.candidates] == ["海拉尔", "海拉尔区"]

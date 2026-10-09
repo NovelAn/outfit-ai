@@ -39,7 +39,7 @@ frontend/index.html
 | 衣橱 | `ScreenWardrobe.tsx` | 三列紧凑卡片（手机一屏约六件）；分类为全部/上装/下装/鞋履/配饰；支持季节（四季快捷项、春/夏/秋/冬）和厚薄（轻薄/适中/厚实）组合筛选，组内为 OR、分类/季节/厚薄组之间为 AND，重新进入页面恢复无筛选；批量或单张上传真实衣物；等待去背景和中文识图后确认并展示单品；点击单品打开在顶部安全区与底部导航上沿之间居中的紧凑详情，统一限制图片展示高度，显示图片、名称、特征标签、季节和厚薄度信息标签，并支持左右滑动切换当前筛选结果中的相邻单品；详情内可编辑识别字段、手动多选适用季节、手动修正厚薄度或删除单品；既有单品不会自动回补厚薄度；进入“批量管理”后可勾选、全选当前筛选结果并批量删除，删除前统一二次确认。 | `GET /api/wardrobe/items`、`POST /api/wardrobe/upload`、`GET /api/wardrobe/{id}/status`、`POST /api/wardrobe/{id}/confirm`、`PATCH /api/wardrobe/{id}`、`DELETE /api/wardrobe/{id}` |
 | 灵感 | `ScreenInspiration.tsx` | 移动端内容画布、页眉和底部主导航统一为同一窄版宽度；长期灵感胶片中的上传卡和前两张预览使用紧凑尺寸，减少首屏占用；单次多选上传长期参考 Look；逐张独立分析并汇总成功/失败数量；沉淀 Style DNA；按季节和场景生成三张非衣橱灵感图 | `GET /api/style-references`、`POST /api/style-references/upload`、`GET /api/style-references/{id}/status`、`GET /api/profile`、`POST /api/inspiration/generate` |
 | 灵感存档 | `ScreenArchive.tsx` | 移动端内容画布与底部主导航统一为同一窄版宽度；三列紧凑缩略图浏览；卡片标签显示在图片下方且最多显示 2 个，避免文字覆盖图片；点击图片打开在顶部安全区与底部导航上沿之间居中的紧凑预览，最多显示 8 个标签并自动换行；预览支持左右滑动切换当前筛选列表中的相邻图片；失败任务显示“处理失败”；批量选择和删除长期参考 Look | `GET /api/style-references`、`DELETE /api/style-references/{id}` |
-| 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；分别读取 `recent` 和 `archive` 推荐历史。历史、收藏和评分的 AI 品味备忘录按已解析到的单品渲染缩略图网格（完整 Look 为 3–6 件），缩略图点击放大为从头到脚的紧凑单屏垂直预览，再次点击返回；仅当零件单品都无法解析时，旧记录才回退其单张拼图，并可收藏、评分或标记穿过；AI 品味备忘录卡片显示服务端学习进度（待学习 N/4 条反馈与最近更新时间） | `GET/PUT /api/profile`、`GET /api/wardrobe/items`、`GET /api/history?scope=`、`POST /api/feedback` |
+| 我的 | `ScreenProfile.tsx` | 查看 Style DNA 色板、最多 7 个核心关键词和最多 3 个独立的近期风格信号；页内管理标签的置顶、隐藏与合并；分别读取 `recent` 和 `archive` 推荐历史。历史、收藏和评分的 AI 品味备忘录按已解析到的单品渲染缩略图网格（完整 Look 为 3–6 件），缩略图点击放大为从头到脚的紧凑单屏垂直预览，再次点击返回；服务端重载恢复评分、喜欢/不喜欢/调整标签和评论；AI 品味备忘录卡片显示当前自然语言 memo、本轮学到的变化、依据反馈数量、阈值进度、刷新失败/重试入口和用户纠正入口 | `GET/PUT /api/profile`、`POST /api/profile/taste-memo/correct`、`POST /api/profile/taste-memo/retry`、`GET /api/wardrobe/items`、`GET /api/history?scope=`、`POST /api/feedback` |
 
 ## 4. 前端 API 接线
 
@@ -57,11 +57,13 @@ frontend/index.html
 | `uploadReference(file)` | `POST /api/style-references/upload` | 上传完整参考 Look，不去背景 |
 | `referenceStatus(id)` | `GET /api/style-references/{id}/status` | 轮询 VLM 分析与 Style DNA 合并状态 |
 | `deleteReference(id)` | `DELETE /api/style-references/{id}` | 删除参考 Look 和图片 |
-| `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存完整 Profile；标签操作保留既有字段，并提交 `style_keywords`、`recent_style_signals` 和 `style_tag_preferences` |
-| `weather({city,latitude,longitude})` | `GET /api/weather` | 以同一位置上下文读取本地日期、城市、温度、天气和降雨数据 |
-| `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；后端先按天气、季节和用户手动覆盖做硬过滤，再按历史使用次数与最近使用时间排序，优先覆盖低暴露单品，并拒绝 30 天内完全重复的 Look；候选充足时三档不共用任意单品，并检查颜色、版型或风格标签差异。今日页会把已获取天气的本地 `local_date` 传入，使普通 recommendation set 复用不依赖服务器时区。普通非 prepared 完整组按同一天无条件复用；prepared 组另受位置、温度带和降雨阈值校验，未命中时仍可在不传 `force_refresh` 的情况下新生成。单卡换装传 `force_refresh:true, refresh_tier:"safe|fresh|stretch"`，后端只生成目标档并返回另外两档原卡片 |
-| `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈；`action` 可省略以仅提交 `rating: 1..5`。已有 Look 的持久反馈必须含服务端 `history_id`，成功后才更新 UI |
-| `history({scope,limit} = {})` | `GET /api/history?scope=recent|archive&limit=` | truthy 的 `limit` 会转发，后端接受范围为 1–100；省略或传 `0` 时不带该参数，使用后端默认 `20`。`recent` 读取临时记录，`archive` 读取收藏、穿过或高评分存档；每项含 `scope`、`rating` |
+| `profile()` / `saveProfile()` | `GET/PUT /api/profile` | 读取或保存可编辑 Style DNA；标签操作保留既有字段，并提交 `style_keywords`、`recent_style_signals` 和 `style_tag_preferences`。服务端 `taste_memo`、刷新状态、阈值和依据字段只读，普通保存不会覆盖 |
+| `retryTasteMemo()` | `POST /api/profile/taste-memo/retry` | 刷新失败后保留反馈计数并重试 |
+| `correctTasteMemo(text)` | `POST /api/profile/taste-memo/correct` | 用户提交自然语言修正，服务端保存为当前 memo |
+| `weather({city,latitude,longitude,target_date})` | `GET /api/weather` | 以同一位置和目标日期上下文读取本地日期、城市、温度、天气和降雨数据；城市多候选时返回 `candidates` 供用户选择 |
+| `recommend(data)` | `POST /api/recommend` | 返回天气及 Safe / Fresh / Stretch 三套真实衣橱推荐；`target_date` 为今天至未来 14 天，显式城市不继承旧坐标。后端先按天气、季节和用户手动覆盖做硬过滤，再按历史使用次数与最近使用时间排序，优先覆盖低暴露单品，并拒绝 30 天内完全重复的 Look；候选充足时三档不共用任意单品，并检查颜色、版型或风格标签差异。普通非 prepared 完整组按绑定城市/目标日期复用；prepared 组另受位置、温度带和降雨阈值校验，未命中时仍可在不传 `force_refresh` 的情况下新生成。缺少合适鞋履时卡片通过 `wardrobe_risk` 说明风险。单卡换装传 `force_refresh:true, refresh_tier:"safe|fresh|stretch"`，后端只生成目标档并返回另外两档原卡片 |
+| `feedback(data)` | `POST /api/feedback` | 保存收藏、跳过、穿着或评分反馈；`action` 可省略以仅提交 `rating: 1..5`；标签按喜欢/不喜欢/想调整分开提交。已有 Look 的持久反馈必须含服务端 `history_id`，成功后才更新 UI；重复最终事实不会重复计数 |
+| `history({scope,limit} = {})` | `GET /api/history?scope=recent|archive&limit=` | truthy 的 `limit` 会转发，后端接受范围为 1–100；省略或传 `0` 时不带该参数，使用后端默认 `20`。`recent` 读取临时记录，`archive` 读取收藏、穿过或高评分存档；每项含 `scope`、`rating` 和按 `history_id` 关联的服务端反馈事实 |
 | `generateInspiration(data)` | `POST /api/inspiration/generate` | 一次返回三张独立灵感图 |
 
 灵感参考图批量上传复用现有单文件接口：前端对每张图片分别调用 `uploadReference()` 和 `referenceStatus()`，使用独立结算保证单张失败不影响同批其他图片，完成后只刷新一次灵感库。
@@ -78,7 +80,7 @@ frontend/index.html
 
 我的页面的色板仅使用统一的名称映射：黑色 `#1B1C19`、白色 `#F7F5EF`、深蓝色 `#162839`、浅蓝色 `#A9C7DD`、灰色 `#8A8D91`、米白色 `#EEE8DA`、米黄色 `#D8C49A`、卡其色 `#B39B72`、棕色 `#7A5337`、绿色 `#647B5B`、红色 `#9A442A`、紫色 `#75627D`。未知颜色只显示文字和中性描边底色，绝不按数组位置猜测颜色。
 
-核心标签摘要最多显示 7 个，近期风格信号作为独立分组最多显示 3 个；置顶标签在各自分组中优先，alias 归一化后同一标签同时 pinned 与 hidden 时仍按 pinned 显示。隐藏标签只在“管理标签”浮层中显示。浮层支持最多置顶 3 个标签、隐藏/恢复，以及选择恰好两个标签并填入一个统一名称来合并。每次确认操作只发起一次完整 Profile 保存；失败时恢复前一份本地状态并显示错误提示。侧边栏的学习文案基于本地已记录的反馈次数；我的页面与今日页反馈提示改用服务端 Profile 的 `feedback_since_refresh` 与 `taste_memo_updated_at` 显示真实学习进度（例如“待学习 N/4 条反馈”），无反馈时显示“正在学习”，不展示虚构百分比或编造的权重调整文案。
+核心标签摘要最多显示 7 个，近期风格信号作为独立分组最多显示 3 个；置顶标签在各自分组中优先，alias 归一化后同一标签同时 pinned 与 hidden 时仍按 pinned 显示。隐藏标签只在“管理标签”浮层中显示。浮层支持最多置顶 3 个标签、隐藏/恢复，以及选择恰好两个标签并填入一个统一名称来合并。每次确认操作只发起一次完整 Profile 保存；失败时恢复前一份本地状态并显示错误提示。我的页面从服务端恢复反馈标签和评论，服务端反馈是评分显示的唯一来源（空结果会清空旧的本地评分缓存），显示当前自然语言 memo、本轮学到什么、依据反馈数量和后端 `feedback_batch_size/feedback_since_refresh` 进度；刷新失败显示原因并提供重试，用户可提交自然语言修正。服务端 memo 字段不由普通 Profile 保存覆盖，不展示数值权重或虚构百分比。
 
 开发环境默认使用相对路径，Vite 将 `/api` 和 `/media` 代理到 `http://localhost:8000`。分离部署时通过 `VITE_API_BASE_URL` 指定后端地址。
 
@@ -96,7 +98,7 @@ POST /api/recommend
 {"weather":{},"safe":{"history_id":"...","items":[{}],"reason":"...","weather_fit":"...","occasion_fit":"...","pick_mode":"safe"},"fresh":{},"stretch":{}}
 
 POST /api/feedback
-{"history_id":"...","items_worn":["item-1","item-2","item-3"],"action":"saved"}
+{"history_id":"...","items_worn":["item-1","item-2","item-3"],"action":"saved","compliments":["色彩搭配好"],"negative_signals":[],"adjustment_signals":[]}
 // 或仅评分：{"history_id":"...","items_worn":[],"rating":5}
 
 GET /api/history?scope=recent
@@ -170,6 +172,8 @@ npm run build
 当前视觉契约还固定以下已确认的移动端行为：灵感上传文件选择器支持多选；灵感存档在手机端使用三列 `3:4` 缩略图；放大图可再次点击关闭；我的页 total-look 缩略图点击放大后按从头到脚垂直顺序在窄版单屏内展示完整 Look，再次点击返回；表单输入统一使用 16px 字号，避免 iOS 聚焦时自动放大页面。
 
 ## 8. 文档同步规则
+
+旅行目标日与城市候选：今日页可保存 `OUTFIT_AI_TARGET_DATE`（今天至未来 14 天），天气与推荐都使用同一 `target_date`。城市查询遇到多结果时，接口错误对象中的 `candidates` 会在今日页显示为可选的城市/区县按钮；用户选择后保存 `OUTFIT_AI_SELECTED_LOCATION` 的坐标，后续请求不再静默继承旧城市或旧坐标。目的地/目标日期切换期间，天气失败不会继续展示旧城市天气或旧搭配；同一城市/日期刷新失败时可保留旧结果，但必须标记 `上次更新`；过期响应不能覆盖新上下文。
 
 以下变化必须在同一提交更新本文：
 

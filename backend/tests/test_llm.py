@@ -15,9 +15,7 @@ def test_chat_multimodal_wraps_provider_failure_without_exposing_details(
         def create(self, **kwargs):
             raise OpenAIError("provider internals")
 
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=BrokenCompletions())
-    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=BrokenCompletions()))
     monkeypatch.setattr(llm, "get_client", lambda: client)
 
     with pytest.raises(llm.LLMUnavailableError, match="MiniMax 服务调用失败") as error:
@@ -27,9 +25,7 @@ def test_chat_multimodal_wraps_provider_failure_without_exposing_details(
 
 
 def test_stylist_rejects_response_without_required_tool_call(monkeypatch) -> None:
-    response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[]))]
-    )
+    response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[]))])
     monkeypatch.setattr(stylist, "chat_multimodal", lambda *args, **kwargs: response)
 
     with pytest.raises(llm.LLMResponseError, match="造型师"):
@@ -78,17 +74,13 @@ def test_stylist_tier_falls_back_to_plain_json(monkeypatch) -> None:
     )
     monkeypatch.setattr(stylist, "chat_multimodal", lambda *args, **kwargs: response)
 
-    look = stylist.propose_tier(
-        [], None, {}, "日常", None, [], set(), "safe"
-    )
+    look = stylist.propose_tier([], None, {}, "日常", None, [], set(), "safe")
 
     assert look.tier == "safe"
 
 
 def test_generate_json_rejects_non_object_json(monkeypatch) -> None:
-    response = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content="[]"))]
-    )
+    response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="[]"))])
     monkeypatch.setattr(llm, "_create_completion", lambda **kwargs: response)
 
     with pytest.raises(llm.LLMResponseError, match="有效 JSON"):
@@ -99,9 +91,7 @@ def test_generate_json_extracts_object_after_reasoning(monkeypatch) -> None:
     response = SimpleNamespace(
         choices=[
             SimpleNamespace(
-                message=SimpleNamespace(
-                    content='<think>先整理字段</think>\n{"prompt":"valid"}'
-                )
+                message=SimpleNamespace(content='<think>先整理字段</think>\n{"prompt":"valid"}')
             )
         ]
     )
@@ -153,9 +143,7 @@ def test_provider_failure_logs_elapsed_without_provider_details(
         def create(self, **kwargs):
             raise OpenAIError("secret provider response")
 
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=BrokenCompletions())
-    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=BrokenCompletions()))
     monkeypatch.setattr(llm, "get_client", lambda: client)
 
     with caplog.at_level("WARNING", logger="outfit_ai.services.llm"):
@@ -164,6 +152,29 @@ def test_provider_failure_logs_elapsed_without_provider_details(
 
     assert "MiniMax M3 request failed" in caplog.text
     assert "secret provider response" not in caplog.text
+
+
+def test_text_completion_retries_one_transient_status(monkeypatch) -> None:
+    calls = []
+
+    class RetryableProviderError(OpenAIError):
+        status_code = 503
+
+    class Completions:
+        def create(self, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RetryableProviderError("temporary")
+            return "ok"
+
+    monkeypatch.setattr(
+        llm,
+        "get_client",
+        lambda: SimpleNamespace(chat=SimpleNamespace(completions=Completions())),
+    )
+
+    assert llm.chat_multimodal([], tools=[], tool_choice={}) == "ok"
+    assert calls == [1, 1]
 
 
 def test_stylist_sends_text_attributes_and_reference_analysis(monkeypatch) -> None:
@@ -259,8 +270,7 @@ def test_stylist_sends_text_attributes_and_reference_analysis(monkeypatch) -> No
     content = captured["messages"][1]["content"]
     assert isinstance(content, str)
     assert (
-        "reason 必须用一句话说明核心搭配思路，最多 50 个字符"
-        in captured["messages"][0]["content"]
+        "reason 必须用一句话说明核心搭配思路，最多 50 个字符" in captured["messages"][0]["content"]
     )
     assert "白衬衫" in content
     assert "克制" in content

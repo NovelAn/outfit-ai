@@ -41,6 +41,18 @@ test("labels cached recommendations when today's load fails", () => {
   assert.equal(recommendationErrorMessage(new Error("生成失败"), false), "生成失败");
 });
 
+test("does not apply an older context response after a destination switch", () => {
+  assert.equal(typeof profileApi.isCurrentContextRequest, "function");
+  assert.equal(
+    profileApi.isCurrentContextRequest("呼伦贝尔|2026-08-10", "呼伦贝尔|2026-08-10"),
+    true,
+  );
+  assert.equal(
+    profileApi.isCurrentContextRequest("上海|2026-08-10", "呼伦贝尔|2026-08-10"),
+    false,
+  );
+});
+
 test("keeps pinned tags visible when an alias is also hidden", () => {
   assert.equal(typeof profileApi.visibleStyleTags, "function");
   assert.deepEqual(
@@ -91,6 +103,15 @@ test("maps backend wardrobe records into the unchanged Stitch card model", () =>
       thickness: "",
     },
   );
+});
+
+test("treats server feedback as the Profile ratings source of truth", () => {
+  const profileScreen = readFileSync(
+    new URL("../src/components/ScreenProfile.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(profileScreen, /setRatings\(serverRatings\);/);
+  assert.doesNotMatch(profileScreen, /OUTFIT_AI_LOOK_RATINGS/);
 });
 
 test("maps editable wardrobe attributes and controlled thickness tags", () => {
@@ -257,6 +278,36 @@ test("maps scoped history into a full-Look memo model with legacy image fallback
   assert.equal(mapHistoryLook({ id: "legacy", item_ids: [], collage_path: "/media/legacy.png" }, new Map()).imageUrl, "/media/legacy.png");
 });
 
+test("restores server feedback facts including polarity and comments on history reload", () => {
+  const mapped = mapHistoryLook({
+    id: "history-feedback",
+    item_ids: [],
+    feedback: {
+      history_id: "history-feedback",
+      action: "saved",
+      rating: 4,
+      sentiment: "想要更松弛",
+      positive_signals: ["色彩搭配好"],
+      negative_signals: ["过于正式"],
+      adjustment_signals: ["想看叠穿"],
+      didnt_work: "鞋底偏硬",
+      learnings: "适合直筒裤",
+    },
+  });
+
+  assert.deepEqual(mapped.feedback, {
+    historyId: "history-feedback",
+    action: "saved",
+    rating: 4,
+    comment: "想要更松弛",
+    positiveSignals: ["色彩搭配好"],
+    negativeSignals: ["过于正式"],
+    adjustmentSignals: ["想看叠穿"],
+    didntWork: "鞋底偏硬",
+    learnings: "适合直筒裤",
+  });
+});
+
 test("uses a collage only when no history items resolve", () => {
   const wardrobe = new Map([["shirt", { name: "衬衫", category: "上装", imageUrl: "/media/shirt.png" }]]);
   const zero = mapHistoryLook({ id: "zero", item_ids: ["missing"], collage_path: "/media/collage.png" }, wardrobe);
@@ -410,12 +461,20 @@ test("keys Today feedback by history identity and preserves freshly fetched weat
   const today = readFileSync(new URL("../src/components/ScreenToday.tsx", import.meta.url), "utf8");
   assert.match(today, /applyRecommendation\(recommendation, latestWeather\)/);
   assert.match(today, /items_worn: look\.items\.map\(\(item: any\) => item\.id\)/);
+  assert.match(today, /setWeatherIsStale\(!switchedContext\)/);
 });
 
 test("reuses Total Look thumbnails throughout profile history surfaces without fabricated garments", () => {
   const profile = readFileSync(new URL("../src/components/ScreenProfile.tsx", import.meta.url), "utf8");
   assert.ok((profile.match(/<TotalLookThumbnails/g) || []).length >= 5);
   assert.doesNotMatch(profile, /images\.unsplash\.com/);
+});
+
+test("profile exposes the memo correction and failed-refresh retry paths", () => {
+  const profile = readFileSync(new URL("../src/components/ScreenProfile.tsx", import.meta.url), "utf8");
+  assert.match(profile, /profile\?\.taste_memo/);
+  assert.match(profile, /api\.retryTasteMemo\(\)/);
+  assert.match(profile, /api\.correctTasteMemo\(nextMemo\)/);
 });
 
 test("converts Stitch season labels to backend values", () => {

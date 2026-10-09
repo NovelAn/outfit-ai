@@ -1,4 +1,5 @@
 import json
+import logging
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +15,8 @@ from .llm import generate_json
 from .minimax_images import MiniMaxResponseError, generate_images
 from .style_references import get_reference_analyses
 
+logger = logging.getLogger(__name__)
+
 
 class ImagePrompt(BaseModel):
     prompt: str = Field(min_length=20, max_length=1200)
@@ -22,6 +25,7 @@ class ImagePrompt(BaseModel):
 
 
 def _save_image(data: bytes) -> Path:
+    logger.info("inspiration image phase=save")
     root = Path(settings.upload_dir)
     root.mkdir(parents=True, exist_ok=True)
     target = root / f"inspiration_{uuid4().hex}.jpg"
@@ -42,9 +46,7 @@ def generate(db: Session, request: InspirationRequest) -> dict:
     references = get_reference_analyses(db, request.reference_ids)
     context = {
         "style_dna": {
-            "style_keywords": (
-                json.loads(profile.style_keywords_json or "[]") if profile else []
-            ),
+            "style_keywords": (json.loads(profile.style_keywords_json or "[]") if profile else []),
             "palette": json.loads(profile.palette_json or "[]") if profile else [],
             "taste_memo": profile.taste_memo if profile else "",
         },
@@ -53,6 +55,7 @@ def generate(db: Session, request: InspirationRequest) -> dict:
         "scene": request.scene,
         "optional_request": request.style_note,
     }
+    logger.info("inspiration image phase=prompt")
     image_prompt = ImagePrompt.model_validate(
         generate_json(
             (
@@ -77,6 +80,7 @@ def generate(db: Session, request: InspirationRequest) -> dict:
     if image_prompt.negative_prompt.strip():
         prompt += f"\n必须避免：{image_prompt.negative_prompt.strip()}。"
     targets = []
+    logger.info("inspiration image phase=image-01")
     for image in generate_images(prompt, count=3):
         try:
             targets.append(_save_image(image))

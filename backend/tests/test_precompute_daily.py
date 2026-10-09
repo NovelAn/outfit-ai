@@ -108,10 +108,10 @@ def test_precompute_uses_stored_location_and_prepares_looks(monkeypatch, capsys)
     monkeypatch.setattr(
         precompute_daily,
         "recommend",
-        lambda db, request, **kwargs: captured.update(
-            request=request, history_action=kwargs["history_action"]
-        )
-        or {"weather": {"local_date": "2026-07-31", "city": "上海"}},
+        lambda db, request, **kwargs: (
+            captured.update(request=request, history_action=kwargs["history_action"])
+            or {"weather": {"local_date": "2026-07-31", "city": "上海"}}
+        ),
     )
 
     assert precompute_daily.main() == 0
@@ -124,10 +124,11 @@ def test_precompute_uses_stored_location_and_prepares_looks(monkeypatch, capsys)
         "season": None,
         "style_note": None,
         "reference_ids": [],
-            "city": "上海",
-            "latitude": 31.23,
-            "longitude": 121.474,
-            "local_date": None,
+        "city": "上海",
+        "latitude": 31.23,
+        "longitude": 121.474,
+        "target_date": None,
+        "local_date": None,
         "locked_item_ids": [],
         "force_refresh": True,
         "refresh_tier": None,

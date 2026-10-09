@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ScreenId, LookRating, FavoriteLook, HistoryLook } from '../types';
-import { api, confirmFeedback, feedbackLearningNote, FEEDBACK_BATCH_SIZE, mapHistoryLook, paletteHex, requireHistoryId, visibleStyleTags } from '../lib/api.mjs';
+import { api, confirmFeedback, feedbackLearningNote, FEEDBACK_BATCH_SIZE, mapHistoryLook, paletteHex, requireHistoryId, splitFeedbackSignals, visibleStyleTags } from '../lib/api.mjs';
 import { orderLookItems } from '../lib/look-layout.mjs';
 import { BottomNav } from './BottomNav';
 import { SideDrawer } from './SideDrawer';
@@ -84,15 +84,11 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
 
   // Editing rating item state
   const [editingRating, setEditingRating] = useState<LookRating | null>(null);
+  const [isEditingMemo, setIsEditingMemo] = useState(false);
+  const [memoDraft, setMemoDraft] = useState('');
 
   const loadData = async () => {
     try {
-      const savedRatings = localStorage.getItem('OUTFIT_AI_LOOK_RATINGS');
-      if (savedRatings) {
-        setRatings(JSON.parse(savedRatings));
-      } else {
-        setRatings({});
-      }
       const [loadedProfile, wardrobe, archive, recent] = await Promise.all([
         api.profile(),
         api.wardrobe(),
@@ -108,13 +104,18 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
         historyId: item.historyId,
         lookTitle: item.title,
         rating: item.rating!,
-        tags: [],
+        tags: [
+          ...(item.feedback?.positiveSignals || []),
+          ...(item.feedback?.negativeSignals || []),
+          ...(item.feedback?.adjustmentSignals || []),
+        ],
+        comment: item.feedback?.comment || item.feedback?.didntWork || item.feedback?.learnings || '',
         timestamp: item.date,
         aiAdjustment: feedbackLearningNote(loadedProfile),
         lookImage: item.imageUrl,
         lookItems: item.lookItems,
       }]));
-      if (Object.keys(serverRatings).length) setRatings(serverRatings);
+      setRatings(serverRatings);
       setFavoritesList(mappedHistory.filter((item: any) => item.action === 'saved').map((item) => ({
         id: item.id,
         historyId: item.historyId,
@@ -150,17 +151,30 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
       return;
     }
     try {
+      const signals = splitFeedbackSignals(updated.tags);
       await confirmFeedback(api.feedback, {
         history_id: historyId,
         items_worn: historyList.find((item) => item.historyId === historyId)?.itemIds || [],
         rating: updated.rating,
         sentiment: updated.comment,
-        compliments: updated.tags,
+        ...signals,
       }, () => { setEditingRating(null); void loadData(); }, (error: unknown) => {
         setTagError(error instanceof Error ? error.message : '评分保存失败，请重试');
       });
     } catch {
       return;
+    }
+  };
+
+  const saveMemoCorrection = async () => {
+    const nextMemo = memoDraft.trim();
+    if (!nextMemo) return;
+    try {
+      setProfile(await api.correctTasteMemo(nextMemo));
+      setIsEditingMemo(false);
+      setTagError('');
+    } catch (error) {
+      setTagError(error instanceof Error ? `品味备忘录保存失败：${error.message}` : '品味备忘录保存失败，请重试');
     }
   };
 
@@ -406,9 +420,9 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
 
           <div className="pt-1 text-[10px] text-[#43474c] font-medium">
             {profile?.taste_memo_updated_at
-              ? `品味备忘录更新于 ${new Date(profile.taste_memo_updated_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · 待学习 ${profile?.feedback_since_refresh ?? 0}/${FEEDBACK_BATCH_SIZE} 条反馈`
+              ? `品味备忘录更新于 ${new Date(profile.taste_memo_updated_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · 待学习 ${profile?.feedback_since_refresh ?? 0}/${profile?.feedback_batch_size || FEEDBACK_BATCH_SIZE} 条反馈`
               : (profile?.feedback_since_refresh ?? 0) > 0
-                ? `已记录 ${profile?.feedback_since_refresh ?? 0}/${FEEDBACK_BATCH_SIZE} 条反馈，累计后刷新品味备忘录`
+                ? `已记录 ${profile?.feedback_since_refresh ?? 0}/${profile?.feedback_batch_size || FEEDBACK_BATCH_SIZE} 条反馈，累计后刷新品味备忘录`
                 : '正在学习'}
           </div>
         </section>
@@ -424,7 +438,7 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
                   {ratingCount} 条
                 </span>
               </div>
-              <p className="text-[10px] text-[#74777d] mt-0.5">查看及修改你的历史打分与 AI 搭配调整意见</p>
+            <p className="text-[10px] text-[#74777d] mt-0.5">查看及修改你的历史打分与 AI 搭配调整意见</p>
             </div>
             <button
               onClick={() => setModalType('ratings')}
@@ -509,6 +523,36 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
               管理与修改全部 {ratingCount} 条反馈记录 →
             </button>
           </div>
+          <div className="space-y-2">
+            <p className="rounded-lg border border-[#c4c6cd]/30 bg-[#f8f6f0] p-2.5 text-xs leading-relaxed text-[#162839]">
+              {profile?.taste_memo || '反馈达到学习阈值后，这里会显示 AI 对你品味的自然语言理解。'}
+            </p>
+            {profile?.taste_memo_last_change && (
+              <p className="text-[10px] text-[#9a442a]">本轮学到：{profile.taste_memo_last_change}</p>
+            )}
+            {(profile?.taste_memo_source_event_ids?.length || profile?.taste_memo_source_feedback_ids?.length) > 0 && (
+              <p className="text-[9px] text-[#74777d]">依据 {profile.taste_memo_source_event_ids?.length || profile.taste_memo_source_feedback_ids.length} 条反馈事件</p>
+            )}
+            {profile?.taste_memo_refresh_status === 'failed' && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-[#9a442a]/30 bg-[#9a442a]/5 p-2 text-[10px] text-[#9a442a]">
+                <span>{feedbackLearningNote(profile)}</span>
+                <button
+                  type="button"
+                  onClick={() => void api.retryTasteMemo().then(loadData).catch((error) => setTagError(error instanceof Error ? error.message : '重试失败'))}
+                  className="shrink-0 rounded border border-[#9a442a]/40 px-2 py-1 font-bold"
+                >
+                  重试
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => { setMemoDraft(profile?.taste_memo || ''); setIsEditingMemo(true); }}
+              className="text-[10px] font-bold text-[#162839] underline"
+            >
+              纠正这段品味理解
+            </button>
+          </div>
         </section>
 
         {/* Quick Access Menu List */}
@@ -590,6 +634,28 @@ export const ScreenProfile: React.FC<ScreenProfileProps> = ({ onNavigate }) => {
               className="w-full bg-[#162839] text-white py-2 text-xs font-bold rounded-lg"
             >
               保存修改
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isEditingMemo && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-[#fbf9f4] p-4 max-w-xs w-full border border-[#162839] relative rounded-xl shadow-xl">
+            <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#c4c6cd]/40">
+              <h3 className="text-xs font-bold text-[#162839]">纠正 AI 品味理解</h3>
+              <button onClick={() => setIsEditingMemo(false)} className="text-[#74777d] p-1">
+                <span className="material-symbols-outlined text-base">close</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-[#74777d] mb-2">保留自然语言描述；保存后由服务端作为当前品味档案。</p>
+            <textarea
+              value={memoDraft}
+              onChange={(event) => setMemoDraft(event.target.value)}
+              className="w-full min-h-28 rounded-lg border border-[#c4c6cd] bg-white p-2 text-base text-[#162839]"
+            />
+            <button onClick={() => void saveMemoCorrection()} className="mt-3 w-full rounded-lg bg-[#162839] py-2 text-xs font-bold text-white">
+              保存修正
             </button>
           </div>
         </div>
